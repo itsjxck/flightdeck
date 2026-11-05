@@ -147,7 +147,12 @@
   font-size: 0.92em;
 }
 [data-role='overseer.worktreeRow'] {
-  padding: 3px 8px;
+  /* 4px on the right, as on a space's line, so the PR icon sits in the same
+     column as the buttons above it. */
+  padding: 2px 4px 2px 8px;
+  /* Room for a 20px PR icon, so rows with and without one match. */
+  box-sizing: border-box;
+  min-height: 24px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -232,22 +237,30 @@
   color: var(--warn);
   font-weight: 700;
 }
-/* GitHub pull request link at the row's right end.
-   Icons and colours live in icons.css (generated); they draw at 16px. */
+/* GitHub pull request link at the row's right end, sized like the Spaces
+   buttons: a 20px square with a 12px icon (icons.css, generated). */
 [data-role='overseer.prDraft'],
 [data-role='overseer.prOpen'],
 [data-role='overseer.prMerged'],
 [data-role='overseer.prClosed'] {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
   padding: 0;
   border: 0;
+  border-radius: 5px;
+  box-shadow: none;
   cursor: pointer;
   background-color: transparent;
-  background-size: 16px 16px;
+  background-size: 12px 12px;
   background-repeat: no-repeat;
   background-position: center;
+}
+[data-role='overseer.prDraft']:hover,
+[data-role='overseer.prOpen']:hover,
+[data-role='overseer.prMerged']:hover,
+[data-role='overseer.prClosed']:hover {
+  background-color: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 /* ↻ turns while an explicit refresh runs. */
 [data-role='overseer.iconSyncSpin'] {
