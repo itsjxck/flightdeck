@@ -21,8 +21,12 @@ ICONS = [
     ("[data-role='overseer.prOpen']", "git-pull-request-16.svg", "#1a7f37", "#3fb950"),
     ("[data-role='overseer.prMerged']", "git-merge-16.svg", "#8250df", "#ab7df8"),
     ("[data-role='overseer.prClosed']", "git-pull-request-closed-16.svg", "#d1242f", "#f85149"),
-    # ↻ in the Spaces header: a square glyph, so it turns about its centre.
-    ("[data-role='overseer.refreshIcon'],\n[data-role='overseer.refreshIconSpin']", "sync-16.svg", "#59636e", "#9198a1"),
+    # Spaces button icons, muted like the text around them. Each button holds
+    # one 16px icon element; square, so ↻ turns about its centre.
+    ("[data-role='overseer.iconPlus']", "plus-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='overseer.iconSync'],\n[data-role='overseer.iconSyncSpin']", "sync-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='overseer.iconExpanded']", "chevron-down-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='overseer.iconCollapsed']", "chevron-right-16.svg", "#59636e", "#9198a1"),
 ]
 
 

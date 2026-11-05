@@ -37,6 +37,14 @@ local function button(key, label, action, title, role)
 	})
 end
 
+-- Every Spaces control: a 24px square button holding one 16px icon (icons.css).
+-- The icon is its own element, so a spinning ↻ turns without its frame.
+local function iconButton(key, icon, action, title)
+	return ui.el("button", {
+		key = key, role = "overseer.iconButton", title = title, aria = title, actions = { click = action },
+	}, { ui.el("div", { key = "icon", role = "overseer." .. icon }) })
+end
+
 local PR_STATES = {
 	draft = { role = "overseer.prDraft", label = "Draft" },
 	open = { role = "overseer.prOpen", label = "Open" },
@@ -171,13 +179,15 @@ local function spaceNode(space)
 			text("subtitle", space.subtitle or "", "overseer.spaceSubtitle"),
 		}),
 	}
+	local buttons = {}
 	if space.repo then
-		table.insert(head, button("create", "+", "create=" .. space.repo, "New worktree from " .. (space.base or "the base branch"), "overseer.rowButton"))
+		table.insert(buttons, iconButton("create", "iconPlus", "create=" .. space.repo, "New worktree from " .. (space.base or "the base branch")))
 	end
 	if #space.worktrees > 0 then
-		table.insert(head, button("collapse", if space.collapsed then "▸" else "▾", "collapse=" .. space.repo,
-			(if space.collapsed then "Show " else "Hide ") .. tostring(#space.worktrees) .. " worktrees", "overseer.rowButton"))
+		table.insert(buttons, iconButton("collapse", if space.collapsed then "iconCollapsed" else "iconExpanded", "collapse=" .. space.repo,
+			(if space.collapsed then "Show " else "Hide ") .. tostring(#space.worktrees) .. " worktrees"))
 	end
+	if #buttons > 0 then table.insert(head, ui.node("row", { key = "buttons", role = "overseer.buttons" }, buttons)) end
 	local children = { ui.node("row", { key = "line", role = "overseer.spaceLine" }, head) }
 	if space.error then table.insert(children, text("error", space.error, "overseer.error")) end
 	if not space.collapsed and #space.worktrees > 0 then
@@ -240,14 +250,10 @@ function View.render(model)
 	local spaces = {
 		ui.node("row", { key = "header", role = "overseer.header" }, {
 			text("title", "Spaces", "overseer.heading", { grow = 1 }),
-			button("add", "+", "add", "New space in a folder", "overseer.iconButton"),
-			-- The icon is its own element so only the arrows turn, not the button's frame.
-			ui.el("button", {
-				key = "refresh", role = "overseer.iconButton", actions = { click = "refresh" },
-				title = if model.refreshing then "Refreshing…" else "Refresh worktrees",
-				aria = if model.refreshing then "Refreshing" else "Refresh worktrees",
-			}, {
-				ui.el("div", { key = "icon", role = if model.refreshing then "overseer.refreshIconSpin" else "overseer.refreshIcon" }),
+			ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
+				iconButton("add", "iconPlus", "add", "New space in a folder"),
+				iconButton("refresh", if model.refreshing then "iconSyncSpin" else "iconSync", "refresh",
+					if model.refreshing then "Refreshing…" else "Refresh worktrees"),
 			}),
 		}),
 	}
