@@ -1,18 +1,24 @@
 # Changelog
 
-## Unreleased
+## 3.0.0 (unreleased)
 
-### Added
-
-- **Remove project** in a project's right-click menu takes it off the list. The repository, its worktrees and open sessions are left alone; Overseer forgets the project's display names, Ice Box entries and session links. It's refused while a worktree is being created or deleted there.
+The Projects panel is now a Spaces sidebar, laid out like herdr's: every Tern session is a space, Git worktrees nest under the space open in their repository, and every running agent is listed at the bottom.
 
 ### Changed
 
-- **Requires Tern 0.9.6 or later.** Overseer uses its `agent_state` and `budget` events, and relies on its time budgets: only a plugin's own Lua counts toward the 50 ms, and a hook that runs over is paused for a few seconds rather than switched off until a reload.
+- **Spaces replace projects.** Each Tern session in the window is a row, named after the folder of the first terminal in its first tab (following `cd`) until you rename it. Spaces don't need to be Git repositories; there's no list of projects to add or remove.
+- **Worktrees nest under their repository's space.** A space open in a Git repository lists the repository's other worktrees beneath it: the space in the primary checkout if there is one, else the first. Spaces open in those worktrees appear as their rows instead of on their own. Rows are one line: status dot, name, uncommitted mark and PR.
+- **Agents section.** Every agent block and agent CLI (`omp`, `claude`, `codex`, …) across the window's spaces, with its state (working, waiting, idle) and program. Click one to go to its space and pane. It sits in the canvas's dock, so it stays at the bottom while spaces scroll.
+- **Space menu:** Rename space (renames the Tern session; blank names it after its folder again), New worktree, Change base branch and Close space. **+** in the header opens a new space in any folder.
+- **Status dots:** grey for an open, quiet session (was green), hollow for a worktree without one, pulsing green while an agent works, haloed blue while one waits for you.
+- **Requires Tern 0.9.12 or later** (canvas docks; tested with 0.9.12). Overseer also uses the `agent_state`, `budget`, `cwd` and `session_ended` events, and relies on Tern's time budgets: only a plugin's own Lua counts toward the 50 ms, and a hook that runs over is paused for a few seconds rather than switched off until a reload.
 
 ### Removed
 
-- **Linear integration.** Ticket links on worktree rows, **Set Linear workspace** in a project's menu, the `linear auth whoami` lookup, and the ticket link in Visualize PR outlines are gone. So is Carly's `ticket_worktree` (create `feature/<ticket>` and start omp on the ticket) and the project list Overseer gave Carly for it, which was one of the hooks that ran past Tern's 4 ms limit. A `linear` value saved on a project is ignored.
+- **Projects.** Add project and the saved `projects` list are gone; a repository's base branch override now lives in `repo-base`. The old `projects` value is left in storage, unread.
+- **Tab rows** under each worktree, the directory subtitle, the Primary badge and the Open hint, and the ⓘ button that opened this README.
+- **Ice Box.** The menu entries, the 🧊 header toggle and the `icebox`/`show-icebox` values (left in storage, unread).
+- **Linear integration.** Ticket links on worktree rows, **Set Linear workspace** in a project's menu, the `linear auth whoami` lookup, and the ticket link in Visualize PR outlines are gone. So is Carly's `ticket_worktree` (create `feature/<ticket>` and start omp on the ticket) and the project list Overseer gave Carly for it, which was one of the hooks that ran past Tern's 4 ms limit.
 
 ### Fixed
 

@@ -25,6 +25,12 @@ local MODES = {
 			return state.project .. " · New worktrees branch from this local branch. Existing worktrees are unchanged."
 		end,
 	},
+	space = {
+		heading = "Rename space", submit = "Save name", fields = { "name" },
+		help = function(state)
+			return "Leave blank to name it after its folder, " .. state.project .. "."
+		end,
+	},
 }
 
 local function fieldOrder(state)
@@ -44,8 +50,8 @@ local function finish(state, cancelled)
 	local response
 	if cancelled then
 		response = { cancelled = true }
-	elseif state.mode == "rename" then
-		response = { mode = "rename", name = state.fields.name.text }
+	elseif state.mode == "rename" or state.mode == "space" then
+		response = { mode = state.mode, name = state.fields.name.text }
 	elseif state.mode == "base" then
 		if not string.find(state.fields.base.text, "%S") then
 			state.error = "Enter a local branch name."
@@ -79,7 +85,7 @@ tern.block.define("form", {
 			submitted = false, cancelled = false, focusScheduled = false,
 		}
 		state.fields = {
-			name = Input.new(if mode == "rename" then args[4] or "" else ""),
+			name = Input.new(if mode == "rename" or mode == "space" then args[4] or "" else ""),
 			branch = Input.new(""),
 			base = Input.new(if mode == "base" then args[4] or "" else ""),
 		}
@@ -97,7 +103,7 @@ tern.block.define("form", {
 		end
 		-- A restarted form must never publish its response a second time.
 		if state.token == "" then
-			state.error = "Missing form token. Close this pane and reopen the form from Projects."
+			state.error = "Missing form token. Close this pane and reopen the form from Spaces."
 			state.submitted = true
 		else
 			local ok, response = pcall(tern.kv.get, "form:" .. state.token)
@@ -108,9 +114,9 @@ tern.block.define("form", {
 		end
 		return state
 	end,
-	-- The form occupies the Projects panel's slot, so keep the panel's title.
+	-- The form occupies the Spaces panel's slot, so keep the panel's title.
 	title = function()
-		return "Projects"
+		return "Spaces"
 	end,
 	view = function(state, cx)
 		local heading = MODES[state.mode].heading
@@ -118,21 +124,21 @@ tern.block.define("form", {
 			-- In a row so the link is only as wide as its text, not the whole pane.
 			ui.node("row", { key = "nav" }, {
 				ui.el("button", {
-					key = "back", role = "overseer.backLink", text = "← Projects",
-					title = "Back to Projects (Esc)", actions = { click = "cancel" },
+					key = "back", role = "overseer.backLink", text = "← Spaces",
+					title = "Back to Spaces (Esc)", actions = { click = "cancel" },
 				}),
 			}),
 			text("heading", heading, "overseer.formHeading"),
 		}
 		if state.submitted then
-			table.insert(children, text("submitted", if state.cancelled then "Returning to Projects…" else "Working…", "overseer.message"))
+			table.insert(children, text("submitted", if state.cancelled then "Returning to Spaces…" else "Working…", "overseer.message"))
 		else
 			table.insert(children, text("help", MODES[state.mode].help(state), "overseer.hint"))
 			local labels = {
 				name = "Display name (optional)", branch = "Branch name", base = "Base branch",
 			}
 			local placeholders = {
-				name = if state.mode == "rename" then state.project else "e.g. Fix onboarding",
+				name = if state.mode == "rename" or state.mode == "space" then state.project else "e.g. Fix onboarding",
 				branch = "feature/branch-name", base = "main",
 			}
 			for _, name in ipairs(fieldOrder(state)) do

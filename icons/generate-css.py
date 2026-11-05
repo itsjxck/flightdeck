@@ -21,10 +21,6 @@ ICONS = [
     ("[data-role='overseer.prOpen']", "git-pull-request-16.svg", "#1a7f37", "#3fb950"),
     ("[data-role='overseer.prMerged']", "git-merge-16.svg", "#8250df", "#ab7df8"),
     ("[data-role='overseer.prClosed']", "git-pull-request-closed-16.svg", "#d1242f", "#f85149"),
-    # Help button beside the Projects heading: muted, accent blue on hover/focus.
-    ("[data-role='overseer.infoButton']", "info-16.svg", "#59636e", "#9198a1"),
-    ("[data-role='overseer.infoButton']:hover,\n[data-role='overseer.infoButton']:focus-visible",
-     "info-16.svg", "#0969da", "#4493f8"),
 ]
 
 

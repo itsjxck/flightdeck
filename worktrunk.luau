@@ -137,11 +137,11 @@ local function discover_base(project, done)
 	end)
 end
 
--- Inspects a folder chosen in the picker. done(project, err, cx, notRepo):
+-- Finds the repository a space's folder is in. done(project, err, cx, notRepo):
 -- notRepo is true when the folder isn't inside a Git checkout at all.
 function M.inspect(path, done)
 	if type(path) ~= "string" or string.sub(path, 1, 1) ~= "/" or string.find(path, "\0", 1, true) then
-		deferred_error(done, "The folder picker returned an unexpected path.")
+		deferred_error(done, "Not an absolute folder path: " .. tostring(path))
 		return
 	end
 	git(path, { "rev-parse", "--path-format=absolute", "--git-common-dir" }, function(common, err, cx)
@@ -151,7 +151,7 @@ function M.inspect(path, done)
 		end
 		if common.status ~= 0 then
 			if string.find(common.stderr or "", "not a git repository", 1, true) then
-				done(nil, "Choose a repository folder.", cx, true)
+				done(nil, "Not a Git repository.", cx, true)
 			else
 				done(nil, command_error("Cannot open Git repository", common), cx)
 			end
@@ -184,7 +184,7 @@ function M.inspect(path, done)
 				end
 				local primary = primary_checkout(trees.stdout)
 				if not primary then
-					done(nil, "This bare repository has no checkout. Add a Git worktree before adding this project.", trees_cx)
+					done(nil, "This bare repository has no checkout, so its worktrees can't be listed.", trees_cx)
 					return
 				end
 				git(primary, { "rev-parse", "--show-toplevel" }, function(top, top_err, top_cx)

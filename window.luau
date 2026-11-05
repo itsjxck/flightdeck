@@ -25,15 +25,23 @@ local function records(key)
 	return value
 end
 
-local function projects()
-	return records("projects")
-end
+-- Git repositories found under spaces' folders, by shared Git directory, as
+-- wt.inspect describes them: {id, name, path (primary checkout), base}.
+local repos = {}
+-- A folder's repository id, or false when it isn't in one; nil until inspected.
+local dirRepo = {}
+local inspecting = {}
 
-local function projectById(id)
-	for _, project in projects() do
-		if project.id == id then return project end
+-- The repository with any base branch chosen in Change base branch.
+local function repoById(id)
+	local repo = id and repos[id]
+	if not repo then return nil end
+	local base = records("repo-base")[id]
+	if base then
+		repo = table.clone(repo)
+		repo.base = base
 	end
-	return nil
+	return repo
 end
 
 local function localHost(cx)
@@ -80,7 +88,7 @@ local function activeWorktree(cx)
 	local current = cx.sessions:current()
 	for path, binding in records("sessions") do
 		if binding.id == current.id and binding.host == current.host then
-			local project = projectById(binding.project)
+			local project = repoById(binding.project)
 			if project then return project, { path = path } end
 		end
 	end
@@ -100,18 +108,19 @@ local AGENTS = {
 	aider = true, amp = true, ["cursor-agent"] = true, crush = true, goose = true,
 }
 
--- Whether a shell command line runs an agent CLI, e.g. "omp", "cd x && claude",
+-- The agent CLI a shell command line runs, if any, e.g. "omp", "cd x && claude",
 -- "FOO=1 /usr/local/bin/codex --resume".
 local function runsAgent(line)
 	for segment in string.gmatch(line, "[^;&|]+") do
 		for word in string.gmatch(segment, "%S+") do
 			if not string.find(word, "=", 1, true) then
-				if AGENTS[string.match(word, "([^/]+)$")] then return true end
+				local program = string.match(word, "([^/]+)$")
+				if AGENTS[program] then return program end
 				break
 			end
 		end
 	end
-	return false
+	return nil
 end
 
 -- Native agent blocks' states by pane id: "working", or "waiting" (it asked
@@ -128,142 +137,221 @@ local function seedAgents(cx)
 	agentStates = states
 end
 
--- Agent activity in this window, per session id (as a string), per tab id and
--- per pane id. Native agent blocks report their state (agentStates). Agent
--- CLIs in plain terminals only report progress, which Tern exposes as `busy`
--- (a CLI that hasn't reported progress yet counts as busy while it runs).
-local function agentActivity(tabs, panes)
-	local tabSession = {}
-	for _, tab in tabs do tabSession[tab.id] = tostring(tab.session) end
-	local activity = { sessions = {}, tabs = {}, panes = {} }
-	local function mark(pane, tab, state)
-		activity.panes[pane] = state
-		-- Waiting wins: it is the state that needs you.
-		local session = tabSession[tab] or ""
-		if activity.sessions[session] ~= "waiting" then activity.sessions[session] = state end
-		if activity.tabs[tab] ~= "waiting" then activity.tabs[tab] = state end
+local HOME = tern.getenv("HOME") or ""
+
+local function expandHome(path)
+	if string.sub(path, 1, 1) == "~" then return HOME .. string.sub(path, 2) end
+	return path
+end
+
+local function tildePath(path)
+	if HOME ~= "" and (path == HOME or string.sub(path, 1, #HOME + 1) == HOME .. "/") then
+		return "~" .. string.sub(path, #HOME + 1)
 	end
+	return path
+end
+
+local function basename(path)
+	return string.match(path, "([^/]+)/*$") or path
+end
+
+-- The folder a space is open in: the working directory of the first terminal
+-- (or agent) of its first tab, in split order.
+local function spaceDir(cx, info, panesById)
+	local tab = info.tabs[1]
+	local layout = tab and cx.session:layout(tab)
+	if not layout then return nil end
+	local found
+	local function visit(tree)
+		if found or not tree then return end
+		if tree.pane then
+			local pane = panesById[tree.pane]
+			if pane and (pane.kind == "terminal" or pane.kind == "agent") and pane.cwd and pane.cwd ~= "" then
+				found = expandHome(pane.cwd)
+			end
+			return
+		end
+		visit(tree[1])
+		visit(tree[2])
+	end
+	visit(layout.root)
+	return found
+end
+
+-- Whether you named the session: Overseer remembers each session's name when
+-- it first sees it (`auto-names`), and a space is named after its folder
+-- until its session's name differs from that. Tern names new sessions with
+-- random words, so there's no telling a default name from a chosen one.
+local function namedByYou(info, autoNames)
+	local seen = autoNames[tostring(info.id)]
+	return seen ~= nil and info.name ~= seen
+end
+
+-- The worktree holding `dir`: the deepest one whose path contains it.
+local function worktreeAt(worktrees, dir)
+	local best
+	for _, tree in worktrees or {} do
+		if dir == tree.path or string.sub(dir, 1, #tree.path + 1) == tree.path .. "/" then
+			if not best or #tree.path > #best.path then best = tree end
+		end
+	end
+	return best
+end
+
+-- Running agents in this window, and agent activity per session id (as a
+-- string). Native agent blocks report their state (agentStates); one whose
+-- agent has exited, leaving its shell, isn't running. Agent CLIs in plain
+-- terminals only report progress, which Tern exposes as `busy` (a CLI that
+-- hasn't reported progress yet counts as busy while it runs).
+local function agentPanes(tabsById, panes)
+	local agents, sessions = {}, {}
 	for _, pane in panes do
-		if pane.tab then
+		local tab = pane.tab and tabsById[pane.tab]
+		if tab and pane.exited == nil and pane.running then
+			local state, program
 			if pane.kind == "agent" then
-				local state = agentStates[pane.pane]
-				if state then mark(pane.pane, pane.tab, state) end
-			elseif pane.busy and pane.running and runsAgent(pane.running.line) then
-				mark(pane.pane, pane.tab, "working")
+				state = agentStates[pane.pane] or "idle"
+				program = runsAgent(pane.running.line) or pane.program or "agent"
+			elseif pane.kind == "terminal" then
+				program = runsAgent(pane.running.line)
+				if program then state = if pane.busy then "working" else "idle" end
+			end
+			if state then
+				table.insert(agents, { pane = pane.pane, tab = tab, state = state, program = program, title = pane.title })
+				local key = tostring(tab.session)
+				-- Waiting wins: it is the state that needs you.
+				if state ~= "idle" and sessions[key] ~= "waiting" then sessions[key] = state end
 			end
 		end
 	end
-	return activity
+	return agents, sessions
 end
 
--- What a tab row is called: the name the user gave the tab, else the title of
--- the pane doing its work. The focused pane is often a plugin block, such as
--- this navigator, so terminals and agents are preferred over plugin blocks.
-local function tabRows(activity, tabs, panes)
-	local panesByTab = {}
-	for _, pane in panes do
-		if pane.tab then
-			panesByTab[pane.tab] = panesByTab[pane.tab] or {}
-			table.insert(panesByTab[pane.tab], pane)
-		end
-	end
-	local rows = {}
-	for _, tab in tabs do
-		local panes = panesByTab[tab.id] or {}
-		local chosen, hasAgent = nil, false
-		for _, pane in panes do
-			if pane.kind == "agent" then hasAgent = true end
-		end
-		for _, pane in panes do
-			if pane.pane == tab.pane and pane.kind ~= "plugin" then chosen = pane; break end
-		end
-		if not chosen then
-			for _, pane in panes do
-				if pane.kind == "terminal" or pane.kind == "agent" then chosen = pane; break end
-			end
-		end
-		if not chosen then
-			for _, pane in panes do
-				if pane.kind ~= "plugin" then chosen = pane; break end
-			end
-		end
-		local title = chosen and chosen.title or tab.title
-		if (not title or title == "") and chosen then
-			title = chosen.running and chosen.running.line or chosen.program
-		end
-		local key = tostring(tab.session)
-		rows[key] = rows[key] or {}
-		table.insert(rows[key], {
-			id = tab.id, pane = tab.pane,
-			name = if tab.name and tab.name ~= "" then tab.name elseif title and title ~= "" then title else "Terminal",
-			agent = activity.tabs[tab.id],
-			-- An agent block keeps its tab busy even while idle; its state says more.
-			busy = tab.busy and not hasAgent,
-		})
-	end
-	return rows
-end
-
+-- Returns the panel's model and the folders whose repository isn't known yet.
 local function model(cx)
 	local sessions = sessionsById(cx)
-	local names = records("worktree-names")
-	local bindings, jobs = records("sessions"), records("jobs")
-	local icebox = records("icebox")
-	local showIcebox = tern.kv.get("show-icebox") ~= false
-	-- One read of the session's tabs and panes serves every row of this draw.
-	local sessionTabs, sessionPanes = cx.session:tabs(), cx.session:panes()
-	local activity = agentActivity(sessionTabs, sessionPanes)
-	local tabs = tabRows(activity, sessionTabs, sessionPanes)
-	local result = {
-		projects = {}, collapsed = collapsed, confirmation = confirmation,
-		showIcebox = showIcebox, refreshing = spinning,
-	}
+	local names, bindings, jobs = records("worktree-names"), records("sessions"), records("jobs")
+	local autoNames = records("auto-names")
+	-- One read of the window's tabs and panes serves the whole draw.
+	local tabs, panes = cx.session:tabs(), cx.session:panes()
+	local tabsById, panesById = {}, {}
+	for _, tab in tabs do tabsById[tab.id] = tab end
+	for _, pane in panes do panesById[pane.pane] = pane end
+	local agents, activity = agentPanes(tabsById, panes)
 	local current = cx.sessions:current()
-	for _, project in projects() do
-		local entry = cache[project.id]
-		local row = {
-			id = project.id, name = project.name, path = project.path, base = project.base,
-			loading = not entry or entry.loading, error = entry and entry.error, worktrees = {}, hiddenIced = 0,
-			total = entry and entry.worktrees and #entry.worktrees or 0,
+	local pending = {}
+
+	-- Every session is a space, named by you or else after its folder.
+	local spaces, byId = {}, {}
+	for index, info in cx.session:sessions() do
+		local dir = spaceDir(cx, info, panesById)
+		local repo = if dir then dirRepo[dir] else nil
+		if dir and repo == nil then pending[dir] = true end
+		local entry = if repo then cache[repo] else nil
+		local named = namedByYou(info, autoNames)
+		local space = {
+			id = info.id, index = index, dir = dir, repo = repo or nil, named = named,
+			name = if named or not dir then info.name else basename(dir),
+			tree = if entry and dir then worktreeAt(entry.worktrees, dir) else nil,
+			agent = activity[tostring(info.id)], active = info.id == current.id,
 		}
-		local iced = {}
+		table.insert(spaces, space)
+		byId[info.id] = space
+	end
+
+	-- A repository's worktrees nest under one space open in it: the one in its
+	-- primary checkout, else the first. Spaces open in its other worktrees
+	-- appear as those rows instead of standing alone.
+	local anchors = {}
+	for _, space in spaces do
+		if space.repo and space.tree and space.tree.is_main and not anchors[space.repo] then anchors[space.repo] = space end
+	end
+	for _, space in spaces do
+		if space.repo and not anchors[space.repo] then anchors[space.repo] = space end
+	end
+	local nested = {}
+	for repoId, anchor in anchors do
+		local entry = cache[repoId]
+		local rows = {}
 		for _, worktree in (entry and entry.worktrees or {}) do
-			local item = table.clone(worktree)
-			item.deleting = removing(worktree.path, jobs)
-			item.displayName = names[project.id] and names[project.id][worktree.path]
-			item.pr = not worktree.is_main and worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
-			local session = boundSession(worktree.path, sessions, bindings)
-			item.session, item.tabs = session, session and tabs[tostring(session.id)] or {}
-			item.agent = session and activity.sessions[tostring(session.id)]
-			local active = session ~= nil and session.id == current.id
-			if active then result.activePath = worktree.path end
-			item.iced = not worktree.is_main and icebox[project.id] ~= nil and icebox[project.id][worktree.path] == true
-			if not item.iced then
-				table.insert(row.worktrees, item)
-			elseif showIcebox or active then
-				-- The active worktree stays visible even while the Ice Box is hidden.
-				table.insert(iced, item)
-			else
-				row.hiddenIced += 1
+			if not (anchor.tree and anchor.tree.path == worktree.path) then
+				local session = boundSession(worktree.path, sessions, bindings)
+				local space = session and byId[session.id]
+				if not space then
+					for _, other in spaces do
+						if other ~= anchor and other.repo == repoId and not nested[other.id]
+							and other.tree and other.tree.path == worktree.path then
+							space = other
+							break
+						end
+					end
+				end
+				if space == anchor then space = nil end
+				if space then nested[space.id] = true end
+				local sessionId = (space and space.id) or (session and session.id)
+				local item = table.clone(worktree)
+				item.deleting = removing(worktree.path, jobs)
+				item.label = (names[repoId] and names[repoId][worktree.path])
+					or (space and space.named and space.name) or worktree.branch or basename(worktree.path)
+				item.pr = not worktree.is_main and worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
+				item.session = sessionId ~= nil
+				item.agent = sessionId and activity[tostring(sessionId)]
+				item.active = sessionId ~= nil and sessionId == current.id
+				table.insert(rows, item)
 			end
 		end
-		-- Ice Box worktrees sink to the bottom, keeping their relative order.
-		for _, item in iced do table.insert(row.worktrees, item) end
-		table.insert(result.projects, row)
+		local repo = repoById(repoId)
+		anchor.worktrees, anchor.base = rows, repo and repo.base
+		anchor.error, anchor.collapsed = entry and entry.error, collapsed[repoId] == true
 	end
-	return result
+
+	local result = { spaces = {}, agents = {}, confirmation = confirmation, refreshing = spinning }
+	for _, space in spaces do
+		if not nested[space.id] then
+			local branch = space.tree and (space.tree.branch or "detached")
+			table.insert(result.spaces, {
+				id = space.id, name = space.name, repo = space.repo, base = space.base,
+				subtitle = branch or (space.dir and tildePath(space.dir)) or "",
+				title = (space.dir or "No folder yet") .. (if branch then "\n" .. branch else ""),
+				dirty = space.tree ~= nil and space.tree.dirty, agent = space.agent, session = true,
+				active = space.active, worktrees = space.worktrees or {},
+				collapsed = space.collapsed, error = space.error,
+			})
+		end
+	end
+
+	-- Agents keep their place, in space and tab order, as their state changes.
+	local focused = cx.session:focused()
+	local shown = focused and cx.session:tab_of(focused)
+	table.sort(agents, function(a, b)
+		local left, right = byId[a.tab.session], byId[b.tab.session]
+		local li, ri = left and left.index or math.huge, right and right.index or math.huge
+		if li ~= ri then return li < ri end
+		if a.tab.position ~= b.tab.position then return a.tab.position < b.tab.position end
+		return a.pane < b.pane
+	end)
+	for _, agent in agents do
+		local space = byId[agent.tab.session]
+		table.insert(result.agents, {
+			pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
+			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.name else "Agent",
+			active = agent.tab.id == shown,
+		})
+	end
+	return result, pending
 end
 
 local NAVIGATOR = {
-	title = "Projects", about = "Local repositories, Worktrunk worktrees, and dedicated sessions.",
+	title = "Spaces", about = "Your Tern sessions as spaces, their Git worktrees, and every running agent.",
 }
 
--- Overseer also owns PR outline canvases; only navigators show Projects.
+-- Overseer also owns PR outline canvases; only navigators show Spaces. Before
+-- 3.0 the navigator was titled Projects; a reload adopts one left open.
 local function isNavigator(canvas)
-	return canvas.owner == "overseer" and canvas.title == NAVIGATOR.title
+	return canvas.owner == "overseer" and (canvas.title == NAVIGATOR.title or canvas.title == "Projects")
 end
 
--- The window's one Projects slot: the navigator canvas, or a form shown in its
+-- The window's one Spaces slot: the navigator canvas, or a form shown in its
 -- place. Adopts what a reload (or an older, per-session version) left open and
 -- closes any extra, so a window never shows two.
 local slotPane = nil
@@ -288,6 +376,9 @@ local function slot(cx)
 	return slotPane, if info and info.block == "overseer.form" then "form" else "canvas"
 end
 
+-- Defined after refresh: looks up the repositories of newly seen folders.
+local inspectDirs
+
 local function draw(cx)
 	local pane, kind = slot(cx)
 	if not pane or kind ~= "canvas" then return end
@@ -297,10 +388,12 @@ local function draw(cx)
 		if canvas.pane == pane then ready = true end
 	end
 	if not ready then return end
-	local data = model(cx)
+	local data, pending = model(cx)
+	if next(pending) then inspectDirs(pending) end
 	local signature = tern.json.encode(data)
 	if rendered[pane] == signature then return end
-	cx.canvas:set(pane, { view = view.render(data) })
+	local main, dock = view.render(data)
+	cx.canvas:set(pane, { view = main, dock = dock })
 	rendered[pane] = signature
 end
 
@@ -346,31 +439,63 @@ local function refreshPullRequests(project, entry)
 	end)
 end
 
+-- `done(cx)` runs once the listing finishes. Returns false, never calling
+-- `done`, while a listing of the repository is already running.
+local function listRepo(repo, done)
+	local entry = cache[repo.id]
+	if not entry then
+		entry = { worktrees = {} }
+		cache[repo.id] = entry
+	end
+	if entry.loading then return false end
+	entry.loading = true
+	wt.list(repo, function(worktrees, err, nextCx)
+		entry.loading, entry.error = false, err
+		if worktrees then entry.worktrees = worktrees end
+		if done then done(nextCx) end
+		if nextCx then redraw(nextCx) end
+		if worktrees then refreshPullRequests(repo, entry) end
+	end)
+	return true
+end
+
 -- `done` runs once every worktree listing this call started has finished.
 local function refresh(cx, done)
 	lastRefresh = tern.now()
 	local pending = 0
-	for _, project in projects() do
-		local entry = cache[project.id]
-		if not entry then
-			entry = { worktrees = {} }
-			cache[project.id] = entry
-		end
-		if not entry.loading then
-			entry.loading = true
-			pending += 1
-			wt.list(project, function(worktrees, err, nextCx)
-				entry.loading, entry.error = false, err
-				if worktrees then entry.worktrees = worktrees end
-				pending -= 1
-				if pending == 0 and done and nextCx then done(nextCx) end
-				if nextCx then redraw(nextCx) end
-				if worktrees then refreshPullRequests(project, entry) end
-			end)
-		end
+	for id in repos do
+		local started = listRepo(repoById(id), function(nextCx)
+			pending -= 1
+			if pending == 0 and done and nextCx then done(nextCx) end
+		end)
+		if started then pending += 1 end
 	end
 	if pending == 0 and done then done(cx) end
 	redraw(cx)
+end
+
+-- Finds which repository each folder is in; a repository seen for the first
+-- time is listed right away.
+inspectDirs = function(dirs)
+	for dir in dirs do
+		if not inspecting[dir] then
+			inspecting[dir] = true
+			wt.inspect(dir, function(repo, err, cx, notRepo)
+				inspecting[dir] = nil
+				if repo then
+					dirRepo[dir] = repo.id
+					if not repos[repo.id] then
+						repos[repo.id] = repo
+						listRepo(repoById(repo.id))
+					end
+				else
+					dirRepo[dir] = false
+					if not notRepo then tern.log.warn("Overseer: no repository for " .. dir .. ": " .. tostring(err)) end
+				end
+				if cx then redraw(cx) end
+			end)
+		end
+	end
 end
 
 -- ↻ spins from an explicit refresh until its worktree listings finish, and
@@ -381,8 +506,12 @@ local function refreshByHand(cx)
 	if spinning then return end
 	spinning = true
 	local started = tern.now()
-	-- An explicit refresh also re-checks pull requests immediately.
+	-- An explicit refresh also re-checks pull requests immediately, and folders
+	-- that weren't repositories (one may have been initialised since).
 	for _, entry in cache do entry.prAt = nil end
+	for dir, repo in dirRepo do
+		if repo == false then dirRepo[dir] = nil end
+	end
 	refresh(cx, function(doneCx)
 		local function stop(stopCx)
 			spinning = false
@@ -393,7 +522,7 @@ local function refreshByHand(cx)
 	end)
 end
 
--- Tern panes belong to one tab, so the window's one Projects panel follows you:
+-- Tern panes belong to one tab, so the window's one Spaces panel follows you:
 -- whenever another tab is shown, it moves there, full height on the left.
 local DEFAULT_SHARE = 0.3
 -- The width you leave it at travels with it (a share of the tab).
@@ -530,11 +659,12 @@ end
 -- Opens a fresh navigator in `tab`.
 local function openPanel(cx, tab)
 	local data = model(cx)
+	local main, dock = view.render(data)
 	local pane, err = cx.canvas:open({
 		title = NAVIGATOR.title, about = NAVIGATOR.about,
-		view = view.render(data), how = "beside", focus = false,
+		view = main, dock = dock, how = "beside", focus = false,
 	})
-	if not pane then report(cx, err or "Could not open the Projects panel"); return nil end
+	if not pane then report(cx, err or "Could not open the Spaces panel"); return nil end
 	slotPane = pane
 	rendered[pane] = tern.json.encode(data)
 	if tab then pin(cx, tab) end
@@ -589,7 +719,7 @@ local function swapSlot(cx, old, open)
 	return pane
 end
 
--- Shows the Projects panel in the shown tab and focuses it, opening it if needed.
+-- Shows the Spaces panel in the shown tab and focuses it, opening it if needed.
 local function navigator(cx)
 	if not requireLocal(cx) then return nil end
 	setWantPanel(true)
@@ -606,7 +736,7 @@ local function navigator(cx)
 	return pane
 end
 
--- The Projects shortcut: hides the panel when it has focus, otherwise shows and focuses it.
+-- The Spaces shortcut: hides the panel when it has focus, otherwise shows and focuses it.
 local function togglePanel(cx)
 	if not requireLocal(cx) then return end
 	local pane, kind = slot(cx)
@@ -621,23 +751,57 @@ local function togglePanel(cx)
 end
 
 local function findWorktree(path)
-	for _, project in projects() do
-		local entry = cache[project.id]
-		for _, worktree in (entry and entry.worktrees or {}) do
-			if worktree.path == path then return project, worktree end
+	for id, entry in cache do
+		for _, worktree in entry.worktrees or {} do
+			if worktree.path == path then return repoById(id), worktree end
 		end
 	end
 	return nil, nil
 end
 
--- Shows the worktree's session, creating and binding one when it has none.
+-- Opens a space in `dir`, named after it until you rename it.
+local function createSpace(cx, dir)
+	local name = basename(dir)
+	local session = cx.sessions:create({ name = name, cwd = dir })
+	local autoNames = records("auto-names")
+	autoNames[tostring(session.id)] = name
+	tern.kv.set("auto-names", autoNames)
+	return session
+end
+
+-- The session open in a worktree: the one bound to it, else a space whose
+-- folder is in it, which is then bound.
+local function worktreeSession(cx, path)
+	local sessions = sessionsById(cx)
+	local session = boundSession(path, sessions)
+	if session then return session end
+	local repo = findWorktree(path)
+	local entry = repo and cache[repo.id]
+	if not entry then return nil end
+	local panesById = {}
+	for _, pane in cx.session:panes() do panesById[pane.pane] = pane end
+	for _, info in cx.session:sessions() do
+		local dir = spaceDir(cx, info, panesById)
+		local tree = dir and worktreeAt(entry.worktrees, dir)
+		local found = tree and tree.path == path and sessions[tostring(info.id)]
+		if found then
+			local bindings = records("sessions")
+			bindings[path] = { id = found.id, host = found.host, project = repo.id }
+			tern.kv.set("sessions", bindings)
+			return found
+		end
+	end
+	return nil
+end
+
+-- Shows the worktree's session, opening and binding one when it has none.
 -- The panel follows into it (see follow).
-local function ensureSession(cx, project, path, branch)
-	local session = boundSession(path, sessionsById(cx))
+local function ensureSession(cx, project, path)
+	local session = worktreeSession(cx, path)
 	if session then
 		cx.sessions:switch(session.id)
 	else
-		session = cx.sessions:create({ name = project.name .. " / " .. (branch or "detached"), cwd = path })
+		session = createSpace(cx, path)
 		local bindings = records("sessions")
 		bindings[path] = { id = session.id, host = session.host, project = project.id }
 		tern.kv.set("sessions", bindings)
@@ -649,9 +813,9 @@ local function openWorktree(cx, path)
 	if not requireLocal(cx) then return end
 	if removing(path) then report(cx, "Check the Delete tab.", "Deletion in progress"); return end
 	local project, worktree = findWorktree(path)
-	if not project then report(cx, "Worktree not found. Refresh Projects."); return end
+	if not project then report(cx, "Worktree not found. Refresh Spaces."); return end
 	if not tern.fs.exists(path) then report(cx, "Worktree directory is missing: " .. path, "Worktree unavailable"); refresh(cx); return end
-	ensureSession(cx, project, path, worktree.branch)
+	ensureSession(cx, project, path)
 	redraw(cx)
 end
 
@@ -660,18 +824,25 @@ local function token()
 	return tostring(os.time()) .. "-" .. tostring(math.floor(tern.now() * 1000)) .. "-" .. tostring(math.random(1, 1000000000)) .. "-" .. tostring(sequence)
 end
 
-local function closeGuard(cx, path)
-	local session = boundSession(path, sessionsById(cx))
-	if not session then return nil, nil end
-	if session.locked then return nil, "Unlock the session first." end
+-- A session that can't close: locked, or holding a running worktree operation.
+local function sessionGuard(cx, session)
+	if session.locked then return "Unlock the session first." end
 	local tabs = {}
 	for _, tab in cx.session:tabs() do tabs[tab.id] = tab.session end
 	for _, job in records("jobs") do
 		local tab = cx.session:tab_of(job.pane)
 		if tab and tabs[tab] == session.id then
-			return nil, "Finish or cancel the running operation."
+			return "Finish or cancel the running operation."
 		end
 	end
+	return nil
+end
+
+local function closeGuard(cx, path)
+	local session = worktreeSession(cx, path)
+	if not session then return nil, nil end
+	local err = sessionGuard(cx, session)
+	if err then return nil, err end
 	return session, nil
 end
 
@@ -684,10 +855,10 @@ local function closeManagedSession(cx, path, expected)
 	if err then return false, err end
 	if session then
 		if cx.sessions:current().id == session.id then
-			-- Land in the project's primary checkout session when it's open (it also
-			-- holds a deletion's output tab); otherwise any other session.
+			-- Land in the repository's primary checkout session when it's open (it
+			-- also holds a deletion's output tab); otherwise any other session.
 			local replacement
-			local project = projectById(binding.project)
+			local project = repoById(binding.project)
 			local primary = project and bindings[project.path]
 			for _, other in cx.sessions:list() do
 				if other.id ~= session.id and other.host == session.host then
@@ -698,7 +869,7 @@ local function closeManagedSession(cx, path, expected)
 			if replacement then
 				cx.sessions:switch(replacement.id)
 			else
-				cx.sessions:create({ name = "Projects", cwd = project and project.path })
+				createSpace(cx, if project then project.path else HOME)
 			end
 		end
 		-- The panel lives in the shown tab: take it into the session shown now,
@@ -713,7 +884,7 @@ end
 
 local function requestWorktreeAction(cx, kind, path)
 	local project, worktree = findWorktree(path)
-	if not project then report(cx, "Worktree not found. Refresh Projects."); return end
+	if not project then report(cx, "Worktree not found. Refresh Spaces."); return end
 	if removing(path) then report(cx, "This worktree is already being deleted."); return end
 	local session, err = closeGuard(cx, path)
 	if err then report(cx, err); return end
@@ -725,6 +896,69 @@ local function requestWorktreeAction(cx, kind, path)
 		id = token(), kind = kind, path = path, label = worktree.branch or "Detached HEAD",
 		project = project.id, worktree = table.clone(worktree),
 	}
+	redraw(cx)
+end
+
+-- A space as its menu actions need it: {id, name, named, folder, dir, repo}.
+local function spaceInfo(cx, id)
+	local panesById = {}
+	for _, pane in cx.session:panes() do panesById[pane.pane] = pane end
+	for _, info in cx.session:sessions() do
+		if info.id == id then
+			local dir = spaceDir(cx, info, panesById)
+			local named = namedByYou(info, records("auto-names"))
+			return {
+				id = id, dir = dir, named = named, folder = if dir then basename(dir) else info.name,
+				name = if named or not dir then info.name else basename(dir),
+				repo = dir and dirRepo[dir] or nil,
+			}
+		end
+	end
+	return nil
+end
+
+-- Drops what Overseer remembers about a session that has ended.
+local function forgetSession(id)
+	local autoNames = records("auto-names")
+	if autoNames[tostring(id)] ~= nil then
+		autoNames[tostring(id)] = nil
+		tern.kv.set("auto-names", autoNames)
+	end
+	local bindings, unbound = records("sessions"), false
+	for path, binding in bindings do
+		if binding.id == id then bindings[path], unbound = nil, true end
+	end
+	if unbound then tern.kv.set("sessions", bindings) end
+end
+
+-- Closes a space's session, showing another space first when it's the one
+-- shown, so the panel moves out of it.
+local function closeSpace(cx, id)
+	local session = sessionsById(cx)[tostring(id)]
+	if not session then return true end
+	local err = sessionGuard(cx, session)
+	if err then return false, err end
+	if cx.sessions:current().id == id then
+		for _, other in cx.sessions:list() do
+			if other.id ~= id and other.host == session.host then
+				cx.sessions:switch(other.id)
+				break
+			end
+		end
+	end
+	follow(cx)
+	cx.sessions:close(id)
+	forgetSession(id)
+	return true
+end
+
+local function requestSpaceClose(cx, id)
+	local space = id and spaceInfo(cx, id)
+	local session = space and sessionsById(cx)[tostring(id)]
+	if not session then report(cx, "Space not found. Refresh Spaces."); return end
+	local err = sessionGuard(cx, session)
+	if err then report(cx, err); return end
+	confirmation = { id = token(), kind = "space", space = id, label = space.name, path = space.dir }
 	redraw(cx)
 end
 
@@ -742,7 +976,7 @@ local function visualizePr(cx, path)
 	local project, worktree = findWorktree(path)
 	local entry = project and cache[project.id]
 	local pr = entry and entry.prs and worktree.branch and entry.prs[worktree.branch]
-	if not pr then report(cx, "No pull request found. Refresh Projects."); return end
+	if not pr then report(cx, "No pull request found. Refresh Spaces."); return end
 	local key = project.id .. "#" .. tostring(pr.number)
 	if outlines[key] and cx.canvas:get(outlines[key]) then cx.layout:focus(outlines[key]); return end
 	local heading = "# PR #" .. tostring(pr.number) .. "\n\n"
@@ -782,17 +1016,19 @@ end
 local function confirmWorktreeAction(cx, id)
 	local request = confirmation
 	if not request or request.id ~= id or request.checking then return end
-	if request.kind == "close" then
+	if request.kind == "close" or request.kind == "space" then
 		confirmation = nil
-		local ok, err = closeManagedSession(cx, request.path)
+		local ok, err
+		if request.kind == "space" then ok, err = closeSpace(cx, request.space)
+		else ok, err = closeManagedSession(cx, request.path) end
 		if not ok then report(cx, err, "Session closure failed") else
-			cx:toast("info", "Session closed", notificationLabel(request.label))
+			cx:toast("info", if request.kind == "space" then "Space closed" else "Session closed", notificationLabel(request.label))
 		end
 		redraw(cx)
 		return
 	end
-	local project = projectById(request.project)
-	if not project then confirmation = nil; report(cx, "Project is no longer registered."); redraw(cx); return end
+	local project = repoById(request.project)
+	if not project then confirmation = nil; report(cx, "Repository is no longer known. Refresh Spaces."); redraw(cx); return end
 	request.checking = true
 	redraw(cx)
 	wt.validate_removal(project, request.worktree, function(worktree, err, nextCx)
@@ -840,37 +1076,41 @@ local function confirmWorktreeAction(cx, id)
 	end)
 end
 
--- Forms take the Projects panel's place, like a page within it, and follow you
--- the same way; finishing or going back puts the panel back.
-local function openForm(cx, mode, project, worktree)
+-- Forms take the Spaces panel's place, like a page within it, and follow you
+-- the same way; finishing or going back puts the panel back. Rename space
+-- passes `space` (see spaceInfo) instead of a repository.
+local function openForm(cx, mode, project, worktree, space)
 	if not requireLocal(cx) then return end
 	if worktree and removing(worktree.path) then report(cx, "This worktree is being deleted."); return end
 	local current, kind = slot(cx)
 	if kind == "form" then
 		cx.layout:focus(current)
-		cx:toast("info", "Form already open", "Finish it or go back to Projects.")
+		cx:toast("info", "Form already open", "Finish it or go back to Spaces.")
 		return
 	end
 	if not current then
 		-- Opening the panel and swapping it in one callback risks Tern's 50 ms budget.
 		if not navigator(cx) then return end
 		tern.timer(0, function(nextCx)
-			if nextCx and slot(nextCx) then openForm(nextCx, mode, project, worktree) end
+			if nextCx and slot(nextCx) then openForm(nextCx, mode, project, worktree, space) end
 		end)
 		return
 	end
 	local names = worktree and records("worktree-names")[project.id]
 	local id = token()
-	local pane = swapSlot(cx, current, function()
-		return cx:new_block("overseer.form", {
+	local args = if space then { id, mode, space.folder, if space.named then space.name else "" }
+		else {
 			id, mode,
 			if worktree then worktree.branch or "Detached HEAD" else project and project.name or "",
 			if worktree then names and names[worktree.path] or "" else project and project.base or "",
-		}, "beside")
+		}
+	local pane = swapSlot(cx, current, function()
+		return cx:new_block("overseer.form", args, "beside")
 	end)
 	if not pane then report(cx, "Reload the Overseer plugin.", "Form unavailable"); return end
 	tern.kv.set("pending-form:" .. tostring(pane), {
 		token = id, mode = mode, project = project and project.id, path = worktree and worktree.path,
+		space = space and space.id,
 	})
 	watchForms()
 end
@@ -895,8 +1135,9 @@ local function finishForm(cx, pane)
 	if not cx.session:pane(pane) then return end
 	local data = model(cx)
 	local navigatorPane = swapSlot(cx, pane, function()
+		local main, dock = view.render(data)
 		return cx.canvas:open({
-			title = NAVIGATOR.title, about = NAVIGATOR.about, view = view.render(data), how = "beside",
+			title = NAVIGATOR.title, about = NAVIGATOR.about, view = main, dock = dock, how = "beside",
 		})
 	end)
 	if navigatorPane then
@@ -910,11 +1151,11 @@ end
 -- argument, so no path is ever spliced into the script text.
 local CHOOSE_FOLDER = {
 	"on run argv",
-	'POSIX path of (choose folder with prompt "Choose a Git repository to add to Projects" default location (POSIX file (item 1 of argv)))',
+	'POSIX path of (choose folder with prompt "Choose a folder for the new space" default location (POSIX file (item 1 of argv)))',
 	"end run",
 }
 
--- Where the picker starts: beside the last project added, else ~/code, else ~.
+-- Where the picker starts: beside the last space's folder, else ~/code, else ~.
 local function pickerStart()
 	local last = tern.kv.get("picker-start")
 	if type(last) == "string" and tern.fs.exists(last) then return last end
@@ -924,44 +1165,9 @@ local function pickerStart()
 end
 
 local picking = false
--- Defined below; addPicked reopens the picker after a non-repository choice.
-local pickProject
 
-local function addPicked(cx, path)
-	wt.inspect(path, function(project, err, nextCx, notRepo)
-		if not nextCx then return end
-		if not project then
-			if notRepo then
-				-- Let them choose again, starting where they were.
-				report(nextCx, err, "Not a Git repository")
-				tern.kv.set("picker-start", path)
-				pickProject(nextCx)
-			else
-				report(nextCx, err, "Project not added")
-			end
-			return
-		end
-		for _, existing in projects() do
-			if existing.id == project.id then
-				nextCx:toast("info", "Already in Projects", notificationLabel(existing.name))
-				return
-			end
-		end
-		if project.base == "" then
-			report(nextCx, "Check out a branch, then add it again.", "No base branch found")
-			return
-		end
-		local all = projects()
-		table.insert(all, project)
-		tern.kv.set("projects", all)
-		tern.kv.set("picker-start", string.match(project.path, "^(.*)/[^/]+$") or project.path)
-		nextCx:toast("info", "Project added", notificationLabel(project.name))
-		navigator(nextCx)
-	end)
-end
-
--- Opens macOS's folder picker; choosing a Git repository adds it right away.
-function pickProject(cx)
+-- Opens macOS's folder picker; the chosen folder opens as a new space.
+local function pickSpace(cx)
 	if not requireLocal(cx) then return end
 	if picking then
 		cx:toast("info", "Folder picker already open", "Choose a folder or cancel it.")
@@ -987,12 +1193,15 @@ function pickProject(cx)
 		end
 		local path = (result.stdout or ""):match("^%s*(.-)%s*$")
 		if #path > 1 then path = path:gsub("/+$", "") end
-		addPicked(nextCx, path)
+		tern.kv.set("picker-start", string.match(path, "^(.*)/[^/]+$") or path)
+		createSpace(nextCx, path)
+		follow(nextCx)
+		redraw(nextCx)
 	end)
 end
 
--- Display names are single-line labels for the Projects panel; blank means
--- "use the branch name".
+-- Display names are single-line labels for the Spaces panel; blank means
+-- "use the default".
 local function normalizeName(raw)
 	if raw == nil then return nil end
 	if type(raw) ~= "string" or raw:find("[%c]") then
@@ -1027,8 +1236,9 @@ local function launchCreation(cx, project, job)
 end
 
 local function createWorktree(cx, pane, request, response)
-	local project = projectById(request.project)
-	if not project then rejectForm(cx, pane, "Project is no longer registered."); return end
+	local project = repoById(request.project)
+	if not project then rejectForm(cx, pane, "Repository is no longer known. Refresh Spaces."); return end
+	if project.base == "" then rejectForm(cx, pane, "No base branch found. Check out a branch, then try again."); return end
 	local displayName, nameError = normalizeName(response.name)
 	if nameError then rejectForm(cx, pane, nameError); return end
 	wt.validate(project, response.branch, function(ok, err, nextCx)
@@ -1046,7 +1256,7 @@ end
 local function renameWorktree(cx, pane, request, response)
 	local project, worktree = findWorktree(request.path)
 	if not project or project.id ~= request.project or not tern.fs.exists(request.path) then
-		rejectForm(cx, pane, "Worktree is no longer available. Refresh Projects."); return
+		rejectForm(cx, pane, "Worktree is no longer available. Refresh Spaces."); return
 	end
 	if removing(request.path) then rejectForm(cx, pane, "This worktree is being deleted."); return end
 	local name, nameError = normalizeName(response.name)
@@ -1061,10 +1271,33 @@ local function renameWorktree(cx, pane, request, response)
 	redraw(cx)
 end
 
--- New worktrees branch from the project's base; only an existing local branch is accepted.
+-- A space's name is its Tern session's name, shown once it differs from the
+-- name Overseer first saw (see namedByYou). Clearing it names the space after
+-- its folder again: the session keeps its name (Tern refuses a blank one),
+-- remembered as one you didn't choose.
+local function renameSpace(cx, pane, request, response)
+	local session = sessionsById(cx)[tostring(request.space)]
+	if not session then rejectForm(cx, pane, "This space has closed."); return end
+	local name, nameError = normalizeName(response.name)
+	if nameError then rejectForm(cx, pane, nameError); return end
+	local autoNames, key = records("auto-names"), tostring(session.id)
+	if name then
+		local ok, why = cx.layout:rename_session(session.id, name)
+		if not ok then rejectForm(cx, pane, why or "Could not rename the space."); return end
+		if autoNames[key] == nil then autoNames[key] = session.name end
+	else
+		autoNames[key] = session.name
+	end
+	tern.kv.set("auto-names", autoNames)
+	finishForm(cx, pane)
+	cx:toast("info", if name then "Space renamed" else "Space named after its folder", notificationLabel(name or session.name))
+	redraw(cx)
+end
+
+-- New worktrees branch from the repository's base; only an existing local branch is accepted.
 local function changeBase(cx, pane, request, response)
-	local project = projectById(request.project)
-	if not project then rejectForm(cx, pane, "Project is no longer registered."); return end
+	local project = repoById(request.project)
+	if not project then rejectForm(cx, pane, "Repository is no longer known. Refresh Spaces."); return end
 	local base = type(response.base) == "string" and response.base:match("^%s*(.-)%s*$") or ""
 	if base == "" or base:find("[%c%s]") or base:sub(1, 1) == "-" then
 		rejectForm(cx, pane, "Enter a local branch name, such as main."); return
@@ -1077,11 +1310,9 @@ local function changeBase(cx, pane, request, response)
 				rejectForm(nextCx, pane, "No local branch named " .. base .. " in " .. project.name .. ".")
 				return
 			end
-			local all = projects()
-			for _, existing in all do
-				if existing.id == project.id then existing.base = base end
-			end
-			tern.kv.set("projects", all)
+			local bases = records("repo-base")
+			bases[project.id] = base
+			tern.kv.set("repo-base", bases)
 			finishForm(nextCx, pane)
 			nextCx:toast("info", "Base branch changed", notificationLabel(project.name .. " → " .. base))
 			redraw(nextCx)
@@ -1091,7 +1322,7 @@ end
 -- The worktree's path is only known once Worktrunk has created it, so the
 -- display name chosen at creation is attached afterwards, by branch.
 local function applyCreatedName(job)
-	local project = projectById(job.project)
+	local project = repoById(job.project)
 	if not job.displayName or not project then return end
 	wt.list(project, function(trees, _err, cx)
 		if not trees or not cx then return end
@@ -1132,6 +1363,8 @@ local function forms(cx)
 						renameWorktree(cx, pane.pane, request, response)
 					elseif request.mode == "base" and response.mode == "base" then
 						changeBase(cx, pane.pane, request, response)
+					elseif request.mode == "space" and response.mode == "space" then
+						renameSpace(cx, pane.pane, request, response)
 					else
 						rejectForm(cx, pane.pane, "Invalid form response. Please try again.")
 					end
@@ -1213,11 +1446,6 @@ local function checkJobs(cx)
 						names[job.project][job.path] = nil
 						tern.kv.set("worktree-names", names)
 					end
-					local icebox = records("icebox")
-					if icebox[job.project] then
-						icebox[job.project][job.path] = nil
-						tern.kv.set("icebox", icebox)
-					end
 					local closed, closeError = true, nil
 					if job.session then closed, closeError = closeManagedSession(cx, job.path, job.session) end
 					if closed then
@@ -1247,84 +1475,67 @@ local function checkJobs(cx)
 	end
 end
 
-tern.command({ id = "projects", title = "Show or hide Projects", icon = "branch", keys = { "cmd+alt+shift+p" }, run = togglePanel })
-tern.command({ id = "add", title = "Add project", icon = "folder", run = function(cx) pickProject(cx) end })
+-- The repository of the space shown now, if it's in one.
+local function currentRepo(cx)
+	local space = spaceInfo(cx, cx.sessions:current().id)
+	return space and repoById(space.repo)
+end
+
+tern.command({ id = "projects", title = "Show or hide Spaces", icon = "branch", keys = { "cmd+alt+shift+p" }, run = togglePanel })
+tern.command({ id = "add", title = "New space", icon = "folder", run = function(cx) pickSpace(cx) end })
 tern.command({ id = "create", title = "Create worktree", icon = "branch", run = function(cx)
-	local project = activeWorktree(cx)
-	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Choose a project", "Click + beside a project's name.") end
+	local project = currentRepo(cx) or activeWorktree(cx)
+	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
 
--- Takes a project off the list. Its repository, worktrees and open sessions are
--- untouched; Overseer forgets its names, Ice Box entries and session bindings.
-local function removeProject(cx, id)
-	local project = projectById(id)
-	if not project then report(cx, "Project not found. Refresh Projects."); return end
-	for _, job in records("jobs") do
-		if job.project == id then
-			report(cx, "A worktree operation is still running in " .. project.name .. ".", "Project not removed")
-			return
-		end
+-- Shows an agent: its space, then its pane.
+local function showAgent(cx, pane)
+	local tab = pane and cx.session:tab_of(pane)
+	if not tab then report(cx, "That agent has closed."); return end
+	for _, info in cx.session:tabs() do
+		if info.id == tab and info.session ~= cx.sessions:current().id then cx.sessions:switch(info.session) end
 	end
-	local kept = {}
-	for _, other in projects() do
-		if other.id ~= id then table.insert(kept, other) end
-	end
-	tern.kv.set("projects", kept)
-	for _, key in { "worktree-names", "icebox" } do
-		local byProject = records(key)
-		if byProject[id] ~= nil then
-			byProject[id] = nil
-			tern.kv.set(key, byProject)
-		end
-	end
-	local bindings, unbound = records("sessions"), false
-	for path, binding in bindings do
-		if binding.project == id then bindings[path], unbound = nil, true end
-	end
-	if unbound then tern.kv.set("sessions", bindings) end
-	cache[id], collapsed[id] = nil, nil
-	cx:toast("info", "Project removed", notificationLabel(project.name))
-	redraw(cx)
+	cx.layout:focus(pane)
+end
+
+local function spaceRepo(cx, node)
+	local space = spaceInfo(cx, view.spaceId(node))
+	local repo = space and repoById(space.repo)
+	if not repo then report(cx, "This space isn't in a Git repository. Refresh Spaces.") end
+	return repo
 end
 
 tern.on("canvas_action", function(ev, cx)
-	if ev.act == "help" then
-		cx.docs:open(tern.plugin.dir .. "/README.md", { how = "tab" })
-		return true
-	end
 	if not requireLocal(cx) then return true end
-	if ev.act == "add" then pickProject(cx)
+	if ev.act == "add" then pickSpace(cx)
 	elseif ev.act == "refresh" then
 		refreshByHand(cx)
 	elseif ev.act == "collapse" then collapsed[ev.value] = not collapsed[ev.value]; redraw(cx)
 	elseif ev.act == "create" then
-		local project = projectById(ev.value)
+		local project = repoById(ev.value)
 		if project then openForm(cx, "create", project) end
 	elseif ev.act == "open" then openWorktree(cx, ev.value)
-	elseif ev.act == "Add to Ice Box" or ev.act == "Remove from Ice Box" then
-		-- Menu entries show their action verbatim, so these read as titled.
-		local project, worktree = findWorktree(view.worktreePath(ev.node))
-		if not project then report(cx, "Worktree not found. Refresh Projects."); return true end
-		local icebox = records("icebox")
-		icebox[project.id] = icebox[project.id] or {}
-		icebox[project.id][worktree.path] = if ev.act == "Add to Ice Box" then true else nil
-		tern.kv.set("icebox", icebox)
-		redraw(cx)
-	elseif ev.act == "toggle-icebox" then
-		tern.kv.set("show-icebox", tern.kv.get("show-icebox") == false)
-		redraw(cx)
+	elseif ev.act == "space" then
+		local id = tonumber(ev.value)
+		if id then cx.sessions:switch(id); follow(cx) end
+	elseif ev.act == "agent" then showAgent(cx, tonumber(ev.value))
+	elseif ev.act == "Rename space" then
+		local space = spaceInfo(cx, view.spaceId(ev.node))
+		if space then openForm(cx, "space", nil, nil, space)
+		else report(cx, "Space not found. Refresh Spaces.") end
+	elseif ev.act == "Close space" then requestSpaceClose(cx, view.spaceId(ev.node))
+	elseif ev.act == "New worktree" then
+		local repo = spaceRepo(cx, ev.node)
+		if repo then openForm(cx, "create", repo) end
 	elseif ev.act == "Change base branch" then
-		local project = projectById(view.projectId(ev.node))
-		if project then openForm(cx, "base", project)
-		else report(cx, "Project not found. Refresh Projects.") end
-	elseif ev.act == "Remove project" then
-		removeProject(cx, view.projectId(ev.node))
+		local repo = spaceRepo(cx, ev.node)
+		if repo then openForm(cx, "base", repo) end
 	elseif ev.act == "Visualize PR" then
 		visualizePr(cx, view.worktreePath(ev.node))
 	elseif ev.act == "Rename" then
 		local project, worktree = findWorktree(view.worktreePath(ev.node))
 		if project then openForm(cx, "rename", project, worktree)
-		else report(cx, "Worktree not found. Refresh Projects.") end
+		else report(cx, "Worktree not found. Refresh Spaces.") end
 	elseif ev.act == "Close session" then
 		requestWorktreeAction(cx, "close", view.worktreePath(ev.node))
 	elseif ev.act == "Delete worktree" then
@@ -1332,9 +1543,6 @@ tern.on("canvas_action", function(ev, cx)
 	elseif ev.act == "confirm" then confirmWorktreeAction(cx, ev.value)
 	elseif ev.act == "cancel" then
 		if confirmation and confirmation.id == ev.value then confirmation = nil; redraw(cx) end
-	elseif ev.act == "tab" then
-		local pane = tonumber(ev.value)
-		if pane and cx.session:pane(pane) then cx.layout:focus(pane) end
 	else return false end
 	return true
 end)
@@ -1348,7 +1556,7 @@ tern.override("new_tab", function(cx)
 end)
 
 tern.chrome.status(function()
-	return { { text = "Projects", icon = "branch", command = "plugin.overseer.projects" } }
+	return { { text = "Spaces", icon = "branch", command = "plugin.overseer.projects" } }
 end)
 
 -- Runs fn in a timer callback of its own, reporting (not raising) errors.
@@ -1365,6 +1573,16 @@ local function separately(fn)
 	end)
 end
 
+-- Remembers the name of each session seen for the first time (see namedByYou).
+local function recordSessions(cx)
+	local autoNames, changed = records("auto-names"), false
+	for _, info in cx.session:sessions() do
+		local key = tostring(info.id)
+		if autoNames[key] == nil then autoNames[key], changed = info.name, true end
+	end
+	if changed then tern.kv.set("auto-names", autoNames) end
+end
+
 -- Only schedules: each step runs in a callback of its own, so a slow step can't
 -- push the whole tick past its budget.
 local function tick(cx)
@@ -1378,6 +1596,7 @@ local function tick(cx)
 			lastRefresh = tern.now()
 			separately(refresh)
 		end
+		separately(recordSessions)
 		separately(seedAgents)
 		separately(follow)
 		redraw(cx)
@@ -1390,8 +1609,15 @@ local function tick(cx)
 end
 
 tern.on("window_start", function(cx)
+	recordSessions(cx)
 	refresh(cx)
 	follow(cx)
+end)
+-- A space is named after its first terminal's folder, so follow cd.
+tern.on("cwd", function(_ev, cx) redraw(cx) end)
+tern.on("session_ended", function(ev, cx)
+	forgetSession(ev.session)
+	redraw(cx)
 end)
 tern.on("agent_state", function(ev, cx)
 	agentStates[ev.pane] = AGENT_STATES[ev.new]
@@ -1419,7 +1645,7 @@ local function followSoon(_cx, tab)
 		followQueued = false
 		if not cx then return end
 		local ok, err = pcall(follow, cx, followTab)
-		if not ok then tern.log.warn("Projects panel: " .. tostring(err)) end
+		if not ok then tern.log.warn("Spaces panel: " .. tostring(err)) end
 		redraw(cx)
 	end)
 end
