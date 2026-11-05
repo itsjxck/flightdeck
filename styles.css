@@ -102,8 +102,8 @@
 [data-role='overseer.agentWaiting'] {
   color: var(--accent);
 }
-/* Every Spaces control (header +/↻, a space's +/chevron): a 24px square
-   button holding one 16px icon (icons.css), 4px apart. */
+/* Every Spaces control (header +/↻, a space's +/chevron): a 20px square
+   button holding one 12px icon (icons.css), 4px apart. */
 [data-role='overseer.buttons'] {
   align-items: center;
   gap: 4px;
@@ -113,12 +113,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
@@ -128,10 +128,10 @@
 [data-role='overseer.iconSyncSpin'],
 [data-role='overseer.iconExpanded'],
 [data-role='overseer.iconCollapsed'] {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  background-size: 16px 16px;
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  background-size: 12px 12px;
   background-repeat: no-repeat;
   background-position: center;
   transform-origin: 50% 50%;
