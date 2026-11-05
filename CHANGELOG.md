@@ -8,6 +8,10 @@ The Projects panel is now a Spaces sidebar, laid out like herdr's: every Tern se
 
 - **Spaces replace projects.** Each Tern session in the window is a row, named after the folder of the first terminal in its first tab (following `cd`) until you rename it. Spaces don't need to be Git repositories; there's no list of projects to add or remove.
 - **Worktrees nest under their repository's space.** A space open in a Git repository lists the repository's other worktrees beneath it: the space in the primary checkout if there is one, else the first. Spaces open in those worktrees appear as their rows instead of on their own. Rows are one line: status dot, name, uncommitted mark and PR.
+- **Worktree sessions are named `repo / branch`** in Tern's session list, including spaces you opened in a worktree yourself, unless you've renamed them.
+- **A session whose last tab closes is closed too**, instead of lingering empty (the sidebar, parked in it, kept it open). Locked sessions and the window's last session stay.
+- **Confirmations pop up over the tab** (Delete worktree, Close session, Close space) instead of appearing at the top of the panel. Cancel, Esc or a click outside keeps things as they are.
+- **↻ is a square icon** (Octicons sync), so it turns about its centre while refreshing.
 - **Agents section.** Every agent block and agent CLI (`omp`, `claude`, `codex`, …) across the window's spaces, with its state (working, waiting, idle) and program. Click one to go to its space and pane. It sits in the canvas's dock, so it stays at the bottom while spaces scroll.
 - **Space menu:** Rename space (renames the Tern session; blank names it after its folder again), New worktree, Change base branch and Close space. **+** in the header opens a new space in any folder.
 - **Status dots:** grey for an open, quiet session (was green), hollow for a worktree without one, pulsing green while an agent works, haloed blue while one waits for you.

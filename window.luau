@@ -239,7 +239,7 @@ local function model(cx)
 	for _, pane in panes do panesById[pane.pane] = pane end
 	local agents, activity = agentPanes(tabsById, panes)
 	local current = cx.sessions:current()
-	local pending = {}
+	local pending, renames = {}, {}
 
 	-- Every session is a space, named by you or else after its folder.
 	local spaces, byId = {}, {}
@@ -250,7 +250,7 @@ local function model(cx)
 		local entry = if repo then cache[repo] else nil
 		local named = namedByYou(info, autoNames)
 		local space = {
-			id = info.id, index = index, dir = dir, repo = repo or nil, named = named,
+			id = info.id, index = index, dir = dir, repo = repo or nil, named = named, sessionName = info.name,
 			name = if named or not dir then info.name else basename(dir),
 			tree = if entry and dir then worktreeAt(entry.worktrees, dir) else nil,
 			agent = activity[tostring(info.id)], active = info.id == current.id,
@@ -272,6 +272,7 @@ local function model(cx)
 	local nested = {}
 	for repoId, anchor in anchors do
 		local entry = cache[repoId]
+		local repo = repoById(repoId)
 		local rows = {}
 		for _, worktree in (entry and entry.worktrees or {}) do
 			if not (anchor.tree and anchor.tree.path == worktree.path) then
@@ -287,7 +288,13 @@ local function model(cx)
 					end
 				end
 				if space == anchor then space = nil end
-				if space then nested[space.id] = true end
+				if space then
+					nested[space.id] = true
+					-- Worktree sessions read "repo / branch" in Tern's session list,
+					-- unless you named them.
+					local wanted = repo and worktree.branch and repo.name .. " / " .. worktree.branch
+					if wanted and not space.named and space.sessionName ~= wanted then renames[space.id] = wanted end
+				end
 				local sessionId = (space and space.id) or (session and session.id)
 				local item = table.clone(worktree)
 				item.deleting = removing(worktree.path, jobs)
@@ -300,12 +307,11 @@ local function model(cx)
 				table.insert(rows, item)
 			end
 		end
-		local repo = repoById(repoId)
 		anchor.worktrees, anchor.base = rows, repo and repo.base
 		anchor.error, anchor.collapsed = entry and entry.error, collapsed[repoId] == true
 	end
 
-	local result = { spaces = {}, agents = {}, confirmation = confirmation, refreshing = spinning }
+	local result = { spaces = {}, agents = {}, refreshing = spinning }
 	for _, space in spaces do
 		if not nested[space.id] then
 			local branch = space.tree and (space.tree.branch or "detached")
@@ -338,7 +344,7 @@ local function model(cx)
 			active = agent.tab.id == shown,
 		})
 	end
-	return result, pending
+	return result, pending, renames
 end
 
 local NAVIGATOR = {
@@ -379,6 +385,29 @@ end
 -- Defined after refresh: looks up the repositories of newly seen folders.
 local inspectDirs
 
+-- Renames worktree sessions to "repo / branch" (see model), in a callback of
+-- its own. The new name is remembered as one you didn't choose. A session Tern
+-- won't rename isn't tried again until the plugin reloads.
+local renameRefused = {}
+local function nameWorktreeSessions(renames)
+	tern.timer(0, function(cx)
+		if not cx then return end
+		local autoNames = records("auto-names")
+		for id, name in renames do
+			if not renameRefused[id] then
+				local ok, why = cx.layout:rename_session(id, name)
+				if ok then
+					autoNames[tostring(id)] = name
+				else
+					renameRefused[id] = true
+					tern.log.warn("Overseer: couldn't rename session " .. tostring(id) .. ": " .. tostring(why))
+				end
+			end
+		end
+		tern.kv.set("auto-names", autoNames)
+	end)
+end
+
 local function draw(cx)
 	local pane, kind = slot(cx)
 	if not pane or kind ~= "canvas" then return end
@@ -388,8 +417,9 @@ local function draw(cx)
 		if canvas.pane == pane then ready = true end
 	end
 	if not ready then return end
-	local data, pending = model(cx)
+	local data, pending, renames = model(cx)
 	if next(pending) then inspectDirs(pending) end
+	if next(renames) then nameWorktreeSessions(renames) end
 	local signature = tern.json.encode(data)
 	if rendered[pane] == signature then return end
 	local main, dock = view.render(data)
@@ -759,9 +789,10 @@ local function findWorktree(path)
 	return nil, nil
 end
 
--- Opens a space in `dir`, named after it until you rename it.
-local function createSpace(cx, dir)
-	local name = basename(dir)
+-- Opens a space in `dir`. Its session is called `name` (default the folder's
+-- name), remembered as a name you didn't choose.
+local function createSpace(cx, dir, name)
+	name = name or basename(dir)
 	local session = cx.sessions:create({ name = name, cwd = dir })
 	local autoNames = records("auto-names")
 	autoNames[tostring(session.id)] = name
@@ -796,12 +827,12 @@ end
 
 -- Shows the worktree's session, opening and binding one when it has none.
 -- The panel follows into it (see follow).
-local function ensureSession(cx, project, path)
+local function ensureSession(cx, project, path, branch)
 	local session = worktreeSession(cx, path)
 	if session then
 		cx.sessions:switch(session.id)
 	else
-		session = createSpace(cx, path)
+		session = createSpace(cx, path, if branch then project.name .. " / " .. branch else nil)
 		local bindings = records("sessions")
 		bindings[path] = { id = session.id, host = session.host, project = project.id }
 		tern.kv.set("sessions", bindings)
@@ -815,7 +846,7 @@ local function openWorktree(cx, path)
 	local project, worktree = findWorktree(path)
 	if not project then report(cx, "Worktree not found. Refresh Spaces."); return end
 	if not tern.fs.exists(path) then report(cx, "Worktree directory is missing: " .. path, "Worktree unavailable"); refresh(cx); return end
-	ensureSession(cx, project, path)
+	ensureSession(cx, project, path, worktree.branch)
 	redraw(cx)
 end
 
@@ -882,6 +913,36 @@ local function closeManagedSession(cx, path, expected)
 	return true
 end
 
+-- Confirmations open in a canvas of their own over the tab (`how = "glimpse"`),
+-- which closes at the next click outside it: that counts as Cancel (see
+-- pane_closed). Asking again replaces an open one.
+local function endConfirmation(cx)
+	local request = confirmation
+	confirmation = nil
+	if request and request.pane and cx.session:pane(request.pane) then cx.layout:close(request.pane) end
+end
+
+local function showConfirmation(cx, request)
+	endConfirmation(cx)
+	local words = view.CONFIRMATIONS[request.kind]
+	local pane, err = cx.canvas:open({
+		title = words.title,
+		about = "Overseer asks before it runs " .. words.confirm .. " on " .. request.label .. ". Cancel or a click outside keeps it.",
+		view = view.confirmation(request), how = "glimpse",
+	})
+	if not pane then report(cx, err or "Could not open the confirmation."); return end
+	request.pane = pane
+	confirmation = request
+end
+
+-- Redraws the open confirmation after its request changed (checking).
+local function updateConfirmation(cx)
+	local request = confirmation
+	if not request or not request.pane then return end
+	local ok, err = pcall(function() cx.canvas:set(request.pane, { view = view.confirmation(request) }) end)
+	if not ok then tern.log.warn("Overseer: confirmation not updated: " .. tostring(err)) end
+end
+
 local function requestWorktreeAction(cx, kind, path)
 	local project, worktree = findWorktree(path)
 	if not project then report(cx, "Worktree not found. Refresh Spaces."); return end
@@ -892,11 +953,10 @@ local function requestWorktreeAction(cx, kind, path)
 	if kind == "delete" and (worktree.is_main or path == project.path) then
 		report(cx, "The primary checkout cannot be deleted."); return
 	end
-	confirmation = {
+	showConfirmation(cx, {
 		id = token(), kind = kind, path = path, label = worktree.branch or "Detached HEAD",
 		project = project.id, worktree = table.clone(worktree),
-	}
-	redraw(cx)
+	})
 end
 
 -- A space as its menu actions need it: {id, name, named, folder, dir, repo}.
@@ -958,8 +1018,7 @@ local function requestSpaceClose(cx, id)
 	if not session then report(cx, "Space not found. Refresh Spaces."); return end
 	local err = sessionGuard(cx, session)
 	if err then report(cx, err); return end
-	confirmation = { id = token(), kind = "space", space = id, label = space.name, path = space.dir }
-	redraw(cx)
+	showConfirmation(cx, { id = token(), kind = "space", space = id, label = space.name, path = space.dir })
 end
 
 -- Open PR outline canvases by "<project id>#<number>": asking again focuses the open one.
@@ -1017,7 +1076,7 @@ local function confirmWorktreeAction(cx, id)
 	local request = confirmation
 	if not request or request.id ~= id or request.checking then return end
 	if request.kind == "close" or request.kind == "space" then
-		confirmation = nil
+		endConfirmation(cx)
 		local ok, err
 		if request.kind == "space" then ok, err = closeSpace(cx, request.space)
 		else ok, err = closeManagedSession(cx, request.path) end
@@ -1028,14 +1087,14 @@ local function confirmWorktreeAction(cx, id)
 		return
 	end
 	local project = repoById(request.project)
-	if not project then confirmation = nil; report(cx, "Repository is no longer known. Refresh Spaces."); redraw(cx); return end
+	if not project then endConfirmation(cx); report(cx, "Repository is no longer known. Refresh Spaces."); return end
 	request.checking = true
-	redraw(cx)
+	updateConfirmation(cx)
 	wt.validate_removal(project, request.worktree, function(worktree, err, nextCx)
 		-- Cancelling or reloading while validation runs never starts a deletion.
 		if not nextCx or confirmation ~= request then return end
 		local function failed(freshCx, text)
-			confirmation = nil
+			endConfirmation(freshCx)
 			report(freshCx, text, "Worktree deletion failed")
 			refresh(freshCx)
 		end
@@ -1070,7 +1129,7 @@ local function confirmWorktreeAction(cx, id)
 			session = target,
 		}
 		tern.kv.set("jobs", jobs)
-		confirmation = nil
+		endConfirmation(nextCx)
 		nextCx:toast("info", "Deleting worktree", notificationLabel(request.label))
 		redraw(nextCx)
 	end)
@@ -1542,7 +1601,7 @@ tern.on("canvas_action", function(ev, cx)
 		requestWorktreeAction(cx, "delete", view.worktreePath(ev.node))
 	elseif ev.act == "confirm" then confirmWorktreeAction(cx, ev.value)
 	elseif ev.act == "cancel" then
-		if confirmation and confirmation.id == ev.value then confirmation = nil; redraw(cx) end
+		if confirmation and confirmation.id == ev.value then endConfirmation(cx) end
 	else return false end
 	return true
 end)
@@ -1583,6 +1642,22 @@ local function recordSessions(cx)
 	if changed then tern.kv.set("auto-names", autoNames) end
 end
 
+-- A session left with no tabs is closed: its last tab closed, and the
+-- sidebar, parked in its deck by follow, would otherwise keep it open, empty.
+-- Locked sessions and the window's last session stay.
+local function closeEmptySessions(cx)
+	local infos = cx.session:sessions()
+	local left = #infos
+	local managed = sessionsById(cx)
+	for _, info in infos do
+		local session = managed[tostring(info.id)]
+		if left > 1 and #info.tabs == 0 and session and not session.locked then
+			cx.sessions:close(info.id)
+			left -= 1
+		end
+	end
+end
+
 -- Only schedules: each step runs in a callback of its own, so a slow step can't
 -- push the whole tick past its budget.
 local function tick(cx)
@@ -1599,6 +1674,7 @@ local function tick(cx)
 		separately(recordSessions)
 		separately(seedAgents)
 		separately(follow)
+		separately(closeEmptySessions)
 		redraw(cx)
 	end)
 	if not ok then
@@ -1647,6 +1723,7 @@ local function followSoon(_cx, tab)
 		local ok, err = pcall(follow, cx, followTab)
 		if not ok then tern.log.warn("Spaces panel: " .. tostring(err)) end
 		redraw(cx)
+		separately(closeEmptySessions)
 	end)
 end
 tern.on("focus", function(ev, cx) followSoon(cx, ev.tab) end)
@@ -1654,7 +1731,8 @@ for _, name in { "tab_created", "tab_closed", "pane_created" } do
 	tern.on(name, function(_ev, cx) followSoon(cx) end)
 end
 -- A form pane closed without Back or Submit (⌘W, its tab closed) would leave
--- its request, and any answer it had sent, in kv for good.
+-- its request, and any answer it had sent, in kv for good. A confirmation
+-- closed by a click outside it is cancelled.
 tern.on("pane_closed", function(ev, cx)
 	local key = "pending-form:" .. tostring(ev.pane)
 	local request = tern.kv.get(key)
@@ -1663,6 +1741,7 @@ tern.on("pane_closed", function(ev, cx)
 		tern.kv.set(key, nil)
 		if request.token then tern.kv.set("form:" .. request.token, nil) end
 	end
+	if confirmation and confirmation.pane == ev.pane then confirmation = nil end
 	agentStates[ev.pane] = nil
 	followSoon(cx)
 end)

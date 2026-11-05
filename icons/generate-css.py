@@ -21,6 +21,8 @@ ICONS = [
     ("[data-role='overseer.prOpen']", "git-pull-request-16.svg", "#1a7f37", "#3fb950"),
     ("[data-role='overseer.prMerged']", "git-merge-16.svg", "#8250df", "#ab7df8"),
     ("[data-role='overseer.prClosed']", "git-pull-request-closed-16.svg", "#d1242f", "#f85149"),
+    # ↻ in the Spaces header: a square glyph, so it turns about its centre.
+    ("[data-role='overseer.refreshIcon'],\n[data-role='overseer.refreshIconSpin']", "sync-16.svg", "#59636e", "#9198a1"),
 ]
 
 

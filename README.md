@@ -68,6 +68,9 @@ Linking reloads the plugin whenever the source changes. Use `tern plugin install
 5. **Everything else is a right-click away:**
    - On a space: **Rename space** (renames its Tern session; leave it blank to name it after its folder again), **New worktree**, **Change base branch** and **Close space**.
    - On a worktree: **Visualize PR** for a reviewer's outline of the branch's pull request, **Rename** (the row's label; the branch stays as it is), **Close session** (stops its programs and closes its tabs; the files stay) and **Delete worktree** (runs `wt remove`; it refuses if there are uncommitted changes and always keeps the branch).
+   - Closing and deleting ask first in a popup over the tab; Cancel, Esc or a click outside it keeps things as they are.
+
+A worktree's session is named `repo / branch` in Tern's session list unless you rename it. Closing a space's last tab closes the space.
 
 ### Visualize a PR
 
@@ -137,7 +140,7 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `window.luau` | Spaces and repositories (`spaceDir`, `namedByYou`, `inspectDirs`, `repos`), model building (`model`), drawing (`draw`/`redraw`), the following sidebar (`slot`, `pin`, `follow`, `togglePanel`), session binding (`worktreeSession`, `ensureSession`, `createSpace`), forms swapped into the sidebar's slot, background jobs (`launchCreation`, `checkJobs`), Visualize PR canvases, hooks and the 750 ms `tick`. |
 | `worktrunk.luau` | Every external command: repository discovery (`inspect`), `wt list`, validation, the creation and removal command lines, `git` status, `gh pr list`/`gh pr view`/`gh pr diff`. Commands are argv arrays; `find_executable` checks Homebrew, `/usr/local/bin`, `~/.bun/bin` and `~/.local/bin`. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |
-| `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, confirmations, menus) and its dock (agents). |
+| `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, menus) and its dock (agents), and the confirmation popup's view. |
 | `worktree-operation.sh` | The helper that runs `wt switch --create` / `wt remove` in a visible terminal and writes an atomic completion receipt. |
 | `host.luau`, `input.luau` | The native form block and its text input. |
 | `styles.css`, `icons.css` | Sidebar styles. `icons.css` is **generated** by `icons/generate-css.py` (plugin stylesheets can't load files, so icons are embedded as data URIs). |
@@ -172,9 +175,13 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 
 **The following sidebar.** Tern panes belong to one tab, and plugins can't add a window-level sidebar, so the window keeps exactly one Spaces slot and moves it into whichever tab is shown, left of everything and full height. `slot` finds it: the navigator canvas (titled Spaces, or Projects before 3.0) or a form shown in its place, adopting what a reload left open and closing any extra. `pin` moves it with `move_to_tab` (or `unpark`) then `move(…, "left")` and steers the split ratio to the remembered share, since Tern resizes in cells and hidden tabs measure differently. `follow` runs on `focus`, `tab_created`, `tab_closed`, `pane_created`, `pane_closed` (each through `followSoon`, one coalesced timer callback), `window_start` and every `tick`, so one paused hook can't strand the sidebar. Moves work across sessions. Edge cases:
 
-- **Last terminal in a tab closed:** the sidebar would be left alone, so `follow` parks it; the tab closes as Tern would have, and the next shown tab (or new tab) takes the sidebar back.
+- **Last terminal in a tab closed:** the sidebar would be left alone, so `follow` parks it; the tab closes as Tern would have, and the next shown tab (or new tab) takes the sidebar back. If that was the session's last tab, `closeEmptySessions` (after each follow and every `tick`) closes the session, which the parked sidebar would otherwise keep open with no tabs; the sidebar dies with it and `follow` opens a fresh one.
 - **Overseer closes a session:** `closeManagedSession` and `closeSpace` switch away and call `follow` first, so the sidebar leaves before the session closes.
 - **Tern closes the sidebar's tab or session:** the sidebar dies with it. If you wanted it (`panel-open`) and its last tab is gone, `follow` opens a fresh one in the shown tab. If its tab is still there, you closed the sidebar yourself, and it stays closed until the shortcut.
+
+**Confirmations.** Close session, Close space and Delete worktree open a canvas with `how = "glimpse"`: over the whole tab, in no split, until the next click outside it. Glimpses can't be sized (`float` refuses them), so the dialog is a card centred inside. `confirmation` holds the request and its pane; `pane_closed` on that pane cancels it, and `endConfirmation` closes it when Overseer finishes. A deletion keeps it open, showing "Checking worktree…", while `wt.validate_removal` runs.
+
+**Session names.** Worktree rows whose session you haven't named collect `repo / branch` in `model`; `draw` passes them to `nameWorktreeSessions`, which renames the sessions in a callback of its own and records the new names in `auto-names`. New worktree sessions are created with that name.
 
 **Create.** Form → `wt.validate` → `launchCreation` opens a background tab running `worktree-operation.sh` and records a job → `checkJobs` (on `tick`) reads the receipt → on success: toast, then apply the display name by branch (`applyCreatedName`). Creation succeeded means `wt` exited 0, not that every hook succeeded.
 
@@ -230,7 +237,7 @@ Other conventions:
 
 ## Credits
 
-- Pull request icons: [Primer Octicons](https://primer.style/octicons/) (MIT, `icons/LICENSE`).
+- Pull request and refresh icons: [Primer Octicons](https://primer.style/octicons/) (MIT, `icons/LICENSE`).
 - Visualize PR follows [humanlayer/skills](https://github.com/humanlayer/skills)' visual-pr skill, vendored at `ca7c8088db69` (MIT, `skills/visual-pr/LICENSE`).
 - The Spaces and Agents layout follows [herdr](https://herdr.dev)'s sidebar.
 - Built on [Tern](https://docs.stencil.so/tern/), [Worktrunk](https://worktrunk.dev) and [omp](https://omp.sh).

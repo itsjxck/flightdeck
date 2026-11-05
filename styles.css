@@ -231,12 +231,19 @@
   background-repeat: no-repeat;
   background-position: center;
 }
-/* ↻ during an explicit refresh. */
-[data-role='overseer.refreshGlyph'],
-[data-role='overseer.refreshGlyphSpin'] {
-  display: inline-block;
+/* ↻: a 14px square icon (icons.css), so it turns about its centre while an
+   explicit refresh runs. */
+[data-role='overseer.refreshIcon'],
+[data-role='overseer.refreshIconSpin'] {
+  width: 14px;
+  height: 14px;
+  margin: 3px 0;
+  background-size: 14px 14px;
+  background-repeat: no-repeat;
+  background-position: center;
+  transform-origin: 50% 50%;
 }
-[data-role='overseer.refreshGlyphSpin'] {
+[data-role='overseer.refreshIconSpin'] {
   animation: overseer-spin 0.8s linear infinite;
 }
 @keyframes overseer-spin {
@@ -244,7 +251,7 @@
   to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-role='overseer.refreshGlyphSpin'] {
+  [data-role='overseer.refreshIconSpin'] {
     animation: none;
     opacity: 0.5;
   }
@@ -345,13 +352,16 @@
   gap: 8px;
   margin: 18px 0 10px;
 }
+/* A confirmation opens over the tab in a canvas of its own, which can't be
+   sized: the dialog is a card centred in it. */
 [data-role='overseer.confirmation'] {
   gap: 8px;
-  margin: 4px 0 8px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--warn) 6%, transparent);
+  width: min(460px, 100%);
+  margin: 12vh auto 0;
+  padding: 18px 20px 8px;
+  border: 1px solid color-mix(in srgb, var(--t4) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--t4) 6%, transparent);
 }
 [data-role='overseer.dangerButton'] {
   color: var(--bad);

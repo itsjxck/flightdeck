@@ -213,23 +213,25 @@ local function agentNode(agent)
 	})
 end
 
-local function confirmationNode(request)
-	local copy = {
-		delete = { "Delete worktree?", "Delete worktree", "Removes this directory, including ignored files. Keeps Git branches. Its session closes after successful removal. Stop file-writing tasks first." },
-		close = { "Close session?", "Close session", "Stops all running programs and closes this session's tabs. Keeps the worktree files and Git branches." },
-		space = { "Close space?", "Close space", "Stops all running programs and closes this space's tabs. Files stay as they are." },
-	}
-	local words = copy[request.kind]
+-- A confirmation, shown in a canvas of its own over the tab; the canvas's
+-- title asks the question.
+View.CONFIRMATIONS = {
+	delete = { title = "Delete worktree?", confirm = "Delete worktree", detail = "Removes this directory, including ignored files. Keeps Git branches. Its session closes after successful removal. Stop file-writing tasks first." },
+	close = { title = "Close session?", confirm = "Close session", detail = "Stops all running programs and closes this session's tabs. Keeps the worktree files and Git branches." },
+	space = { title = "Close space?", confirm = "Close space", detail = "Stops all running programs and closes this space's tabs. Files stay as they are." },
+}
+
+function View.confirmation(request)
+	local words = View.CONFIRMATIONS[request.kind]
 	local buttons = { button("cancel", "Cancel", "cancel=" .. request.id, "Keep it open") }
 	if not request.checking then
-		table.insert(buttons, button("confirm", words[2], "confirm=" .. request.id, "Confirm " .. request.label, "overseer.dangerButton"))
+		table.insert(buttons, button("confirm", words.confirm, "confirm=" .. request.id, "Confirm " .. request.label, "overseer.dangerButton"))
 	end
 	return ui.node("col", { key = "confirmation", role = "overseer.confirmation" }, {
-		text("title", words[1], "overseer.formHeading"),
 		text("name", request.label, "overseer.spaceName"),
 		text("path", request.path or "", "overseer.hint"),
-		text("detail", words[3], "overseer.hint"),
-		text("status", if request.checking then "Checking worktree..." else "", "overseer.hint"),
+		text("detail", words.detail, "overseer.hint"),
+		text("status", if request.checking then "Checking worktree…" else "", "overseer.hint"),
 		ui.node("row", { key = "buttons", role = "overseer.formButtons" }, buttons),
 	})
 end
@@ -239,17 +241,16 @@ function View.render(model)
 		ui.node("row", { key = "header", role = "overseer.header" }, {
 			text("title", "Spaces", "overseer.heading", { grow = 1 }),
 			button("add", "+", "add", "New space in a folder", "overseer.iconButton"),
-			-- The glyph is its own element so only the arrow turns, not the button's frame.
+			-- The icon is its own element so only the arrows turn, not the button's frame.
 			ui.el("button", {
 				key = "refresh", role = "overseer.iconButton", actions = { click = "refresh" },
 				title = if model.refreshing then "Refreshing…" else "Refresh worktrees",
 				aria = if model.refreshing then "Refreshing" else "Refresh worktrees",
 			}, {
-				text("glyph", "↻", if model.refreshing then "overseer.refreshGlyphSpin" else "overseer.refreshGlyph"),
+				ui.el("div", { key = "icon", role = if model.refreshing then "overseer.refreshIconSpin" else "overseer.refreshIcon" }),
 			}),
 		}),
 	}
-	if model.confirmation then table.insert(spaces, confirmationNode(model.confirmation)) end
 	for _, space in model.spaces do table.insert(spaces, spaceNode(space)) end
 
 	local agents = {
