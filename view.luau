@@ -82,6 +82,8 @@ local function details(worktree, branch)
 		end
 		if #kinds > 0 then table.insert(parts, table.concat(kinds, ", ")) end
 		if #parts > 0 then table.insert(lines, "Uncommitted: " .. table.concat(parts, " · ")) end
+	elseif worktree.status_unknown then
+		table.insert(lines, "Changes: not known yet (refreshing)")
 	elseif not worktree.dirty then
 		table.insert(lines, "No uncommitted changes")
 	end
@@ -156,14 +158,7 @@ local function worktreeNode(worktree, activePath)
 	elseif not worktree.session then
 		table.insert(head, text("open", "Open", "overseer.openHint"))
 	end
-	-- The Linear ticket and pull request sit together, ticket first.
 	local links = {}
-	if worktree.ticket then
-		table.insert(links, ui.el("button", {
-			key = "linear", role = "overseer.linear", title = worktree.ticket.id .. " — open in Linear",
-			href = worktree.ticket.url, aria = "Linear ticket " .. worktree.ticket.id, actions = { click = "open" },
-		}))
-	end
 	local pr = worktree.pr and PR_STATES[worktree.pr.state]
 	if pr then
 		local summary = "#" .. tostring(worktree.pr.number) .. " · " .. pr.label
@@ -176,7 +171,7 @@ local function worktreeNode(worktree, activePath)
 		table.insert(head, ui.node("row", { key = "links", role = "overseer.links" }, links))
 	end
 	-- A renamed row keeps its branch visible; otherwise the directory helps
-	-- tell apart worktrees whose branch names share a long ticket prefix.
+	-- tell apart worktrees whose branch names share a long prefix.
 	local subtitle = if worktree.displayName then branch
 		elseif worktree.is_main then "primary checkout · " .. basename(worktree.path)
 		else basename(worktree.path)
@@ -281,7 +276,7 @@ function View.render(model)
 		local projectChildren = {
 			ui.node("row", {
 				key = "header", role = "overseer.projectHeader",
-				actions = { menu = { "Change base branch", "Set Linear workspace" } },
+				actions = { menu = { "Change base branch", "Remove project" } },
 			}, {
 				button("collapse", (if collapsed then "▸  " else "▾  ") .. project.name,
 					"collapse=" .. project.id, (if collapsed then "Expand " else "Collapse ") .. project.name .. "\n" .. project.path,

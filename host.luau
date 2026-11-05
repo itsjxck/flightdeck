@@ -25,12 +25,6 @@ local MODES = {
 			return state.project .. " · New worktrees branch from this local branch. Existing worktrees are unchanged."
 		end,
 	},
-	linear = {
-		heading = "Linear workspace", submit = "Save workspace", fields = { "linear" },
-		help = function(state)
-			return state.project .. " · Branches that name a ticket, such as feature/ENG-123, link to it in this workspace. Leave blank to use the Linear CLI's workspace."
-		end,
-	},
 }
 
 local function fieldOrder(state)
@@ -59,8 +53,6 @@ local function finish(state, cancelled)
 			return
 		end
 		response = { mode = "base", base = state.fields.base.text }
-	elseif state.mode == "linear" then
-		response = { mode = "linear", linear = state.fields.linear.text }
 	else
 		if not string.find(state.fields.branch.text, "%S") then
 			state.error = "Enter a branch name."
@@ -90,7 +82,6 @@ tern.block.define("form", {
 			name = Input.new(if mode == "rename" then args[4] or "" else ""),
 			branch = Input.new(""),
 			base = Input.new(if mode == "base" then args[4] or "" else ""),
-			linear = Input.new(if mode == "linear" then args[4] or "" else ""),
 		}
 		if type(saved) == "table" and saved.token == state.token and saved.mode == mode then
 			for name in pairs(state.fields) do
@@ -139,11 +130,10 @@ tern.block.define("form", {
 			table.insert(children, text("help", MODES[state.mode].help(state), "overseer.hint"))
 			local labels = {
 				name = "Display name (optional)", branch = "Branch name", base = "Base branch",
-				linear = "Workspace URL or name",
 			}
 			local placeholders = {
 				name = if state.mode == "rename" then state.project else "e.g. Fix onboarding",
-				branch = "feature/branch-name", base = "main", linear = "https://linear.app/your-team",
+				branch = "feature/branch-name", base = "main",
 			}
 			for _, name in ipairs(fieldOrder(state)) do
 				table.insert(children, text(name .. "Label", labels[name], "overseer.fieldLabel"))

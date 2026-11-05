@@ -224,14 +224,13 @@
 [data-role='overseer.worktree']:hover [data-role='overseer.openHint'] {
   opacity: 1;
 }
-/* Linear ticket and GitHub pull request links, together at the row's right end.
-   Icons and colours live in icons.css (generated); both draw at the same 16px. */
+/* GitHub pull request link at the row's right end.
+   Icons and colours live in icons.css (generated); they draw at 16px. */
 [data-role='overseer.links'] {
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
 }
-[data-role='overseer.linear'],
 [data-role='overseer.prDraft'],
 [data-role='overseer.prOpen'],
 [data-role='overseer.prMerged'],

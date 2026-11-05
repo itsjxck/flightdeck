@@ -269,16 +269,23 @@ local function parse_worktrees(text, project)
 			if not detached and (row.branch == nil or row.branch == "") then
 				error("Worktrunk omitted the branch for " .. path, 0)
 			end
-			if type(changes) ~= "table" then
-				error("Worktrunk could not determine working-tree status for " .. path .. ". Refresh to try again.", 0)
+			-- A branch with no commits yet has no HEAD to compare against, so
+			-- Worktrunk reports neither a head nor changes. Show it as clean.
+			if changes == nil and schema2 and row.head == nil then
+				changes = { staged = false, modified = false, untracked = false, renamed = false, deleted = false }
 			end
+			-- Worktrunk also omits changes when it can't read a worktree's status in
+			-- time, typically one still being created. Keep the row, status unknown,
+			-- rather than failing the whole project; a later refresh fills it in.
+			local unknown = type(changes) ~= "table"
+			if unknown then changes = {} end
 			local conflicts = row.operation_state == "conflicts"
 			local dirty = conflicts
 			for _, flag in ipairs({ "staged", "modified", "untracked", "renamed", "deleted" }) do
-				if type(changes[flag]) ~= "boolean" then
+				if not unknown and type(changes[flag]) ~= "boolean" then
 					error("Worktrunk returned incomplete working-tree status for " .. path, 0)
 				end
-				dirty = dirty or changes[flag]
+				dirty = dirty or changes[flag] == true
 			end
 			if changes.conflicted ~= nil and type(changes.conflicted) ~= "boolean" then
 				error("Worktrunk returned an invalid conflict flag for " .. path, 0)
@@ -288,8 +295,8 @@ local function parse_worktrees(text, project)
 			local diff = type(changes.diff) == "table" and changes.diff or {}
 			table.insert(trees, {
 				path = path, branch = if detached then nil else row.branch, is_main = main or path == project.path,
-				dirty = dirty, conflicts = conflicts,
-				changes = {
+				dirty = dirty, conflicts = conflicts, status_unknown = unknown,
+				changes = if unknown then nil else {
 					staged = changes.staged, modified = changes.modified, untracked = changes.untracked,
 					renamed = changes.renamed, deleted = changes.deleted,
 					added_lines = count(diff.added), deleted_lines = count(diff.deleted),
@@ -392,6 +399,8 @@ function M.validate_removal(project, worktree, done)
 					done(nil, "The primary checkout cannot be deleted.", cx)
 				elseif current.dirty then
 					done(nil, "Commit, stash, or move changes first.", cx)
+				elseif current.status_unknown then
+					done(nil, "Worktrunk couldn't read this worktree's changes. Try again in a moment.", cx)
 				elseif current.branch ~= worktree.branch then
 					done(nil, "Branch changed. Refresh Projects.", cx)
 				else
@@ -565,23 +574,6 @@ function M.pull_request_diff(repo, number, path, done)
 		if not result then done(nil, err, cx); return end
 		if result.status ~= 0 then done(nil, command_error("GitHub diff failed", result), cx); return end
 		done(true, nil, cx)
-	end)
-end
-
--- The workspace the Linear CLI (`linear`) is signed in to, so ticket links work
--- without asking. done(slug, err, cx); slug is nil when it can't be found.
-function M.linear_workspace(done)
-	local linear = find_executable("linear")
-	if not linear then
-		deferred_error(done, "Linear CLI (linear) was not found")
-		return
-	end
-	run({ linear, "auth", "whoami" }, function(result, err, cx)
-		if not result then done(nil, err, cx); return end
-		if result.status ~= 0 then done(nil, command_error("Linear CLI lookup failed", result), cx); return end
-		local slug = string.match(result.stdout, "Slug:%s*([%w%-]+)")
-		if not slug then done(nil, "Linear CLI reported no workspace", cx); return end
-		done(string.lower(slug), nil, cx)
 	end)
 end
 

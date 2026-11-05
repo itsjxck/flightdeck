@@ -15,9 +15,6 @@ local lastRefresh = -15000
 -- Whether ↻ is spinning for an explicit refresh.
 local spinning = false
 local sequence = 0
--- The Linear CLI's workspace, for projects without one of their own: nil until
--- looked up, false when unavailable (↻ tries again).
-local linearDefault
 -- Defined after forms(); openForm starts it.
 local watchForms
 
@@ -117,15 +114,27 @@ local function runsAgent(line)
 	return false
 end
 
--- Agent activity in this window: "waiting" (it asked you something) or
--- "working", per session id (as a string), per tab id and per pane id.
--- Native agent blocks such as omp report their state;
--- their `busy` stays set while they sit idle, so it isn't consulted for them.
--- Agent CLIs in plain terminals only report progress, which Tern exposes as
--- `busy` (a CLI that hasn't reported progress yet counts as busy while it runs).
-local function agentActivity(cx)
+-- Native agent blocks' states by pane id: "working", or "waiting" (it asked
+-- you something). Tern's agent_state events keep it current; cx.agents:list()
+-- fills it once per load, since events only report changes.
+local AGENT_STATES = { working = "working", waiting_input = "waiting" }
+local agentStates = {}
+local agentsSeeded = false
+local function seedAgents(cx)
+	if agentsSeeded then return end
+	agentsSeeded = true
+	local states = {}
+	for _, agent in cx.agents:list() do states[agent.pane] = AGENT_STATES[agent.state] end
+	agentStates = states
+end
+
+-- Agent activity in this window, per session id (as a string), per tab id and
+-- per pane id. Native agent blocks report their state (agentStates). Agent
+-- CLIs in plain terminals only report progress, which Tern exposes as `busy`
+-- (a CLI that hasn't reported progress yet counts as busy while it runs).
+local function agentActivity(tabs, panes)
 	local tabSession = {}
-	for _, tab in cx.session:tabs() do tabSession[tab.id] = tostring(tab.session) end
+	for _, tab in tabs do tabSession[tab.id] = tostring(tab.session) end
 	local activity = { sessions = {}, tabs = {}, panes = {} }
 	local function mark(pane, tab, state)
 		activity.panes[pane] = state
@@ -134,17 +143,14 @@ local function agentActivity(cx)
 		if activity.sessions[session] ~= "waiting" then activity.sessions[session] = state end
 		if activity.tabs[tab] ~= "waiting" then activity.tabs[tab] = state end
 	end
-	for _, agent in cx.agents:list() do
-		local state = if agent.state == "waiting_input" then "waiting"
-			elseif agent.state == "working" then "working"
-			else nil
-		local info = state and cx.session:pane(agent.pane)
-		if info and info.tab then mark(agent.pane, info.tab, state) end
-	end
-	for _, pane in cx.session:panes() do
-		if pane.kind ~= "agent" and not activity.panes[pane.pane] and pane.busy and pane.running
-			and pane.tab and runsAgent(pane.running.line) then
-			mark(pane.pane, pane.tab, "working")
+	for _, pane in panes do
+		if pane.tab then
+			if pane.kind == "agent" then
+				local state = agentStates[pane.pane]
+				if state then mark(pane.pane, pane.tab, state) end
+			elseif pane.busy and pane.running and runsAgent(pane.running.line) then
+				mark(pane.pane, pane.tab, "working")
+			end
 		end
 	end
 	return activity
@@ -153,16 +159,16 @@ end
 -- What a tab row is called: the name the user gave the tab, else the title of
 -- the pane doing its work. The focused pane is often a plugin block, such as
 -- this navigator, so terminals and agents are preferred over plugin blocks.
-local function tabRows(cx, activity)
+local function tabRows(activity, tabs, panes)
 	local panesByTab = {}
-	for _, pane in cx.session:panes() do
+	for _, pane in panes do
 		if pane.tab then
 			panesByTab[pane.tab] = panesByTab[pane.tab] or {}
 			table.insert(panesByTab[pane.tab], pane)
 		end
 	end
 	local rows = {}
-	for _, tab in cx.session:tabs() do
+	for _, tab in tabs do
 		local panes = panesByTab[tab.id] or {}
 		local chosen, hasAgent = nil, false
 		for _, pane in panes do
@@ -198,28 +204,16 @@ local function tabRows(cx, activity)
 	return rows
 end
 
--- The first Linear-style ticket id in a branch name: feature/ENG-123-fix → ENG-123.
--- Uppercase only, so names like chore/stage-1 aren't mistaken for tickets.
-local function ticketOf(branch)
-	return branch and string.match(branch, "%f[%w](%u[%u%d]*%-%d+)%f[%W]")
-end
-
--- The worktree's Linear ticket and its link, in the project's workspace or the CLI's.
-local function ticketFor(project, worktree)
-	local workspace = project.linear or linearDefault
-	local id = workspace and not worktree.is_main and ticketOf(worktree.branch)
-	if not id then return nil end
-	return { id = id, url = "https://linear.app/" .. workspace .. "/issue/" .. id }
-end
-
 local function model(cx)
 	local sessions = sessionsById(cx)
 	local names = records("worktree-names")
 	local bindings, jobs = records("sessions"), records("jobs")
 	local icebox = records("icebox")
 	local showIcebox = tern.kv.get("show-icebox") ~= false
-	local activity = agentActivity(cx)
-	local tabs = tabRows(cx, activity)
+	-- One read of the session's tabs and panes serves every row of this draw.
+	local sessionTabs, sessionPanes = cx.session:tabs(), cx.session:panes()
+	local activity = agentActivity(sessionTabs, sessionPanes)
+	local tabs = tabRows(activity, sessionTabs, sessionPanes)
 	local result = {
 		projects = {}, collapsed = collapsed, confirmation = confirmation,
 		showIcebox = showIcebox, refreshing = spinning,
@@ -238,7 +232,6 @@ local function model(cx)
 			item.deleting = removing(worktree.path, jobs)
 			item.displayName = names[project.id] and names[project.id][worktree.path]
 			item.pr = not worktree.is_main and worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
-			item.ticket = ticketFor(project, worktree)
 			local session = boundSession(worktree.path, sessions, bindings)
 			item.session, item.tabs = session, session and tabs[tostring(session.id)] or {}
 			item.agent = session and activity.sessions[tostring(session.id)]
@@ -311,10 +304,9 @@ local function draw(cx)
 	rendered[pane] = signature
 end
 
--- Asks for a draw soon, in a timer callback of its own. Tern gives each hook
--- callback 50 ms and disables the hook for the rest of the session after one
--- overrun, so clicks and process results never draw inline; requests made
--- before the draw runs share it.
+-- Asks for a draw soon, in a timer callback of its own. Tern pauses a hook
+-- that runs over its 50 ms of Lua, so clicks and process results never draw
+-- inline; requests made before the draw runs share it.
 local drawQueued = false
 local function redraw(_cx)
 	if drawQueued then return end
@@ -354,23 +346,9 @@ local function refreshPullRequests(project, entry)
 	end)
 end
 
-local function inferLinear()
-	if linearDefault ~= nil then return end
-	linearDefault = false
-	wt.linear_workspace(function(slug, err, cx)
-		if slug then
-			linearDefault = slug
-			if cx then redraw(cx) end
-		else
-			tern.log.info("Linear ticket links need a workspace: " .. tostring(err))
-		end
-	end)
-end
-
 -- `done` runs once every worktree listing this call started has finished.
 local function refresh(cx, done)
 	lastRefresh = tern.now()
-	inferLinear()
 	local pending = 0
 	for _, project in projects() do
 		local entry = cache[project.id]
@@ -405,7 +383,6 @@ local function refreshByHand(cx)
 	local started = tern.now()
 	-- An explicit refresh also re-checks pull requests immediately.
 	for _, entry in cache do entry.prAt = nil end
-	if linearDefault == false then linearDefault = nil end
 	refresh(cx, function(doneCx)
 		local function stop(stopCx)
 			spinning = false
@@ -440,34 +417,85 @@ local function leftShare(cx, tab, pane)
 	return nil
 end
 
+-- The tree with `pane` taken out, its parent split collapsing as Tern's would.
+local function without(tree, pane)
+	if tree.pane then return if tree.pane == pane then nil else tree end
+	local a, b = without(tree[1], pane), without(tree[2], pane)
+	if not a then return b end
+	if not b then return a end
+	return { split = tree.split, ratio = tree.ratio, a, b }
+end
+
+local function nodeAt(tree, path)
+	for _, i in path do tree = tree and tree[i] end
+	return tree
+end
+
+-- The leaf of `tree` touching its far edge toward `dir`: growing it toward
+-- `dir` moves the divider just past that edge.
+local function edgeLeaf(tree, dir)
+	if tree.pane then return tree.pane end
+	return edgeLeaf(if tree.split == dir then tree[2] else tree[1], dir)
+end
+
+-- Sets the ratio of the split at `path` by growing `leaf` toward `dir`.
 -- Tern resizes in cells, and a hidden tab's cells differ from the shown one's,
 -- so steer by the ratio: step, see how far it moved, correct.
-local function sizeTo(cx, tab, pane, want)
-	local r = leftShare(cx, tab, pane)
-	local step = if r then math.floor((want - r) * 180 + 0.5) else 0
+local function steer(cx, tab, path, leaf, dir, want)
+	local function ratio()
+		local layout = cx.session:layout(tab)
+		local node = layout and nodeAt(layout.root, path)
+		return node and node.split == dir and node.ratio or nil
+	end
+	local r = ratio()
+	local step = if r then math.floor((want - r) * (if dir == "right" then 180 else 50) + 0.5) else 0
 	for _ = 1, 8 do
 		if not r or math.abs(r - want) < 0.005 or step == 0 then return end
-		cx.layout:resize(pane, "right", step)
-		local after = leftShare(cx, tab, pane)
+		cx.layout:resize(leaf, dir, step)
+		local after = ratio()
 		if not after or after == r then return end
 		step = math.floor((want - after) * step / (after - r) + 0.5)
 		r = after
 	end
 end
 
--- Moves the slot into `tab`, left of everything, unless it is already there.
+-- Tern only moves a pane beside another pane, never beside a whole split, so
+-- `tree`'s panes are dealt back in beside the first one, which starts out
+-- holding all of `tree`'s area: each split's second side splits off its first.
+local function rebuild(cx, tree)
+	if tree.pane then return end
+	cx.layout:move(firstLeaf(tree[2]), firstLeaf(tree[1]), tree.split, { focus = false })
+	rebuild(cx, tree[1])
+	rebuild(cx, tree[2])
+end
+
+-- Gives each split of `tree`, now at `path` in `tab`, its ratio from before.
+local function restoreRatios(cx, tab, tree, path)
+	if tree.pane then return end
+	steer(cx, tab, path, edgeLeaf(tree[1], tree.split), tree.split, tree.ratio)
+	local first, second = table.clone(path), table.clone(path)
+	table.insert(first, 1)
+	table.insert(second, 2)
+	restoreRatios(cx, tab, tree[1], first)
+	restoreRatios(cx, tab, tree[2], second)
+end
+
+-- Moves the slot into `tab` as its full-height left column, unless it is
+-- already there. Moving it beside the first pane alone would put it beside
+-- only the top half of a top/bottom split, so the rest of the tab is rebuilt
+-- to its right with the same splits and ratios.
 local function pin(cx, tab)
 	local pane = slot(cx)
 	if not pane then return end
 	local layout = cx.session:layout(tab)
 	if not layout then return end
 	local from = cx.session:tab_of(pane)
-	if from == tab and firstLeaf(layout.root) == pane then
+	if from == tab and leftShare(cx, tab, pane) then
 		panelTab = tab
 		return
 	end
-	local target = firstLeaf(layout.root, pane)
-	if not target then return end
+	local rest = without(layout.root, pane)
+	if not rest then return end
 	if from then
 		local current = leftShare(cx, from, pane)
 		if current and math.abs(current - share) > 0.01 then
@@ -482,8 +510,10 @@ local function pin(cx, tab)
 			cx.layout:unpark(pane, { focus = false })
 		end
 	end
-	cx.layout:move(pane, target, "left", { focus = false })
-	sizeTo(cx, tab, pane, share)
+	cx.layout:move(pane, firstLeaf(rest), "left", { focus = false })
+	rebuild(cx, rest)
+	restoreRatios(cx, tab, rest, { 2 })
+	steer(cx, tab, {}, pane, "right", share)
 	panelTab = tab
 end
 
@@ -512,7 +542,7 @@ local function openPanel(cx, tab)
 end
 
 -- Keeps the panel in the shown tab. Runs on every tab, pane and focus event and
--- each tick, so one disabled hook can't leave it behind.
+-- each tick, so one paused hook can't leave it behind.
 local function follow(cx, tab)
 	if not localHost(cx) then return end
 	tab = tab or shownTab(cx)
@@ -725,8 +755,7 @@ local function visualizePr(cx, path)
 	})
 	if not pane then report(cx, err or "Could not open a canvas.", "Visualize PR failed"); return end
 	outlines[key] = pane
-	local ticket = ticketFor(project, worktree)
-	visualize.outline(project, worktree, pr.number, ticket and ticket.url, function(md, outlineErr, nextCx)
+	visualize.outline(project, worktree, pr.number, function(md, outlineErr, nextCx)
 		if not nextCx or not nextCx.canvas:get(pane) then return end
 		if md then
 			setOutline(nextCx, pane, md)
@@ -836,9 +865,7 @@ local function openForm(cx, mode, project, worktree)
 		return cx:new_block("overseer.form", {
 			id, mode,
 			if worktree then worktree.branch or "Detached HEAD" else project and project.name or "",
-			if worktree then names and names[worktree.path] or ""
-				elseif mode == "linear" then project.linear or ""
-				else project and project.base or "",
+			if worktree then names and names[worktree.path] or "" else project and project.base or "",
 		}, "beside")
 	end)
 	if not pane then report(cx, "Reload the Overseer plugin.", "Form unavailable"); return end
@@ -1061,25 +1088,6 @@ local function changeBase(cx, pane, request, response)
 		end)
 end
 
--- Accepts a workspace name ("acme") or any link inside it ("https://linear.app/acme/issue/ENG-1").
-local function changeLinear(cx, pane, request, response)
-	local project = projectById(request.project)
-	if not project then rejectForm(cx, pane, "Project is no longer registered."); return end
-	local raw = type(response.linear) == "string" and response.linear:match("^%s*(.-)%s*$") or ""
-	local workspace = string.lower(raw:match("linear%.app/([^/?#]+)") or raw)
-	if workspace ~= "" and not workspace:match("^[%w][%w%-]*$") then
-		rejectForm(cx, pane, "Enter a workspace name such as acme, or a linear.app link."); return
-	end
-	local all = projects()
-	for _, existing in all do
-		if existing.id == project.id then existing.linear = if workspace == "" then nil else workspace end
-	end
-	tern.kv.set("projects", all)
-	finishForm(cx, pane)
-	cx:toast("info", if workspace == "" then "Using the Linear CLI's workspace" else "Linear workspace set", notificationLabel(project.name))
-	redraw(cx)
-end
-
 -- The worktree's path is only known once Worktrunk has created it, so the
 -- display name chosen at creation is attached afterwards, by branch.
 local function applyCreatedName(job)
@@ -1100,29 +1108,6 @@ local function applyCreatedName(job)
 				return
 			end
 		end
-	end)
-end
-
--- A worktree created for a ticket gets an omp agent in its session, already
--- asked to read the ticket. Like the display name, its path is found by branch.
-local function startTicketAgent(job)
-	local project = projectById(job.project)
-	if not job.agentPrompt or not project then return end
-	wt.list(project, function(trees, err, cx)
-		if not cx then return end
-		if not trees then report(cx, err, "Agent not started"); return end
-		for _, tree in trees do
-			if tree.branch == job.branch and not tree.is_main then
-				ensureSession(cx, project, tree.path, tree.branch)
-				local ok, startError = pcall(function()
-					cx.agents:start({ prompt = job.agentPrompt, cwd = tree.path, command = "omp", how = "tab" })
-				end)
-				if not ok then report(cx, startError, "Agent not started") end
-				redraw(cx)
-				return
-			end
-		end
-		report(cx, "No worktree for " .. job.branch .. " after creation.", "Agent not started")
 	end)
 end
 
@@ -1147,8 +1132,6 @@ local function forms(cx)
 						renameWorktree(cx, pane.pane, request, response)
 					elseif request.mode == "base" and response.mode == "base" then
 						changeBase(cx, pane.pane, request, response)
-					elseif request.mode == "linear" and response.mode == "linear" then
-						changeLinear(cx, pane.pane, request, response)
 					else
 						rejectForm(cx, pane.pane, "Invalid form response. Please try again.")
 					end
@@ -1252,7 +1235,6 @@ local function checkJobs(cx)
 				local label = job.displayName or job.branch
 				if status == 0 then
 					cx:toast("info", "Worktree created", notificationLabel(label))
-					startTicketAgent(job)
 				else
 					cx:toast("error", "Worktree creation failed", "Check the Create tab for details.")
 				end
@@ -1272,65 +1254,38 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Choose a project", "Click + beside a project's name.") end
 end })
 
-local TICKET_PROMPT = "Please read ticket %s to understand your task and ask any questions you have before we start"
-
-local function projectNames()
-	local names = {}
-	for _, project in projects() do table.insert(names, project.name) end
-	if #names == 0 then return "No projects are registered in Overseer." end
-	return "Overseer projects: " .. table.concat(names, ", ") .. "."
+-- Takes a project off the list. Its repository, worktrees and open sessions are
+-- untouched; Overseer forgets its names, Ice Box entries and session bindings.
+local function removeProject(cx, id)
+	local project = projectById(id)
+	if not project then report(cx, "Project not found. Refresh Projects."); return end
+	for _, job in records("jobs") do
+		if job.project == id then
+			report(cx, "A worktree operation is still running in " .. project.name .. ".", "Project not removed")
+			return
+		end
+	end
+	local kept = {}
+	for _, other in projects() do
+		if other.id ~= id then table.insert(kept, other) end
+	end
+	tern.kv.set("projects", kept)
+	for _, key in { "worktree-names", "icebox" } do
+		local byProject = records(key)
+		if byProject[id] ~= nil then
+			byProject[id] = nil
+			tern.kv.set(key, byProject)
+		end
+	end
+	local bindings, unbound = records("sessions"), false
+	for path, binding in bindings do
+		if binding.project == id then bindings[path], unbound = nil, true end
+	end
+	if unbound then tern.kv.set("sessions", bindings) end
+	cache[id], collapsed[id] = nil, nil
+	cx:toast("info", "Project removed", notificationLabel(project.name))
+	redraw(cx)
 end
-
--- A project named (in any case) or given by path; otherwise the current session's.
-local function ticketProject(cx, wanted)
-	if wanted == nil then
-		local project = activeWorktree(cx)
-		if project then return project end
-		return nil, "The current session isn't an Overseer worktree, so name the project. " .. projectNames()
-	end
-	if type(wanted) ~= "string" then return nil, "project must be a string." end
-	for _, project in projects() do
-		if string.lower(project.name) == string.lower(wanted) or project.path == wanted then return project end
-	end
-	return nil, "No project named '" .. wanted .. "'. " .. projectNames()
-end
-
-tern.carly.export("ticket_worktree", {
-	sig = "(ticket: string, project: string?) -> {branch: string, project: string, status: string}",
-	doc = "Creates worktree feature/<ticket> (a Linear id such as ENG-123) from the project's base branch. "
-		.. "When its setup succeeds, opens the worktree's session and starts omp there, asked to read the ticket "
-		.. "and come back with questions. project is a project name or path; omitted, the current session's project. "
-		.. "Answers once creation starts; setup runs in a background Create tab. Fails if the branch already exists.",
-}, function(ticket, wanted, cx, call)
-	if not localHost(cx) then error("Switch to the local host first.", 0) end
-	if type(ticket) ~= "string" or not string.match(string.upper(ticket), "^%u[%u%d]*%-%d+$") then
-		error("Expected a ticket id such as ENG-123.", 0)
-	end
-	ticket = string.upper(ticket)
-	local project, projectError = ticketProject(cx, wanted)
-	if not project then error(projectError, 0) end
-	local branch = "feature/" .. ticket
-	wt.validate(project, branch, function(ok, err, nextCx)
-		-- Cancelling Carly before validation finishes never starts a creation.
-		if call.cancelled or not nextCx then return end
-		if not ok then call:fail(err); return end
-		local launchError = launchCreation(nextCx, project, {
-			branch = branch, agentPrompt = string.format(TICKET_PROMPT, ticket),
-		})
-		if launchError then call:fail(launchError); return end
-		nextCx:toast("info", "Creating worktree", notificationLabel(branch))
-		redraw(nextCx)
-		call:reply({
-			branch = branch, project = project.name,
-			status = "Setup is running in a background Create tab; omp starts in the worktree's session when it succeeds.",
-		})
-	end)
-	return call:wait(30000)
-end)
-
-tern.carly.context(function()
-	return "Overseer creates Linear-ticket worktrees with ticket_worktree. " .. projectNames()
-end)
 
 tern.on("canvas_action", function(ev, cx)
 	if ev.act == "help" then
@@ -1358,10 +1313,12 @@ tern.on("canvas_action", function(ev, cx)
 	elseif ev.act == "toggle-icebox" then
 		tern.kv.set("show-icebox", tern.kv.get("show-icebox") == false)
 		redraw(cx)
-	elseif ev.act == "Change base branch" or ev.act == "Set Linear workspace" then
+	elseif ev.act == "Change base branch" then
 		local project = projectById(view.projectId(ev.node))
-		if project then openForm(cx, if ev.act == "Change base branch" then "base" else "linear", project)
+		if project then openForm(cx, "base", project)
 		else report(cx, "Project not found. Refresh Projects.") end
+	elseif ev.act == "Remove project" then
+		removeProject(cx, view.projectId(ev.node))
 	elseif ev.act == "Visualize PR" then
 		visualizePr(cx, view.worktreePath(ev.node))
 	elseif ev.act == "Rename" then
@@ -1395,8 +1352,8 @@ tern.chrome.status(function()
 end)
 
 -- Runs fn in a timer callback of its own, reporting (not raising) errors.
--- Tern gives every callback its own 50 ms budget and disables a plugin's timers
--- after an overrun, so no single callback should carry all of a tick's work.
+-- Tern gives every callback its own 50 ms of Lua and pauses all of a plugin's
+-- timers after an overrun, so no single callback should carry a tick's work.
 local function separately(fn)
 	tern.timer(0, function(cx)
 		if not cx then return end
@@ -1408,18 +1365,21 @@ local function separately(fn)
 	end)
 end
 
+-- Only schedules: each step runs in a callback of its own, so a slow step can't
+-- push the whole tick past its budget.
 local function tick(cx)
 	local ok, err = pcall(function()
 		if not localHost(cx) then return end
-		forms(cx)
+		separately(forms)
 		-- Resumes fast form checks after a plugin reload left a form open.
 		watchForms()
-		checkJobs(cx)
+		separately(checkJobs)
 		if tern.now() - lastRefresh >= 15000 and #cx.canvas:list() > 0 then
 			lastRefresh = tern.now()
 			separately(refresh)
 		end
-		follow(cx)
+		separately(seedAgents)
+		separately(follow)
 		redraw(cx)
 	end)
 	if not ok then
@@ -1433,18 +1393,52 @@ tern.on("window_start", function(cx)
 	refresh(cx)
 	follow(cx)
 end)
+tern.on("agent_state", function(ev, cx)
+	agentStates[ev.pane] = AGENT_STATES[ev.new]
+	redraw(cx)
+end)
+-- Tern pauses a hook that ran over its budget, then resumes it; timer
+-- callbacks due meanwhile wait. Only logged: Tern toasts the overrun itself.
+tern.on("budget", function(ev)
+	if ev.state == "paused" then
+		tern.log.warn(string.format("Overseer: %s paused for %d ms after running over %d ms", ev.hook, ev.paused_ms or 0, ev.ms or 0))
+	else
+		tern.log.warn("Overseer: " .. ev.hook .. " resumed")
+	end
+end)
 -- Every tab, pane and focus change moves the panel into the shown tab and
--- draws it; any one of these hooks keeps it following if another is disabled.
-local function followAndDraw(cx, tab)
-	local ok, err = pcall(function()
-		follow(cx, tab)
-		draw(cx)
+-- draws it. The move and the draw each run in a timer callback of their own:
+-- inline, a layout rebuild plus a draw risks an event hook's budget. Events
+-- arriving before the move runs share it, using the latest event's tab.
+local followQueued, followTab = false, nil
+local function followSoon(_cx, tab)
+	followTab = tab
+	if followQueued then return end
+	followQueued = true
+	tern.timer(0, function(cx)
+		followQueued = false
+		if not cx then return end
+		local ok, err = pcall(follow, cx, followTab)
+		if not ok then tern.log.warn("Projects panel: " .. tostring(err)) end
+		redraw(cx)
 	end)
-	if not ok then tern.log.warn("Projects panel: " .. tostring(err)) end
 end
-tern.on("focus", function(ev, cx) followAndDraw(cx, ev.tab) end)
-for _, name in { "tab_created", "tab_closed", "pane_created", "pane_closed" } do
-	tern.on(name, function(_ev, cx) followAndDraw(cx) end)
+tern.on("focus", function(ev, cx) followSoon(cx, ev.tab) end)
+for _, name in { "tab_created", "tab_closed", "pane_created" } do
+	tern.on(name, function(_ev, cx) followSoon(cx) end)
 end
+-- A form pane closed without Back or Submit (⌘W, its tab closed) would leave
+-- its request, and any answer it had sent, in kv for good.
+tern.on("pane_closed", function(ev, cx)
+	local key = "pending-form:" .. tostring(ev.pane)
+	local request = tern.kv.get(key)
+	if request then
+		inflight[ev.pane] = nil
+		tern.kv.set(key, nil)
+		if request.token then tern.kv.set("form:" .. request.token, nil) end
+	end
+	agentStates[ev.pane] = nil
+	followSoon(cx)
+end)
 -- Timers are restarted on reload; window_start intentionally is not.
 tern.timer(750, tick)

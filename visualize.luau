@@ -15,7 +15,7 @@ local function slug(text)
 	return (string.gsub(text, "[^%w%-]", "_"))
 end
 
-local function prompt(meta, dir, worktree, ticketUrl)
+local function prompt(meta, dir, worktree)
 	return table.concat({
 		"Write a visual outline of GitHub pull request #" .. tostring(meta.number) .. " (" .. meta.url .. ") to help a reviewer understand it.",
 		"This is a read-only preview shown in a panel: nothing is published, and your tools can only read files.",
@@ -29,7 +29,6 @@ local function prompt(meta, dir, worktree, ticketUrl)
 		"- Complete diff: " .. dir .. "/pr.diff",
 		"- Your working directory is a checkout of this repository on branch " .. (worktree.branch or "(detached)")
 			.. ". Read surrounding code only where the diff alone doesn't explain behaviour; it may not match the PR's head exactly.",
-		if ticketUrl then "- Linear ticket: " .. ticketUrl .. " (link it in the header)" else "",
 		"",
 		"Reply with only the finished Markdown. Start with the level-1 heading \"# #" .. tostring(meta.number) .. " · " .. meta.title
 			.. "\", then the template's sections. No preamble and no closing remarks.",
@@ -54,7 +53,7 @@ end
 
 -- done(markdown, err, cx, meta). Outlines are cached by the PR's head commit, so
 -- an unchanged PR opens instantly and a new push gets a fresh outline.
-function M.outline(project, worktree, number, ticketUrl, done)
+function M.outline(project, worktree, number, done)
 	wt.pull_request_meta(project, number, function(meta, err, cx)
 		if not meta then done(nil, err, cx); return end
 		local root = tern.plugin.data .. "/visual-pr"
@@ -70,7 +69,7 @@ function M.outline(project, worktree, number, ticketUrl, done)
 			if not ok then tern.fs.remove(dir); done(nil, diffErr, diffCx, meta); return end
 			local argv = { omp, "-p" }
 			for _, flag in READ_ONLY do table.insert(argv, flag) end
-			table.insert(argv, prompt(meta, dir, worktree, ticketUrl))
+			table.insert(argv, prompt(meta, dir, worktree))
 			-- omp is a Bun script: its directory must be on PATH for `env bun`.
 			local path = string.match(omp, "^(.*)/[^/]+$") .. ":" .. (tern.getenv("PATH") or "/usr/bin:/bin")
 			local started, startErr = pcall(tern.process.run, argv,

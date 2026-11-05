@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Remove project** in a project's right-click menu takes it off the list. The repository, its worktrees and open sessions are left alone; Overseer forgets the project's display names, Ice Box entries and session links. It's refused while a worktree is being created or deleted there.
+
+### Changed
+
+- **Requires Tern 0.9.6 or later.** Overseer uses its `agent_state` and `budget` events, and relies on its time budgets: only a plugin's own Lua counts toward the 50 ms, and a hook that runs over is paused for a few seconds rather than switched off until a reload.
+
+### Removed
+
+- **Linear integration.** Ticket links on worktree rows, **Set Linear workspace** in a project's menu, the `linear auth whoami` lookup, and the ticket link in Visualize PR outlines are gone. So is Carly's `ticket_worktree` (create `feature/<ticket>` and start omp on the ticket) and the project list Overseer gave Carly for it, which was one of the hooks that ran past Tern's 4 ms limit. A `linear` value saved on a project is ignored.
+
+### Fixed
+
+- **Submitted forms no longer hang until a reload.** The 750 ms tick did form checks, job checks and panel placement in one timer callback; when it ran past Tern's 50 ms budget, Tern switched off every Overseer timer, so New worktree and other forms were never picked up. Each step now runs in a timer callback of its own, and on Tern 0.9.6 an overrun only pauses timers briefly.
+- **Projects with no commits yet load.** A freshly initialised repository made Worktrunk report no working-tree status, and Overseer showed "could not determine working-tree status" instead of listing it. Its checkout now shows as clean.
+- **A worktree Worktrunk can't read yet no longer hides its whole project.** While a worktree is being created, `wt list` can leave out its working-tree status, and the project showed only "could not determine working-tree status". That worktree now shows normally with its changes unknown until the next refresh, and Delete waits until its changes can be checked.
+- **Agent badges follow Tern's agent events instead of polling.** Every Projects draw called `cx.agents:list()`, which reads each agent's last message: 7–45 ms when cold, slower as agent sessions grow, and the most common cause of Overseer's timeouts. Working and waiting now come from Tern's `agent_state` event, read once from the list when Overseer loads, so a waiting agent shows as soon as it asks.
+- **Switching tabs no longer risks disabling the panel.** Focus, tab and pane events moved the panel and redrew it inside the event itself, where a layout rebuild plus a draw could pass Tern's 50 ms budget and switch that event off. Both now run in timer callbacks of their own, and a burst of events shares one move. Each draw also reads the session's tabs and panes once instead of twice.
+- **Closing a form no longer leaves it in storage.** Closing a New worktree (or other) form with ⌘W or by closing its tab, rather than Back or Submit, left its request and any submitted answer in Overseer's kv store forever. They're now removed when the window closes the pane. A form pane closed some other way, such as `tern close`, isn't reported to plugins and still leaves them.
+- **The Projects panel is full height in split tabs.** Switching to a tab split top-and-bottom put the panel beside only the top half. It's now the tab's whole left column, with the tab's other panes rebuilt to its right in the same splits and ratios.
+
 ## 2.0.0 (2026-10-09)
 
 The Projects panel is now one panel per window that follows you, instead of one panel per worktree session.
