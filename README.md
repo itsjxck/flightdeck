@@ -18,7 +18,7 @@ Running five agents on five branches means five checkouts, a pile of terminals, 
 - **Every Tern session is a space.** It's named after the folder it's open in, and doesn't have to be a Git repository.
 - **Worktrees nest under their repository.** A space open in a Git repository lists its other worktrees; each gets a session of its own on first click.
 - **You can see what every agent is doing.** The Agents section lists them all, across spaces: working, waiting for you, or idle.
-- **PRs sit on the row.** GitHub PR state (draft, open, merged, closed), one click away.
+- **PRs sit on the row.** Any space or worktree on a branch with a GitHub PR gets a button showing its state (draft, open, merged, closed); click it to open the PR in your browser.
 - **Worktrees come and go safely.** Creation and deletion run through [Worktrunk](https://worktrunk.dev) in the background, with your hooks and approvals intact.
 - **PRs can be understood at a glance.** **Visualize PR** turns a pull request into a diagram-first outline, without touching GitHub.
 
@@ -38,7 +38,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 | ● blue, haloed | An agent is waiting for your answer |
 | **✱** amber | Uncommitted changes |
 | **conflicts** | A merge or rebase is stuck |
-| PR icon | Draft, open, merged or closed PR |
+| PR icon | Draft, open, merged or closed PR; click to open it in your browser |
 
 ## Install
 

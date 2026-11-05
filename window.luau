@@ -300,7 +300,7 @@ local function model(cx)
 				item.deleting = removing(worktree.path, jobs)
 				item.label = (names[repoId] and names[repoId][worktree.path])
 					or (space and space.named and space.name) or worktree.branch or basename(worktree.path)
-				item.pr = not worktree.is_main and worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
+				item.pr = worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
 				item.session = sessionId ~= nil
 				item.agent = sessionId and activity[tostring(sessionId)]
 				item.active = sessionId ~= nil and sessionId == current.id
@@ -315,13 +315,16 @@ local function model(cx)
 	for _, space in spaces do
 		if not nested[space.id] then
 			local branch = space.tree and (space.tree.branch or "detached")
+			-- The PR of the branch the space is on, as worktree rows show theirs.
+			local prs = space.repo and cache[space.repo] and cache[space.repo].prs
+			local pr = prs and space.tree and space.tree.branch and prs[space.tree.branch] or nil
 			table.insert(result.spaces, {
 				id = space.id, name = space.name, repo = space.repo, base = space.base,
 				subtitle = branch or (space.dir and tildePath(space.dir)) or "",
 				title = (space.dir or "No folder yet") .. (if branch then "\n" .. branch else ""),
 				dirty = space.tree ~= nil and space.tree.dirty, agent = space.agent, session = true,
 				active = space.active, worktrees = space.worktrees or {},
-				collapsed = space.collapsed, error = space.error,
+				collapsed = space.collapsed, error = space.error, pr = pr,
 			})
 		end
 	end
@@ -449,8 +452,10 @@ local PR_REFRESH_MS = 120000
 -- succeeds again.
 local function refreshPullRequests(project, entry)
 	local branches = {}
+	-- Every checked-out branch but the base, the primary checkout's included:
+	-- a space can work on a feature branch without a worktree.
 	for _, tree in entry.worktrees do
-		if tree.branch and not tree.is_main then table.insert(branches, tree.branch) end
+		if tree.branch and tree.branch ~= project.base then table.insert(branches, tree.branch) end
 	end
 	table.sort(branches)
 	local key = table.concat(branches, "\0")
@@ -1574,6 +1579,12 @@ tern.on("canvas_action", function(ev, cx)
 		local project = repoById(ev.value)
 		if project then openForm(cx, "create", project) end
 	elseif ev.act == "open" then openWorktree(cx, ev.value)
+	elseif ev.act == "pr" then
+		-- In your default browser, where you're signed in to GitHub. (cx:open
+		-- follows Tern's link routing: a browser split beside the sidebar.)
+		if type(ev.value) == "string" and string.match(ev.value, "^https://") then
+			tern.process.run({ "/usr/bin/open", ev.value }, { timeout_ms = 10000 }, function() end)
+		end
 	elseif ev.act == "space" then
 		local id = tonumber(ev.value)
 		if id then cx.sessions:switch(id); follow(cx) end

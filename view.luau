@@ -115,6 +115,18 @@ local function statusDot(item)
 	return ui.el("div", { key = "status", role = role, title = title })
 end
 
+-- Opens the pull request on GitHub; its icon shows the PR's state. Sized like
+-- the icon buttons. Nil for a state Overseer has no icon for.
+local function prButton(pr)
+	local state = pr and PR_STATES[pr.state]
+	if not state then return nil end
+	local summary = "PR #" .. tostring(pr.number) .. " · " .. state.label
+	return ui.el("button", {
+		key = "pr", role = state.role, title = "Open " .. summary .. " on GitHub",
+		aria = "Open pull request " .. summary, actions = { click = "pr=" .. pr.url },
+	})
+end
+
 local function worktreeNode(worktree)
 	local branch = worktree.branch or "Detached HEAD"
 	local menu = {}
@@ -136,14 +148,8 @@ local function worktreeNode(worktree)
 	table.insert(head, ui.el("div", { key = "spacer", grow = 1 }))
 	if worktree.conflicts then table.insert(head, text("conflicts", "conflicts", "overseer.badgeBad")) end
 	if worktree.deleting then table.insert(head, text("deleting", "deleting", "overseer.badgeWarn")) end
-	local pr = worktree.pr and PR_STATES[worktree.pr.state]
-	if pr then
-		local summary = "#" .. tostring(worktree.pr.number) .. " · " .. pr.label
-		table.insert(head, ui.el("button", {
-			key = "pr", role = pr.role, title = summary .. " — open on GitHub", href = worktree.pr.url,
-			aria = "Pull request " .. summary, actions = { click = "open" },
-		}))
-	end
+	local pr = prButton(worktree.pr)
+	if pr then table.insert(head, pr) end
 	return ui.node("col", {
 		key = "w" .. safeKey(worktree.path), role = "overseer.worktree",
 		mark = if worktree.active then "pick" else nil,
@@ -180,6 +186,8 @@ local function spaceNode(space)
 		}),
 	}
 	local buttons = {}
+	local pr = prButton(space.pr)
+	if pr then table.insert(buttons, pr) end
 	if space.repo then
 		table.insert(buttons, iconButton("create", "iconPlus", "create=" .. space.repo, "New worktree from " .. (space.base or "the base branch")))
 	end
