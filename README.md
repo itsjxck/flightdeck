@@ -52,8 +52,8 @@ You need macOS and:
 | [omp](https://omp.sh) | Visualize PR | optional |
 
 ```sh
-git clone https://github.com/mmnavarr/overseer.git
-cd overseer
+git clone git@github.com:itsjxck/tern-overseer.git
+cd tern-overseer
 /Applications/Tern.app/Contents/MacOS/tern plugin link "$PWD"
 ```
 
@@ -238,6 +238,7 @@ Other conventions:
 ## Credits
 
 - Pull request and refresh icons: [Primer Octicons](https://primer.style/octicons/) (MIT, `icons/LICENSE`).
+- Started as a fork of [mmnavarr/overseer](https://github.com/mmnavarr/overseer) (MIT); 3.0 rebuilt its Projects panel as Spaces and Agents.
 - Visualize PR follows [humanlayer/skills](https://github.com/humanlayer/skills)' visual-pr skill, vendored at `ca7c8088db69` (MIT, `skills/visual-pr/LICENSE`).
 - The Spaces and Agents layout follows [herdr](https://herdr.dev)'s sidebar.
 - Built on [Tern](https://docs.stencil.so/tern/), [Worktrunk](https://worktrunk.dev) and [omp](https://omp.sh).
