@@ -7,7 +7,10 @@
 A sidebar of your spaces, the worktrees under them, and every agent you have running.<br>
 Click a row and you're there.
 
-<img src="docs/images/spaces.png" alt="Overseer's Spaces sidebar: two spaces, one with two worktrees nested under it, and an agent at the bottom" width="380">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/spaces-dark.png">
+  <img src="docs/images/spaces-light.png" alt="Overseer's sidebar: a webapp space with three worktrees (two with PRs, one with uncommitted changes), an api space on a feature branch with a PR, a notes folder, and two agents at the bottom" width="380">
+</picture>
 
 </div>
 

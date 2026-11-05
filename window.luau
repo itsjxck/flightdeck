@@ -203,21 +203,24 @@ local function worktreeAt(worktrees, dir)
 end
 
 -- Running agents in this window, and agent activity per session id (as a
--- string). Native agent blocks report their state (agentStates); one whose
--- agent has exited, leaving its shell, isn't running. Agent CLIs in plain
--- terminals only report progress, which Tern exposes as `busy` (a CLI that
--- hasn't reported progress yet counts as busy while it runs).
+-- string). Native agent blocks report their state (agentStates). A block
+-- whose agent has exited falls back to its shell, so it counts while its
+-- program, or the command running in it, is an agent CLI (a block started
+-- without a shell has no `running` line). Agent CLIs in plain terminals only
+-- report progress, which Tern exposes as `busy` (a CLI that hasn't reported
+-- progress yet counts as busy while it runs).
 local function agentPanes(tabsById, panes)
 	local agents, sessions = {}, {}
 	for _, pane in panes do
 		local tab = pane.tab and tabsById[pane.tab]
-		if tab and pane.exited == nil and pane.running then
+		if tab and pane.exited == nil then
 			local state, program
-			if pane.kind == "agent" then
-				state = agentStates[pane.pane] or "idle"
-				program = runsAgent(pane.running.line) or pane.program or "agent"
-			elseif pane.kind == "terminal" then
-				program = runsAgent(pane.running.line)
+			local line = pane.running and pane.running.line
+			local cli = (line and runsAgent(line)) or (if AGENTS[pane.program or ""] then pane.program else nil)
+			if pane.kind == "agent" and cli then
+				state, program = agentStates[pane.pane] or "idle", cli
+			elseif pane.kind == "terminal" and line then
+				program = runsAgent(line)
 				if program then state = if pane.busy then "working" else "idle" end
 			end
 			if state then
@@ -319,6 +322,8 @@ local function model(cx)
 				item.deleting = removing(worktree.path, jobs)
 				item.label = (names[repoId] and names[repoId][worktree.path])
 					or (space and space.named and space.name) or worktree.branch or basename(worktree.path)
+				-- Its agents go by the name its row shows.
+				if space then space.label = item.label end
 				item.pr = worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
 				item.session = sessionId ~= nil
 				item.agent = sessionId and activity[tostring(sessionId)]
@@ -373,7 +378,7 @@ local function model(cx)
 		local space = byId[agent.tab.session]
 		table.insert(result.agents, {
 			pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
-			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.name else "Agent",
+			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.label or space.name else "Agent",
 			active = agent.tab.id == shown,
 		})
 	end
