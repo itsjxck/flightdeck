@@ -2,11 +2,15 @@
 local wt = require("./worktrunk")
 local view = require("./view")
 local visualize = require("./visualize")
+local oplog = require("./oplog")
 
 local cache = {}
 local inflight = {}
 -- Helper liveness probes: job id -> true while `kill -0` runs; dead[id] once it failed.
 local probing, dead = {}, {}
+-- Creations' progress, read from their setup tab (see trackCreations): job id
+-- -> { step, asking, needsYou, quiet, changedAt, … }. In memory only.
+local creationProgress = {}
 local rendered = {}
 local collapsed = {}
 local confirmation
@@ -240,6 +244,21 @@ local function model(cx)
 	local agents, activity = agentPanes(tabsById, panes)
 	local current = cx.sessions:current()
 	local pending, renames = {}, {}
+	-- Creations in progress, by repository and branch. Elapsed time moves in
+	-- 5 s steps, so the panel redraws for it only that often.
+	local creating = {}
+	for id, job in jobs do
+		if job.kind == "create" and job.branch and job.project then
+			local state = creationProgress[id] or {}
+			creating[job.project] = creating[job.project] or {}
+			creating[job.project][job.branch] = {
+				pane = job.pane, label = job.displayName or job.branch, step = state.step,
+				elapsed = math.max(0, os.time() - (job.started or os.time())) // 5 * 5,
+				needsYou = state.needsYou == true, asking = state.asking == true,
+				quiet = state.quiet and state.quiet // 5 * 5,
+			}
+		end
+	end
 
 	-- Every session is a space, named by you or else after its folder.
 	local spaces, byId = {}, {}
@@ -304,9 +323,20 @@ local function model(cx)
 				item.session = sessionId ~= nil
 				item.agent = sessionId and activity[tostring(sessionId)]
 				item.active = sessionId ~= nil and sessionId == current.id
+				item.creating = worktree.branch and creating[repoId] and creating[repoId][worktree.branch] or nil
+				if item.creating then item.creating.listed = true end
 				table.insert(rows, item)
 			end
 		end
+		-- A creation Worktrunk hasn't listed yet gets its row right away, first.
+		local unlisted = {}
+		for branch, state in (creating[repoId] or {}) do
+			if not state.listed then
+				table.insert(unlisted, { path = "creating:" .. branch, branch = branch, label = state.label, creating = state })
+			end
+		end
+		table.sort(unlisted, function(a, b) return a.branch < b.branch end)
+		for index, item in unlisted do table.insert(rows, index, item) end
 		anchor.worktrees, anchor.base = rows, repo and repo.base
 		anchor.error, anchor.collapsed = entry and entry.error, collapsed[repoId] == true
 	end
@@ -929,7 +959,7 @@ end
 
 local function showConfirmation(cx, request)
 	endConfirmation(cx)
-	local words = view.CONFIRMATIONS[request.kind]
+	local words = view.confirmationWords(request)
 	local pane, err = cx.canvas:open({
 		title = words.title,
 		about = "Overseer asks before it runs " .. words.confirm .. " on " .. request.label .. ". Cancel or a click outside keeps it.",
@@ -940,11 +970,14 @@ local function showConfirmation(cx, request)
 	confirmation = request
 end
 
--- Redraws the open confirmation after its request changed (checking).
+-- Redraws the open confirmation after its request changed (checking, or the
+-- uncommitted changes a Force delete would lose).
 local function updateConfirmation(cx)
 	local request = confirmation
 	if not request or not request.pane then return end
-	local ok, err = pcall(function() cx.canvas:set(request.pane, { view = view.confirmation(request) }) end)
+	local ok, err = pcall(function()
+		cx.canvas:set(request.pane, { title = view.confirmationWords(request).title, view = view.confirmation(request) })
+	end)
 	if not ok then tern.log.warn("Overseer: confirmation not updated: " .. tostring(err)) end
 end
 
@@ -1095,15 +1128,14 @@ local function confirmWorktreeAction(cx, id)
 	if not project then endConfirmation(cx); report(cx, "Repository is no longer known. Refresh Spaces."); return end
 	request.checking = true
 	updateConfirmation(cx)
-	wt.validate_removal(project, request.worktree, function(worktree, err, nextCx)
-		-- Cancelling or reloading while validation runs never starts a deletion.
-		if not nextCx or confirmation ~= request then return end
-		local function failed(freshCx, text)
-			endConfirmation(freshCx)
-			report(freshCx, text, "Worktree deletion failed")
-			refresh(freshCx)
-		end
-		if not worktree then failed(nextCx, err); return end
+	-- Cancelling (or a click outside) or reloading while a check runs never starts a deletion.
+	local function current(nextCx) return nextCx ~= nil and confirmation == request end
+	local function failed(freshCx, text)
+		endConfirmation(freshCx)
+		report(freshCx, text, "Worktree deletion failed")
+		refresh(freshCx)
+	end
+	local function launch(nextCx, worktree, force)
 		local _, guardError = closeGuard(nextCx, request.path)
 		if guardError then failed(nextCx, guardError); return end
 		local jobs = records("jobs")
@@ -1114,7 +1146,7 @@ local function confirmWorktreeAction(cx, id)
 		end
 		local jobId = token()
 		local receipt = tern.plugin.data .. "/removal-" .. jobId .. ".status"
-		local ready, command = pcall(wt.removal_command, project, worktree, receipt)
+		local ready, command = pcall(wt.removal_command, project, worktree, receipt, force)
 		if not ready then failed(nextCx, command); return end
 		-- Like creation, the output tab opens in the background; you stay put.
 		local terminal = nextCx.layout:new_tab({ cwd = project.path, command = command }, { focus = false })
@@ -1125,18 +1157,35 @@ local function confirmWorktreeAction(cx, id)
 			local keep = outputSession(nextCx, project, target)
 			if keep then nextCx.layout:move_to_new_tab(terminal, keep, { focus = false }) end
 		end
-		local tabName = "Delete: " .. request.label
 		local tab = nextCx.session:tab_of(terminal)
-		if tab then nextCx.layout:name_tab(tab, tabName) end
+		if tab then nextCx.layout:name_tab(tab, "Delete: " .. request.label) end
 		jobs[jobId] = {
 			kind = "remove", project = project.id, path = worktree.path, branch = worktree.branch,
 			label = request.label, receipt = receipt, pane = terminal, started = os.time(),
 			session = target,
 		}
 		tern.kv.set("jobs", jobs)
+		oplog.write("info", { op = "remove", event = "started", project = project.name, branch = worktree.branch,
+			path = worktree.path, detail = if force then "forced" else nil })
 		endConfirmation(nextCx)
 		nextCx:toast("info", "Deleting worktree", notificationLabel(request.label))
 		redraw(nextCx)
+	end
+	-- A clean worktree goes straight away. With uncommitted changes, the popup
+	-- lists them and offers Force delete, which comes back here with force set.
+	wt.validate_removal(project, request.worktree, function(worktree, err, nextCx)
+		if not current(nextCx) then return end
+		if not worktree then failed(nextCx, err); return end
+		if request.force then launch(nextCx, worktree, true); return end
+		if not worktree.dirty and not worktree.status_unknown then launch(nextCx, worktree, false); return end
+		wt.local_changes(worktree.path, function(changes, changesError, changesCx)
+			if not current(changesCx) then return end
+			if not changes then failed(changesCx, changesError); return end
+			-- Clean again by now: the helper still refuses if that changes before it runs.
+			if changes.total == 0 then launch(changesCx, worktree, false); return end
+			request.worktree, request.changes, request.force, request.checking = table.clone(worktree), changes, true, false
+			updateConfirmation(changesCx)
+		end)
 	end)
 end
 
@@ -1296,6 +1345,7 @@ local function launchCreation(cx, project, job)
 	local jobs = records("jobs")
 	jobs[id] = job
 	tern.kv.set("jobs", jobs)
+	oplog.write("info", { op = "create", event = "started", project = project.name, branch = job.branch })
 	return nil
 end
 
@@ -1481,62 +1531,146 @@ local function helperFailed(id, job)
 	return false
 end
 
-local function checkJobs(cx)
+-- What a finished job leaves to do: close its tab, update names and sessions,
+-- log it, and tell you. Runs once the job is off the books, so a callback Tern
+-- cuts short never repeats or misreports a job.
+local function jobFinished(cx, job, status)
+	local seconds = math.max(0, os.time() - (job.started or os.time()))
+	-- Before the tab closes: a setup that printed warnings goes in the
+	-- operation log, with its first warning, and nowhere else.
+	local warnings = {}
+	if cx.session:pane(job.pane) then
+		warnings = oplog.warnings(oplog.readPane(cx, job.pane, oplog.READ_LINES, true) or {})
+	end
+	-- On success the output tab has served its purpose: close it (its helper is
+	-- only waiting for Enter). Failures keep it open with the error on screen,
+	-- including a deletion that reported success but left its directory.
+	local succeeded = status == 0 and (job.kind ~= "remove" or not tern.fs.exists(job.path))
+	if succeeded and cx.session:pane(job.pane) then cx.layout:close(job.pane) end
+	local project = repoById(job.project)
+	oplog.write(if succeeded and #warnings == 0 then "info" else "warn", {
+		op = if job.kind == "remove" then "remove" else "create", event = if succeeded then "finished" else "failed",
+		project = project and project.name, branch = job.branch, path = job.path, status = status, seconds = seconds,
+		warnings = if #warnings > 0 then #warnings else nil, detail = warnings[1],
+	})
+	if job.kind == "remove" then
+		if succeeded then
+			local names = records("worktree-names")
+			if names[job.project] then
+				names[job.project][job.path] = nil
+				tern.kv.set("worktree-names", names)
+			end
+			local closed, closeError = true, nil
+			if job.session then closed, closeError = closeManagedSession(cx, job.path, job.session) end
+			if closed then
+				cx:toast("info", "Worktree deleted", notificationLabel(job.label))
+			else
+				tern.log.warn("Worktree deleted, but its session was left open: " .. tostring(closeError))
+				cx:toast("error", "Worktree deleted", "Session still open. Check Tern’s log.")
+			end
+		else
+			cx:toast("error", "Worktree deletion failed", "Check the Delete tab. Session kept.")
+		end
+	else
+		-- Applied on failure too: a partially created worktree keeps its label.
+		applyCreatedName(job)
+		if status == 0 then
+			cx:toast("info", "Worktree created", notificationLabel(job.displayName or job.branch))
+		else
+			cx:toast("error", "Worktree creation failed", "Check the Create tab for details.")
+		end
+	end
+end
+
+-- `inline` finishes jobs in this callback instead of one of their own: the
+-- process clock does that when timers may not be running.
+local function checkJobs(cx, inline)
 	local jobs = records("jobs")
-	local changed = false
+	local finished = {}
 	for id, job in jobs do
 		local status
 		if tern.fs.exists(job.receipt) then
-			status = tonumber(tern.fs.read(job.receipt))
-			if status == nil then status = -1 end
-			tern.fs.remove(job.receipt)
+			status = tonumber(tern.fs.read(job.receipt)) or -1
 		else
 			local pane = cx.session:pane(job.pane)
 			if (not pane or pane.exited ~= nil or pane.error) and helperFailed(id, job) then status = -1 end
 		end
-		-- On success the output tab has served its purpose: close it (its helper is
-		-- only waiting for Enter). Failures keep it open with the error on screen,
-		-- including a deletion that reported success but left its directory.
-		local succeeded = status == 0 and (job.kind ~= "remove" or not tern.fs.exists(job.path))
-		if succeeded and cx.session:pane(job.pane) then cx.layout:close(job.pane) end
-		if status ~= nil then
-			jobs[id], changed = nil, true
-			probing[id], dead[id] = nil, nil
-			if tern.fs.exists(job.receipt .. ".pid") then tern.fs.remove(job.receipt .. ".pid") end
-			if job.kind == "remove" then
-				if status == 0 and not tern.fs.exists(job.path) then
-					local names = records("worktree-names")
-					if names[job.project] then
-						names[job.project][job.path] = nil
-						tern.kv.set("worktree-names", names)
-					end
-					local closed, closeError = true, nil
-					if job.session then closed, closeError = closeManagedSession(cx, job.path, job.session) end
-					if closed then
-						cx:toast("info", "Worktree deleted", notificationLabel(job.label))
-					else
-						tern.log.warn("Worktree deleted, but its session was left open: " .. tostring(closeError))
-						cx:toast("error", "Worktree deleted", "Session still open. Check Tern’s log.")
-					end
-				else
-					cx:toast("error", "Worktree deletion failed", "Check the Delete tab. Session kept.")
-				end
-			else
-				-- Applied on failure too: a partially created worktree keeps its label.
-				applyCreatedName(job)
-				local label = job.displayName or job.branch
-				if status == 0 then
-					cx:toast("info", "Worktree created", notificationLabel(label))
-				else
-					cx:toast("error", "Worktree creation failed", "Check the Create tab for details.")
+		if status ~= nil then finished[id] = { job = job, status = status } end
+	end
+	if next(finished) == nil then return end
+	-- Off the books before the receipts go: a callback cut short in between
+	-- leaves a stray receipt, never a job without one (which reads as failed).
+	for id in finished do jobs[id] = nil end
+	tern.kv.set("jobs", jobs)
+	for id, done in finished do
+		probing[id], dead[id] = nil, nil
+		for _, file in { done.job.receipt, done.job.receipt .. ".pid" } do
+			if tern.fs.exists(file) then tern.fs.remove(file) end
+		end
+		local function finish(finishCx)
+			local ok, err = pcall(jobFinished, finishCx, done.job, done.status)
+			if not ok then tern.log.warn("Overseer: finishing a job failed: " .. tostring(err)) end
+		end
+		if inline then finish(cx) else tern.timer(0, function(nextCx) if nextCx then finish(nextCx) end end) end
+	end
+	refresh(cx)
+end
+
+-- Creations' progress, read from their setup tab each tick: the step they're
+-- on, and how long their output has been still. A question on the last line
+-- (Worktrunk's hook approval prompt) marks one "needs you?" at once; so does
+-- CREATE_QUIET_S without output, long enough that a quiet install or code
+-- generation step doesn't trip it. Either tells you once. After a reload it
+-- just starts over.
+local CREATE_QUIET_S = 60
+
+local function trackCreations(cx)
+	local jobs = records("jobs")
+	local changed = false
+	for id, job in jobs do
+		if job.kind == "create" and job.pane then
+			local state = creationProgress[id] or { changedAt = os.time() }
+			creationProgress[id] = state
+			local lines = oplog.readPane(cx, job.pane, 15, false)
+			if lines then
+				local signature = table.concat(lines, "\n")
+				if signature ~= state.signature then state.signature, state.changedAt = signature, os.time() end
+				local step, asking = oplog.progress(lines)
+				local quiet = os.time() - state.changedAt
+				local needsYou = asking or quiet >= CREATE_QUIET_S
+				-- The row shows elapsed time in 5 s steps: redraw when that, the step
+				-- or the flag changes, not on every tick.
+				local bucket = (os.time() - (job.started or os.time())) // 5
+				if step ~= state.step or needsYou ~= state.needsYou or bucket ~= state.bucket then changed = true end
+				state.step, state.asking, state.needsYou, state.bucket = step, asking, needsYou, bucket
+				state.quiet = if needsYou and not asking then quiet else nil
+				if needsYou and not state.told then
+					state.told = true
+					local project = repoById(job.project)
+					local why = if asking then "It's asking a question in its setup tab."
+						else "No output for " .. quiet .. " s. It may be waiting for an answer."
+					cx:toast("error", "Creating " .. (job.displayName or job.branch) .. " may need you", why .. " Click its row.")
+					oplog.write("warn", { op = "create", event = "needs-you", project = project and project.name,
+						branch = job.branch, detail = why })
 				end
 			end
 		end
 	end
-	if changed then
-		tern.kv.set("jobs", jobs)
-		refresh(cx)
+	for id in creationProgress do
+		if not jobs[id] then creationProgress[id], changed = nil, true end
 	end
+	if changed then redraw(cx) end
+end
+
+-- Opens the operation log in a new tab with less. The command goes through
+-- your shell; single quotes keep the path one word in bash, zsh, fish and nu.
+local function openLog(cx)
+	local file = oplog.path()
+	if not tern.fs.exists(file) then cx:toast("info", "Nothing logged yet", "Overseer hasn't run an operation yet."); return end
+	if string.find(file, "'", 1, true) then report(cx, "Can't open " .. file .. " through a shell."); return end
+	local pane = cx.layout:new_tab({ command = "less -R +G '" .. file .. "'" })
+	local tab = pane and cx.session:tab_of(pane)
+	if tab then cx.layout:name_tab(tab, "Overseer log") end
 end
 
 -- The repository of the space shown now, if it's in one.
@@ -1551,11 +1685,12 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	local project = currentRepo(cx) or activeWorktree(cx)
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
+tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
 
--- Shows an agent: its space, then its pane.
-local function showAgent(cx, pane)
+-- Shows a pane (an agent, a setup tab): its space, then the pane.
+local function showPane(cx, pane)
 	local tab = pane and cx.session:tab_of(pane)
-	if not tab then report(cx, "That agent has closed."); return end
+	if not tab then report(cx, "That pane has closed."); return end
 	for _, info in cx.session:tabs() do
 		if info.id == tab and info.session ~= cx.sessions:current().id then cx.sessions:switch(info.session) end
 	end
@@ -1588,7 +1723,7 @@ tern.on("canvas_action", function(ev, cx)
 	elseif ev.act == "space" then
 		local id = tonumber(ev.value)
 		if id then cx.sessions:switch(id); follow(cx) end
-	elseif ev.act == "agent" then showAgent(cx, tonumber(ev.value))
+	elseif ev.act == "agent" or ev.act == "pane" then showPane(cx, tonumber(ev.value))
 	elseif ev.act == "Rename space" then
 		local space = spaceInfo(cx, view.spaceId(ev.node))
 		if space then openForm(cx, "space", nil, nil, space)
@@ -1669,30 +1804,83 @@ local function closeEmptySessions(cx)
 	end
 end
 
--- Only schedules: each step runs in a callback of its own, so a slow step can't
--- push the whole tick past its budget.
-local function tick(cx)
-	local ok, err = pcall(function()
-		if not localHost(cx) then return end
-		separately(forms)
-		-- Resumes fast form checks after a plugin reload left a form open.
-		watchForms()
-		separately(checkJobs)
-		if tern.now() - lastRefresh >= 15000 and #cx.canvas:list() > 0 then
-			lastRefresh = tern.now()
-			separately(refresh)
-		end
-		separately(recordSessions)
-		separately(seedAgents)
-		separately(follow)
-		separately(closeEmptySessions)
-		redraw(cx)
-	end)
-	if not ok then
-		local text = tostring(err)
-		if problem ~= text then report(cx, text) end
+-- Each piece of a tick runs in a callback of its own, so a slow step can't
+-- push the whole tick past its budget. The next tick is queued first, so a
+-- tick Tern cuts short can't end the chain.
+--
+-- Upstream Overseer saw the tick stop for long stretches without Tern pausing
+-- or logging anything, leaving creations and deletions unfinished. So its
+-- health is watched from outside the timer hook: a generation number lets a
+-- restart retire a lost chain, and `ensureTicking` runs from every event and
+-- from a clock driven by a process (the process hook has a budget of its
+-- own), restarting the tick when it is overdue.
+local TICK_MS = 750
+local TICK_STALL_MS = 5000
+local tickGeneration = 0
+local lastTick = tern.now()
+-- When Tern paused the timer hook, until when (tern.now() ms); 0 when running.
+local timerPausedUntil = 0
+local tick
+
+local function scheduleTick(generation)
+	tern.timer(TICK_MS, function(cx) tick(generation, cx) end)
+end
+
+tick = function(generation, cx)
+	-- A chain a restart replaced ends here, so two never run side by side.
+	if generation ~= tickGeneration then return end
+	scheduleTick(generation)
+	lastTick = tern.now()
+	if not cx or not localHost(cx) then return end
+	separately(forms)
+	-- Resumes fast form checks after a plugin reload left a form open.
+	watchForms()
+	separately(checkJobs)
+	separately(trackCreations)
+	if tern.now() - lastRefresh >= 15000 and #cx.canvas:list() > 0 then
+		lastRefresh = tern.now()
+		separately(refresh)
 	end
-	tern.timer(750, tick)
+	separately(recordSessions)
+	separately(seedAgents)
+	separately(follow)
+	separately(closeEmptySessions)
+	redraw(cx)
+end
+
+-- Restarts the tick when it is overdue and Tern hasn't paused the timer hook
+-- (a pause holds due timers on purpose). Returns whether it restarted.
+local function ensureTicking(source)
+	local now = tern.now()
+	local gap = now - lastTick
+	if gap < TICK_STALL_MS or now < timerPausedUntil then return false end
+	tickGeneration += 1
+	lastTick = now
+	scheduleTick(tickGeneration)
+	oplog.write("warn", { op = "tick", event = "restarted",
+		detail = string.format("no tick for %.0f s; restarted from %s", gap / 1000, source) })
+	return true
+end
+
+-- A second clock, outside the timer hook: a short process every 5 s. When the
+-- tick turns out to be overdue it is restarted. While timers can't run (the
+-- tick was overdue, or Tern paused the timer hook, which doubles to minutes on
+-- repeat trips), this clock finishes jobs whose receipts are in and keeps the
+-- panel in the shown tab, so neither waits for timers to come back.
+local function processClock()
+	local ok = pcall(tern.process.run, { "/bin/sleep", "5" }, { timeout_ms = 15000 }, function(_result, cx)
+		processClock()
+		if not cx or not localHost(cx) then return end
+		local restarted = ensureTicking("the process clock")
+		if restarted or tern.now() < timerPausedUntil then
+			local done, err = pcall(checkJobs, cx, true)
+			if not done then tern.log.warn("Overseer: job check failed: " .. tostring(err)) end
+			local followed, followErr = pcall(follow, cx)
+			if not followed then tern.log.warn("Spaces panel: " .. tostring(followErr)) end
+		end
+	end)
+	-- Can't start a process (shouldn't happen): events still check the tick.
+	if not ok then tern.log.warn("Overseer: the process clock could not start") end
 end
 
 tern.on("window_start", function(cx)
@@ -1707,14 +1895,20 @@ tern.on("session_ended", function(ev, cx)
 	redraw(cx)
 end)
 tern.on("agent_state", function(ev, cx)
+	ensureTicking("agent_state")
 	agentStates[ev.pane] = AGENT_STATES[ev.new]
 	redraw(cx)
 end)
 -- Tern pauses a hook that ran over its budget, then resumes it; timer
--- callbacks due meanwhile wait. Only logged: Tern toasts the overrun itself.
+-- callbacks due meanwhile wait (ensureTicking leaves them be). Tern toasts the
+-- overrun itself; the operation log keeps it.
 tern.on("budget", function(ev)
+	if ev.hook == "timer" then
+		timerPausedUntil = if ev.state == "paused" then tern.now() + (ev.paused_ms or 0) + 1000 else 0
+	end
 	if ev.state == "paused" then
-		tern.log.warn(string.format("Overseer: %s paused for %d ms after running over %d ms", ev.hook, ev.paused_ms or 0, ev.ms or 0))
+		oplog.write("warn", { op = "budget", event = "paused", detail = string.format("%s paused for %d ms after running over %d ms",
+			ev.hook, ev.paused_ms or 0, ev.ms or 0) })
 	else
 		tern.log.warn("Overseer: " .. ev.hook .. " resumed")
 	end
@@ -1737,9 +1931,9 @@ local function followSoon(_cx, tab)
 		separately(closeEmptySessions)
 	end)
 end
-tern.on("focus", function(ev, cx) followSoon(cx, ev.tab) end)
+tern.on("focus", function(ev, cx) ensureTicking("focus"); followSoon(cx, ev.tab) end)
 for _, name in { "tab_created", "tab_closed", "pane_created" } do
-	tern.on(name, function(_ev, cx) followSoon(cx) end)
+	tern.on(name, function(_ev, cx) ensureTicking(name); followSoon(cx) end)
 end
 -- A form pane closed without Back or Submit (⌘W, its tab closed) would leave
 -- its request, and any answer it had sent, in kv for good. A confirmation
@@ -1754,7 +1948,9 @@ tern.on("pane_closed", function(ev, cx)
 	end
 	if confirmation and confirmation.pane == ev.pane then confirmation = nil end
 	agentStates[ev.pane] = nil
+	ensureTicking("pane_closed")
 	followSoon(cx)
 end)
--- Timers are restarted on reload; window_start intentionally is not.
-tern.timer(750, tick)
+-- Timers and processes are restarted on reload; window_start intentionally is not.
+scheduleTick(tickGeneration)
+processClock()

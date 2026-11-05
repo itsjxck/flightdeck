@@ -156,6 +156,23 @@
   border-radius: 6px;
   cursor: pointer;
 }
+/* A worktree being created: two lines (its progress under the name); the
+   row opens its setup tab. */
+[data-role='overseer.creatingRow'] {
+  gap: 1px;
+  min-width: 0;
+  padding: 3px 4px 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+/* What a Force delete would lose, in the confirmation. */
+[data-role='overseer.changes'] {
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t4) 10%, transparent);
+  font-size: 0.9em;
+}
 [data-role='overseer.agentRow'] {
   align-items: flex-start;
   gap: 8px;
@@ -172,6 +189,7 @@
 }
 [data-role='overseer.spaceRow']:hover,
 [data-role='overseer.worktreeRow']:hover,
+[data-role='overseer.creatingRow']:hover,
 [data-role='overseer.agentRow']:hover {
   background: color-mix(in srgb, var(--t4) 9%, transparent);
 }

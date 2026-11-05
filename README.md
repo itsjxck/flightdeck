@@ -67,10 +67,14 @@ Linking reloads the plugin whenever the source changes. Use `tern plugin install
 4. **New worktree:** **+** beside a space in a Git repository. Type a branch name (and, if you like, a friendly display name). Setup runs in a background **Create** tab, and a notification tells you when it's ready. **▾** hides or shows a space's worktrees.
 5. **Everything else is a right-click away:**
    - On a space: **Rename space** (renames its Tern session; leave it blank to name it after its folder again), **New worktree**, **Change base branch** and **Close space**.
-   - On a worktree: **Visualize PR** for a reviewer's outline of the branch's pull request, **Rename** (the row's label; the branch stays as it is), **Close session** (stops its programs and closes its tabs; the files stay) and **Delete worktree** (runs `wt remove`; it refuses if there are uncommitted changes and always keeps the branch).
+   - On a worktree: **Visualize PR** for a reviewer's outline of the branch's pull request, **Rename** (the row's label; the branch stays as it is), **Close session** (stops its programs and closes its tabs; the files stay) and **Delete worktree** (runs `wt remove` and always keeps the branch). A worktree with uncommitted changes lists them and asks again, as **Force delete**.
    - Closing and deleting ask first in a popup over the tab; Cancel, Esc or a click outside it keeps things as they are.
 
 A worktree's session is named `repo / branch` in Tern's session list unless you rename it. Closing a space's last tab closes the space.
+
+A new worktree's row appears as soon as setup starts: "creating", how long it's been running and Worktrunk's current step. If setup asks a question (a hook approval, say) or prints nothing for a minute, the row says **needs you?** and you get one notification; click the row to open the setup tab.
+
+**Show Overseer's operation log** (command palette) opens `ops.log`: every creation and deletion with its duration and outcome (and the first warning its setup printed), hook-approval waits, budget pauses and tick restarts. Nothing about it shows in the sidebar.
 
 ### Visualize a PR
 
@@ -101,7 +105,7 @@ flowchart LR
 ## Safety
 
 - Creation never fetches, pulls, or checks out anything in your primary checkout.
-- Deletion rechecks the repository, branch and cleanliness right before it runs. It never deletes a branch. The primary checkout can't be deleted.
+- Deletion rechecks the repository, branch and cleanliness right before it runs. A worktree with uncommitted changes is only deleted after you've seen them listed and chosen Force delete. It never deletes a branch. The primary checkout can't be deleted.
 - Ignored files are removed with a deleted worktree's directory, so copy out anything you need first.
 - Branch names and paths are passed as arguments, never as shell text.
 
@@ -122,7 +126,7 @@ Tern APIs are typed in the definitions Tern generates: `/Applications/Tern.app/C
 
 ### The 50 ms rule (read this first)
 
-Tern gives **every plugin callback 50 ms of its own Lua** (4 ms in the status formatter), and at most ten times that in total wall time, Tern's own calls included (`cx`, `tern.fs`, `tern.kv`, starting a process). An overrun **pauses that hook** (`canvas_action`, `timer`, `process`, …): 5 s, doubling for each repeat within 10 minutes, up to 5 minutes. Timer, process and fetch callbacks that come due meanwhile wait. Tern toasts the overrun; Overseer's `budget` handler logs each pause and resume to `~/Library/Logs/Tern/tern.log`. A paused `canvas_action` makes clicks in the sidebar answer `Nothing handles "open" here` until it resumes.
+Tern gives **every plugin callback 50 ms of its own Lua** (4 ms in the status formatter), and at most ten times that in total wall time, Tern's own calls included (`cx`, `tern.fs`, `tern.kv`, starting a process). An overrun **pauses that hook** (`canvas_action`, `timer`, `process`, …): 5 s, doubling for each repeat within 10 minutes, up to 5 minutes. Timer, process and fetch callbacks that come due meanwhile wait. Tern toasts the overrun; Overseer's `budget` handler writes each pause to the operation log (and Tern's log, `~/Library/Logs/Tern/tern.log`). A paused `canvas_action` makes clicks in the sidebar answer `Nothing handles "open" here` until it resumes.
 
 Consequences, enforced throughout `window.luau`:
 
@@ -137,11 +141,12 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 
 | File | What lives there |
 |---|---|
-| `window.luau` | Spaces and repositories (`spaceDir`, `namedByYou`, `inspectDirs`, `repos`), model building (`model`), drawing (`draw`/`redraw`), the following sidebar (`slot`, `pin`, `follow`, `togglePanel`), session binding (`worktreeSession`, `ensureSession`, `createSpace`), forms swapped into the sidebar's slot, background jobs (`launchCreation`, `checkJobs`), Visualize PR canvases, hooks and the 750 ms `tick`. |
-| `worktrunk.luau` | Every external command: repository discovery (`inspect`), `wt list`, validation, the creation and removal command lines, `git` status, `gh pr list`/`gh pr view`/`gh pr diff`. Commands are argv arrays; `find_executable` checks Homebrew, `/usr/local/bin`, `~/.bun/bin` and `~/.local/bin`. |
+| `window.luau` | Spaces and repositories (`spaceDir`, `namedByYou`, `inspectDirs`, `repos`), model building (`model`), drawing (`draw`/`redraw`), the following sidebar (`slot`, `pin`, `follow`, `togglePanel`), session binding (`worktreeSession`, `ensureSession`, `createSpace`), forms swapped into the sidebar's slot, background jobs (`launchCreation`, `checkJobs`, `jobFinished`, `trackCreations`), confirmations, Visualize PR canvases, hooks, the 750 ms `tick` and its watchdog (`ensureTicking`, `processClock`). |
+| `worktrunk.luau` | Every external command: repository discovery (`inspect`), `wt list`, validation, a worktree's uncommitted changes (`local_changes`), the creation and removal command lines, `git` status, `gh pr list`/`gh pr view`/`gh pr diff`. Commands are argv arrays; `find_executable` checks Homebrew, `/usr/local/bin`, `~/.bun/bin` and `~/.local/bin`. |
+| `oplog.luau` | The operation log (`ops.log`): writing entries, reading a setup tab's progress and warnings. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |
-| `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, menus) and its dock (agents), and the confirmation popup's view. |
-| `worktree-operation.sh` | The helper that runs `wt switch --create` / `wt remove` in a visible terminal and writes an atomic completion receipt. |
+| `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, creations, menus) and its dock (agents), and the confirmation popup's view. |
+| `worktree-operation.sh` | The helper that runs `wt switch --create` / `wt remove` (or `--force` for a confirmed Force delete) in a visible terminal and writes an atomic completion receipt. |
 | `host.luau`, `input.luau` | The native form block and its text input. |
 | `styles.css`, `icons.css` | Sidebar styles. `icons.css` is **generated** by `icons/generate-css.py` (plugin stylesheets can't load files, so icons are embedded as data URIs). |
 | `skills/visual-pr/` | HumanLayer's visual-pr skill, vendored unchanged (MIT). |
@@ -163,9 +168,9 @@ Tern's plugin KV (`~/Library/Application Support/Tern/plugin-data/overseer/kv.js
 
 A repository id is its shared Git directory, so linked checkouts dedupe. Versions before 3.0 also stored `projects`, `icebox` and `show-icebox`; 3.0 leaves them in place and never reads them.
 
-Files under `tern.plugin.data`: `creation-<id>.status` and `removal-<id>.status` receipts written by the helper, and the `visual-pr/<project>-<pr>-<headsha>.md` outline cache.
+Files under `tern.plugin.data`: `creation-<id>.status` and `removal-<id>.status` receipts written by the helper, `ops.log` (one JSON object per line, newest last, trimmed to its newer half past 256 KB), and the `visual-pr/<project>-<pr>-<headsha>.md` outline cache.
 
-In-memory only: `repos` and `dirRepo` (which folder is in which repository, `false` outside Git), the per-repository `cache` (worktrees, PRs, loading/error flags), `rendered` signatures per sidebar pane, collapsed spaces, the sidebar's pane and last tab, open outline canvases.
+In-memory only: `repos` and `dirRepo` (which folder is in which repository, `false` outside Git), the per-repository `cache` (worktrees, PRs, loading/error flags), `creationProgress` (each creation's step and whether it may need you), `rendered` signatures per sidebar pane, collapsed spaces, the sidebar's pane and last tab, open outline canvases.
 
 ### Flows
 
@@ -183,9 +188,11 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 
 **Session names.** Worktree rows whose session you haven't named collect `repo / branch` in `model`; `draw` passes them to `nameWorktreeSessions`, which renames the sessions in a callback of its own and records the new names in `auto-names`. New worktree sessions are created with that name.
 
-**Create.** Form → `wt.validate` → `launchCreation` opens a background tab running `worktree-operation.sh` and records a job → `checkJobs` (on `tick`) reads the receipt → on success: toast, then apply the display name by branch (`applyCreatedName`). Creation succeeded means `wt` exited 0, not that every hook succeeded.
+**Create.** Form → `wt.validate` → `launchCreation` opens a background tab running `worktree-operation.sh` and records a job → `trackCreations` (each `tick`) reads the tab's last lines through `oplog.progress` for the row's step, and flags "needs you?" on an approval prompt or a minute without output → `checkJobs` reads the receipt → `jobFinished`: log it (with the first warning the setup printed), toast, then apply the display name by branch (`applyCreatedName`). Creation succeeded means `wt` exited 0, not that every hook succeeded.
 
-**Delete.** Confirmation → `wt.validate_removal` (repository identity, branch, cleanliness) → removal job in a background tab → receipt → close the worktree's session only if the directory is gone, then drop its name and binding.
+**Delete.** Confirmation → `wt.validate_removal` (repository identity and branch) → clean: removal job in a background tab. Dirty or unreadable: `wt.local_changes` lists what would be lost and the popup asks again as Force delete, which runs the helper's `force-remove` (it still rechecks identity and branch, and never touches the primary checkout) → receipt → close the worktree's session only if the directory is gone, then drop its name and binding. `checkJobs` takes a finished job off the books before deleting its receipt, then finishes it in a callback of its own, so a cut-short callback never repeats or misreports a job.
+
+**The tick and its watchdog.** The 750 ms `tick` checks forms, jobs, creations, sessions and the sidebar, each in a callback of its own, and queues the next tick before doing anything, so a tick Tern cuts short can't end the chain. Each chain carries a generation number. `ensureTicking`, called from every event hook and from `processClock` (a `/bin/sleep 5` process, outside the timer hook), starts a new generation when the tick is more than 5 s late and logs "tick restarted"; it waits while Tern has the timer hook paused. While timers can't run, the process clock itself finishes jobs whose receipts are in and keeps the sidebar following.
 
 **Agents.** `agentPanes` lists every pane that is an agent block or a terminal running an agent CLI (`omp`, `pi`, `claude`, `codex`, `opencode`, `gemini`, `aider`, `amp`, `cursor-agent`, `crush`, `goose`), in space and tab order. Native agent blocks' states come from `agentStates` (pane id → `"working"` or `"waiting"`, else idle): Tern's `agent_state` event keeps it current and triggers a redraw, `seedAgents` fills it once per load from `cx.agents:list()` since events only report changes, and `pane_closed` drops the pane. Agent CLIs only report progress, so they count as working while their pane is `busy`. A space's dot shows its agents' state, waiting winning over working. Don't poll `cx.agents:list()`: it reads every block's last message (10–45 ms cold).
 
@@ -238,7 +245,7 @@ Other conventions:
 ## Credits
 
 - Pull request and refresh icons: [Primer Octicons](https://primer.style/octicons/) (MIT, `icons/LICENSE`).
-- Started as a fork of [mmnavarr/overseer](https://github.com/mmnavarr/overseer) (MIT); 3.0 rebuilt its Projects panel as Spaces and Agents.
+- Started as a fork of [mmnavarr/overseer](https://github.com/mmnavarr/overseer) (MIT); 3.0 rebuilt its Projects panel as Spaces and Agents. The tick watchdog, Force delete, creation progress, the operation log and the fallow filter are ported from its 2.3.1.
 - Visualize PR follows [humanlayer/skills](https://github.com/humanlayer/skills)' visual-pr skill, vendored at `ca7c8088db69` (MIT, `skills/visual-pr/LICENSE`).
 - The Spaces and Agents layout follows [herdr](https://herdr.dev)'s sidebar.
 - Built on [Tern](https://docs.stencil.so/tern/), [Worktrunk](https://worktrunk.dev) and [omp](https://omp.sh).

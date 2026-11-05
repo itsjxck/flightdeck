@@ -105,6 +105,8 @@ local function statusDot(item)
 	local role, title = "overseer.dotIdle", "No session"
 	if item.deleting then
 		role, title = "overseer.dotBusy", "Deleting"
+	elseif item.creating then
+		role, title = "overseer.dotBusy", "Creating"
 	elseif item.agent == "waiting" then
 		role, title = "overseer.dotWaiting", "Agent waiting for you"
 	elseif item.agent == "working" then
@@ -127,7 +129,63 @@ local function prButton(pr)
 	})
 end
 
+local function elapsed(seconds)
+	if seconds < 60 then return tostring(seconds) .. "s" end
+	return string.format("%dm %02ds", seconds // 60, seconds % 60)
+end
+
+-- A creation's second line: how long it has run, then what it's doing or why
+-- it may need you.
+local function creatingSubtitle(state)
+	local parts = { "creating", elapsed(state.elapsed) }
+	if state.asking then
+		table.insert(parts, "asking a question in its setup tab")
+	elseif state.quiet then
+		table.insert(parts, "no output for " .. elapsed(state.quiet))
+	elseif state.step then
+		table.insert(parts, state.step)
+	end
+	return table.concat(parts, " · ")
+end
+
+local function creatingTitle(state)
+	local lines = { "Creating " .. state.label, "Running for " .. elapsed(state.elapsed) }
+	if state.step then table.insert(lines, "Last: " .. state.step) end
+	if state.asking then
+		table.insert(lines, "")
+		table.insert(lines, "It's asking a question in its setup tab, such as a hook approval.")
+	elseif state.needsYou then
+		table.insert(lines, "")
+		table.insert(lines, "No output for a while: it may be waiting for an answer, such as a hook approval.")
+	end
+	table.insert(lines, "")
+	table.insert(lines, "Click to open its setup tab.")
+	return table.concat(lines, "\n")
+end
+
+-- A worktree being created: its row opens the setup tab, and says how far
+-- along it is or that it may need you (a hook approval, say).
+local function creatingNode(worktree)
+	local state = worktree.creating
+	return ui.node("col", { key = "w" .. safeKey(worktree.path), role = "overseer.worktree" }, {
+		ui.node("col", {
+			key = "row", role = "overseer.creatingRow", title = creatingTitle(state),
+			aria = state.label .. (if state.needsYou then ", creating, may need you" else ", creating"),
+			actions = { click = if state.pane then "pane=" .. tostring(state.pane) else nil },
+		}, {
+			ui.node("row", { key = "head", role = "overseer.spaceHead" }, {
+				statusDot(worktree),
+				text("name", state.label, "overseer.worktreeName"),
+				ui.el("div", { key = "spacer", grow = 1 }),
+				if state.needsYou then text("badge", "needs you?", "overseer.badgeBad") else text("badge", "creating", "overseer.badgeWarn"),
+			}),
+			text("subtitle", creatingSubtitle(state), "overseer.spaceSubtitle"),
+		}),
+	})
+end
+
 local function worktreeNode(worktree)
+	if worktree.creating then return creatingNode(worktree) end
 	local branch = worktree.branch or "Detached HEAD"
 	local menu = {}
 	if not worktree.deleting then
@@ -235,23 +293,53 @@ end
 -- title asks the question.
 View.CONFIRMATIONS = {
 	delete = { title = "Delete worktree?", confirm = "Delete worktree", detail = "Removes this directory, including ignored files. Keeps Git branches. Its session closes after successful removal. Stop file-writing tasks first." },
+	forceDelete = { title = "Delete worktree with uncommitted changes?", confirm = "Force delete", detail = "Force deleting removes these changes and the directory's ignored files for good. Keeps Git branches and commits. Its session closes after successful removal. Stop file-writing tasks first." },
 	close = { title = "Close session?", confirm = "Close session", detail = "Stops all running programs and closes this session's tabs. Keeps the worktree files and Git branches." },
 	space = { title = "Close space?", confirm = "Close space", detail = "Stops all running programs and closes this space's tabs. Files stay as they are." },
 }
 
+-- A deletion that found uncommitted changes asks again, as Force delete.
+function View.confirmationWords(request)
+	return View.CONFIRMATIONS[if request.kind == "delete" and request.force then "forceDelete" else request.kind]
+end
+
+-- What a forced deletion loses, like `git status --short` with line counts:
+-- the status code in amber, the path, the counts green and red. It scrolls
+-- past a dozen lines.
+local function changeList(changes)
+	local rows = {}
+	for index, file in ipairs(changes.files) do
+		local spans = { ui.span(file.code, "warning"), " ", ui.span(file.path, "path") }
+		if file.added and file.added > 0 then table.insert(spans, ui.span("  +" .. tostring(file.added), "success")) end
+		if file.deleted and file.deleted > 0 then table.insert(spans, ui.span("  −" .. tostring(file.deleted), "error")) end
+		table.insert(rows, ui.node("text", { key = "c" .. tostring(index), spans = spans, wrap = "none", truncate = "middle" }))
+	end
+	local hidden = changes.total - #changes.files
+	if hidden > 0 then
+		table.insert(rows, ui.node("text", { key = "more", spans = { ui.span("… and " .. tostring(hidden) .. " more", "muted") } }))
+	end
+	local summary = tostring(changes.total) .. " uncommitted change" .. (if changes.total == 1 then "" else "s")
+	return ui.node("col", { key = "changes", role = "overseer.changes" }, {
+		ui.node("text", { key = "summary", spans = { ui.span(summary, "strong") } }),
+		ui.node("scroll", { key = "list", max = { h = "12lines" } }, rows),
+	})
+end
+
 function View.confirmation(request)
-	local words = View.CONFIRMATIONS[request.kind]
+	local words = View.confirmationWords(request)
 	local buttons = { button("cancel", "Cancel", "cancel=" .. request.id, "Keep it open") }
 	if not request.checking then
 		table.insert(buttons, button("confirm", words.confirm, "confirm=" .. request.id, "Confirm " .. request.label, "overseer.dangerButton"))
 	end
-	return ui.node("col", { key = "confirmation", role = "overseer.confirmation" }, {
+	local body = {
 		text("name", request.label, "overseer.spaceName"),
 		text("path", request.path or "", "overseer.hint"),
-		text("detail", words.detail, "overseer.hint"),
-		text("status", if request.checking then "Checking worktree…" else "", "overseer.hint"),
-		ui.node("row", { key = "buttons", role = "overseer.formButtons" }, buttons),
-	})
+	}
+	if request.changes then table.insert(body, changeList(request.changes)) end
+	table.insert(body, text("detail", words.detail, "overseer.hint"))
+	table.insert(body, text("status", if request.checking then "Checking worktree…" else "", "overseer.hint"))
+	table.insert(body, ui.node("row", { key = "buttons", role = "overseer.formButtons" }, buttons))
+	return ui.node("col", { key = "confirmation", role = "overseer.confirmation" }, body)
 end
 
 function View.render(model)
