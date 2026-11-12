@@ -17,7 +17,7 @@ Only do this when `$TERN_PANE` is set (you run in Tern) and the `plane` MCP tool
 | Your comments | `external_source` / `external_id` | `tern-agent` / `$TERN_PANE` |
 | You need the user | label | `needs-you` |
 
-Comments without `external_source` are the user's. Their replies may reach you as a new prompt; treat them as instructions for this work item.
+You act in Plane as the user `omp`, not as the user. Comments without `external_source` are the user's. Their replies may reach you as a new prompt; treat them as instructions for this work item.
 
 ## 1. Find the project
 
@@ -28,7 +28,7 @@ branch=$(git branch --show-current)
 
 - Not in a Git repository: use project `Personal`.
 - Else the project name is `$repo` with every character other than letters, digits, `_` and space replaced by a space (`tern-plugins` → `tern plugins`); Plane rejects `-` and `.` in names. Worktrees count as their repository.
-- `project` → `list`, match the name exactly. Missing: `project` → `create` with that name and an identifier of its letters and digits, upper-cased, at most 12 characters (`TERNPLUGINS`). If the identifier is taken, replace its last character with a digit.
+- `project` → `list`, match the name exactly. Missing: `project` → `create` with that name, an identifier of its letters and digits, upper-cased, at most 12 characters (`TERNPLUGINS`), and `project_lead` set to the user's id (`member` → `list_workspace` with `email: "jack@acme.ml"`) so they become a member and see it. If the identifier is taken, replace its last character with a digit.
 
 ## 2. Start
 
