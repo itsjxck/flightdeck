@@ -31,7 +31,7 @@ repo=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-
 
 - Not in a Git repository: project `Personal`.
 - Else the project named `$repo`. Worktrees count as their repository.
-- `list_projects`; match the name exactly. Missing: `create_project` with that name and an identifier of its letters, upper-cased, at most 5 characters (`overseer` → `OVERS`); if taken, change the last letter. Then make the user a member, or they won't see it: `cd ~/projects/tern-plugins/overseer && npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/join-projects.cjs'`.
+- `list_projects`; match the name exactly. Missing: `create_project` with that name and an identifier of its letters, upper-cased, at most 5 characters (`overseer` → `OVERS`); if taken, change the last letter. Then make the user a member, or they won't see it: `cd ~/projects/tern-plugins/overseer && NODE_OPTIONS=--no-experimental-webstorage npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/join-projects.cjs'`.
 
 Huly answers lookups of something you just created a moment late: if an issue you just made is "not found", wait a second and retry.
 
