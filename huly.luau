@@ -55,10 +55,22 @@ local function deliver(cx, comments, seen)
 	end
 end
 
+-- Whether the bridge runs: off until turned on with **Turn Huly bridge on or off**,
+-- since it needs a local Huly (kv `huly`).
+function M.enabled()
+	return tern.kv.get("huly") == true
+end
+
+-- Turns the bridge on or off. Off drops the issue links from agent rows at once.
+function M.setEnabled(on)
+	tern.kv.set("huly", on)
+	if on then lastPoll = -POLL_MS else M.tasks = {} end
+end
+
 -- Starts a poll when one is due. `agents` is { [pane id string] = "working" | "waiting" | "idle" };
 -- `redraw(cx)` runs when the linked issues change.
 function M.poll(agents, redraw)
-	if running or tern.now() - lastPoll < POLL_MS then return end
+	if not M.enabled() or running or tern.now() - lastPoll < POLL_MS then return end
 	running, lastPoll = true, tern.now()
 	local seen = tern.kv.get("huly-seen") or {}
 	local input = tern.json.encode({ panes = agents, seen = seen })

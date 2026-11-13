@@ -1730,6 +1730,13 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
 tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
+tern.command({ id = "huly", title = "Turn Huly bridge on or off", icon = "list", run = function(cx)
+	local on = not huly.enabled()
+	huly.setEnabled(on)
+	cx:toast("info", if on then "Huly bridge on" else "Huly bridge off",
+		if on then "Agent rows show their Huly issues, and your comments reach agents." else "Agent rows no longer show Huly issues.")
+	redraw(cx)
+end })
 
 -- Session ids in the order Spaces lists them: each space, then its worktrees'
 -- open sessions unless the space is collapsed. `at` gives every session's
