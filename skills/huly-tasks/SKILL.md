@@ -37,22 +37,22 @@ Huly answers lookups of something you just created a moment late: if an issue yo
 
 ## 2. Start
 
-- The user named an issue (`OVERS-12`): `start_work` on it.
-- Otherwise `create_issue` in the project: a short imperative title, `statusName: "In Progress"`, and a description of two or three sentences on the goal.
+- The user named an issue (`OVERS-12`): `start_work` on it (it moves it to In Progress and assigns it to you).
+- Otherwise `create_issue` in the project: a short imperative title, `statusName: "In Progress"`, and a description of two or three sentences on the goal; then `update_issue` with `assignee: "omp agent"`.
 - Then `set_custom_fields`: `Tern pane`, `Agent state: "Working"`, `Branch`.
 - Then `add_comment` once: what you're about to do.
 
 ## 3. While working
 
 - Comment at real milestones only: a decision made, a plan changed, a PR opened. Not every step.
-- **You need the user** (a question, an approval, a choice): set `Question` to the question with its options and your recommendation, and `Agent state: "Waiting for you"`. Ask in your pane as usual too. Once answered: `Question: null`, `Agent state: "Working"`.
+- **You need the user** (a question, an approval, a choice): set `Question` to the question with its options and your recommendation, `Agent state: "Waiting for you"`, and hand the issue to them with `update_issue` `assignee: "Jack Adam"`. Ask in your pane as usual too. Once answered: `Question: null`, `Agent state: "Working"`, `assignee: "omp agent"`.
 - A PR opened: set `PR`.
 - A follow-up worth doing later: `create_issue` in state `Todo`, no custom fields, and mention it in a comment.
 
 ## 4. Finish
 
 - Done: `finish_work` with a summary (what changed, how it was verified) and the PR if any, `statusName: "Done"`; then `Agent state: "Finished"`, `Question: null`, `Tern pane: null`.
-- Stopping without finishing: comment what's left, status `Todo`, `Agent state: null`, `Tern pane: null`.
+- Stopping without finishing: comment what's left, status `Todo`, `assignee: null`, `Agent state: null`, `Tern pane: null`.
 
 Keep comments to a few lines of Markdown; the user reads them at a glance.
 
