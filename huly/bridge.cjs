@@ -54,8 +54,9 @@ function sessionPanes (paneIds) {
       if (!proc || !proc.pid) continue
       pidPane.set(String(proc.pid), pane)
       const argv = proc.argv || []
-      const resume = argv.indexOf('--resume')
-      const id = resume >= 0 && SESSION_ID.exec(argv[resume + 1] || '')
+      // `--resume <id>` after a Tern restart, `--restore <session file>` after omp's /restart.
+      const flag = argv.findIndex((arg) => arg === '--resume' || arg === '--restore')
+      const id = flag >= 0 && SESSION_ID.exec(path.basename(argv[flag + 1] || ''))
       if (id) fromArgv[pane] = id[0]
     } catch {}
   }
