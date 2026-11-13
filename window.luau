@@ -3,6 +3,7 @@ local wt = require("./worktrunk")
 local view = require("./view")
 local visualize = require("./visualize")
 local oplog = require("./oplog")
+local huly = require("./huly")
 
 local cache = {}
 local inflight = {}
@@ -128,17 +129,31 @@ local function runsAgent(line)
 end
 
 -- Native agent blocks' states by pane id: "working", or "waiting" (it asked
--- you something). Tern's agent_state events keep it current; cx.agents:list()
--- fills it once per load, since events only report changes.
+-- you something). Tern's agent_state events update it at once. The tick
+-- resyncs from cx.agents:list() only every 30 s, for events a paused hook
+-- missed: the call takes 7 to 20 ms (it carries every agent's last reply),
+-- enough to push a tick past its budget (from upstream 2.4.3).
 local AGENT_STATES = { working = "working", waiting_input = "waiting" }
 local agentStates = {}
-local agentsSeeded = false
-local function seedAgents(cx)
-	if agentsSeeded then return end
-	agentsSeeded = true
-	local states = {}
-	for _, agent in cx.agents:list() do states[agent.pane] = AGENT_STATES[agent.state] end
-	agentStates = states
+-- Agents whose turn ended while their tab wasn't shown: they wait for you
+-- until you look at that tab. Tern reports them idle.
+local unseen = {}
+local function setAgentState(cx, pane, state)
+	if state == "idle" and agentStates[pane] ~= nil then
+		local focused = cx.session:focused()
+		local tab = cx.session:tab_of(pane)
+		if not (focused and tab and cx.session:tab_of(focused) == tab) then unseen[pane] = true end
+	elseif state ~= "idle" then
+		unseen[pane] = nil
+	end
+	agentStates[pane] = AGENT_STATES[state]
+end
+local AGENT_RESYNC_MS = 30000
+local agentsSyncedAt = -AGENT_RESYNC_MS
+local function syncAgents(cx)
+	if tern.now() - agentsSyncedAt < AGENT_RESYNC_MS then return end
+	agentsSyncedAt = tern.now()
+	for _, agent in cx.agents:list() do setAgentState(cx, agent.pane, agent.state) end
 end
 
 local HOME = tern.getenv("HOME") or ""
@@ -218,7 +233,7 @@ local function agentPanes(tabsById, panes)
 			local line = pane.running and pane.running.line
 			local cli = (line and runsAgent(line)) or (if AGENTS[pane.program or ""] then pane.program else nil)
 			if pane.kind == "agent" and cli then
-				state, program = agentStates[pane.pane] or "idle", cli
+				state, program = agentStates[pane.pane] or (if unseen[pane.pane] then "waiting" else "idle"), cli
 			elseif pane.kind == "terminal" and line then
 				program = runsAgent(line)
 				if program then state = if pane.busy then "working" else "idle" end
@@ -325,7 +340,7 @@ local function model(cx)
 				-- Its agents go by the name its row shows.
 				if space then space.label = item.label end
 				item.pr = worktree.branch and entry.prs and entry.prs[worktree.branch] or nil
-				item.session = sessionId ~= nil
+				item.session, item.sessionId = sessionId ~= nil, sessionId
 				item.agent = sessionId and activity[tostring(sessionId)]
 				item.active = sessionId ~= nil and sessionId == current.id
 				item.creating = worktree.branch and creating[repoId] and creating[repoId][worktree.branch] or nil
@@ -376,10 +391,12 @@ local function model(cx)
 	end)
 	for _, agent in agents do
 		local space = byId[agent.tab.session]
+		local task = huly.tasks[tostring(agent.pane)]
 		table.insert(result.agents, {
 			pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
 			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.label or space.name else "Agent",
 			active = agent.tab.id == shown,
+			task = task and { ident = task.ident, title = task.title, url = task.url },
 		})
 	end
 	return result, pending, renames
@@ -608,11 +625,33 @@ local function firstLeaf(tree, skip)
 	return firstLeaf(tree[1], skip) or firstLeaf(tree[2], skip)
 end
 
--- The panel's share of the tab when it is the tab's whole left side.
+-- Whether `tree` contains `pane`.
+local function hasPane(tree, pane)
+	if not tree then return false end
+	if tree.pane then return tree.pane == pane end
+	return hasPane(tree[1], pane) or hasPane(tree[2], pane)
+end
+
+-- The panel's share of the tab's width while it is the leftmost pane, however
+-- deeply the tab's splits nest it (from upstream 2.4.2). Each "right" split it
+-- sits left of multiplies the share; "down" splits don't change its width. A
+-- pane that isn't on the left edge returns nil, so pin still moves it there.
 local function leftShare(cx, tab, pane)
 	local layout = cx.session:layout(tab)
-	local root = layout and layout.root
-	if root and root.split == "right" and root[1] and root[1].pane == pane then return root.ratio end
+	local node = layout and layout.root
+	local share = 1
+	while node and not node.pane do
+		if node.split == "right" then
+			if not hasPane(node[1], pane) then return nil end
+			share = share * node.ratio
+			node = node[1]
+		elseif hasPane(node[1], pane) then
+			node = node[1]
+		else
+			node = node[2]
+		end
+	end
+	if node and node.pane == pane then return share end
 	return nil
 end
 
@@ -1692,6 +1731,73 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 end })
 tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
 
+-- Session ids in the order Spaces lists them: each space, then its worktrees'
+-- open sessions unless the space is collapsed. `at` gives every session's
+-- place; one hidden in a collapsed space stands at that space's place.
+local function listedOrder(cx)
+	local order, at = {}, {}
+	for _, space in model(cx).spaces do
+		table.insert(order, space.id)
+		at[space.id] = #order
+		for _, worktree in space.worktrees do
+			if worktree.sessionId then
+				if not space.collapsed then table.insert(order, worktree.sessionId) end
+				at[worktree.sessionId] = #order
+			end
+		end
+	end
+	return order, at
+end
+
+-- Shows the next (`delta` 1) or previous (-1) space in Spaces' order, wrapping.
+local function stepSpace(cx, delta)
+	if not requireLocal(cx) then return end
+	local order, at = listedOrder(cx)
+	local current = cx.sessions:current().id
+	local index = at[current]
+	local target
+	if not index then
+		target = order[1]
+	elseif order[index] ~= current and delta < 0 then
+		-- Hidden in a collapsed space: back goes to that space first.
+		target = order[index]
+	else
+		target = order[(index - 1 + delta) % #order + 1]
+	end
+	if target and target ~= current then
+		cx.sessions:switch(target)
+		follow(cx)
+	end
+end
+
+-- Moves the shown space above (`delta` -1) or below (1) its neighbour in
+-- Spaces. Tern's list also holds the worktree sessions Spaces nests under
+-- their repository, so it takes one of Tern's session moves per session
+-- between the two.
+local function moveSpace(cx, delta)
+	if not requireLocal(cx) then return end
+	local current = cx.sessions:current().id
+	local spaces = {}
+	for index, space in model(cx).spaces do spaces[index] = space.id end
+	local index = table.find(spaces, current)
+	if not index then
+		cx:toast("info", "Worktree sessions stay with their repository", "Move the repository's space instead.")
+		return
+	end
+	local neighbour = spaces[index + delta]
+	if not neighbour then return end
+	local position = {}
+	for at, info in cx.session:sessions() do position[info.id] = at end
+	local command = if delta < 0 then "move_session_up" else "move_session_down"
+	for _ = 1, math.abs(position[current] - position[neighbour]) do cx:command(command) end
+	redraw(cx)
+end
+
+tern.command({ id = "next-space", title = "Next space", icon = "arrow-down", keys = { "ctrl+cmd+]" }, run = function(cx) stepSpace(cx, 1) end })
+tern.command({ id = "previous-space", title = "Previous space", icon = "arrow-up", keys = { "ctrl+cmd+[" }, run = function(cx) stepSpace(cx, -1) end })
+tern.command({ id = "move-space-down", title = "Move space down", icon = "arrow-down", keys = { "ctrl+shift+cmd+down" }, run = function(cx) moveSpace(cx, 1) end })
+tern.command({ id = "move-space-up", title = "Move space up", icon = "arrow-up", keys = { "ctrl+shift+cmd+up" }, run = function(cx) moveSpace(cx, -1) end })
+
 -- Shows a pane (an agent, a setup tab): its space, then the pane.
 local function showPane(cx, pane)
 	local tab = pane and cx.session:tab_of(pane)
@@ -1719,6 +1825,10 @@ tern.on("canvas_action", function(ev, cx)
 		local project = repoById(ev.value)
 		if project then openForm(cx, "create", project) end
 	elseif ev.act == "open" then openWorktree(cx, ev.value)
+	elseif ev.act == "huly" then
+		if huly.ownsUrl(ev.value) then
+			tern.process.run({ "/usr/bin/open", ev.value }, { timeout_ms = 10000 }, function() end)
+		end
 	elseif ev.act == "pr" then
 		-- In your default browser, where you're signed in to GitHub. (cx:open
 		-- follows Tern's link routing: a browser split beside the sidebar.)
@@ -1809,12 +1919,44 @@ local function closeEmptySessions(cx)
 	end
 end
 
+-- A worktree removed outside Overseer (`wt merge`, `wt remove`, an agent)
+-- leaves its session behind, cut off from its repository in Spaces. Close it
+-- once the folder is gone, unless an agent still runs in it or Overseer's own
+-- deletion is handling it. A repository's primary checkout is never closed.
+local orphanWarned = {}
+local function closeOrphanedSessions(cx)
+	local agentSessions
+	for path, binding in records("sessions") do
+		local project = repoById(binding.project)
+		local ok, exists = pcall(tern.fs.exists, path)
+		if ok and not exists and not (project and project.path == path) and not removing(path) then
+			if not agentSessions then
+				agentSessions = {}
+				local tabsById = {}
+				for _, tab in cx.session:tabs() do tabsById[tab.id] = tab end
+				for _, agent in agentPanes(tabsById, cx.session:panes()) do agentSessions[agent.tab.session] = true end
+			end
+			if not agentSessions[binding.id] then
+				local closed, err = closeManagedSession(cx, path, binding)
+				if closed then
+					oplog.write("info", { op = "close", event = "worktree gone", path = path })
+				elseif not orphanWarned[path] then
+					orphanWarned[path] = true
+					tern.log.warn("Overseer: left the session of deleted worktree " .. path .. " open: " .. tostring(err))
+				end
+			end
+		end
+	end
+end
+
 -- Each piece of a tick runs in a callback of its own, so a slow step can't
 -- push the whole tick past its budget. The next tick is queued first, so a
 -- tick Tern cuts short can't end the chain.
 --
 -- Upstream Overseer saw the tick stop for long stretches without Tern pausing
--- or logging anything, leaving creations and deletions unfinished. So its
+-- or logging anything, leaving creations and deletions unfinished. Still seen
+-- on Tern 0.9.18 (ops.log: restarts with no budget pause before them), so
+-- keep this even though 0.9.16 stopped slow timers dropping others. Its
 -- health is watched from outside the timer hook: a generation number lets a
 -- restart retire a lost chain, and `ensureTicking` runs from every event and
 -- from a clock driven by a process (the process hook has a budget of its
@@ -1847,9 +1989,16 @@ tick = function(generation, cx)
 		separately(refresh)
 	end
 	separately(recordSessions)
-	separately(seedAgents)
+	separately(syncAgents)
+	separately(function(tickCx)
+		local tabsById, states = {}, {}
+		for _, tab in tickCx.session:tabs() do tabsById[tab.id] = tab end
+		for _, agent in agentPanes(tabsById, tickCx.session:panes()) do states[tostring(agent.pane)] = agent.state end
+		huly.poll(states, redraw)
+	end)
 	separately(follow)
 	separately(closeEmptySessions)
+	separately(closeOrphanedSessions)
 	redraw(cx)
 end
 
@@ -1901,7 +2050,7 @@ tern.on("session_ended", function(ev, cx)
 end)
 tern.on("agent_state", function(ev, cx)
 	ensureTicking("agent_state")
-	agentStates[ev.pane] = AGENT_STATES[ev.new]
+	setAgentState(cx, ev.pane, ev.new)
 	redraw(cx)
 end)
 -- Tern pauses a hook that ran over its budget, then resumes it; timer
@@ -1936,7 +2085,13 @@ local function followSoon(_cx, tab)
 		separately(closeEmptySessions)
 	end)
 end
-tern.on("focus", function(ev, cx) ensureTicking("focus"); followSoon(cx, ev.tab) end)
+tern.on("focus", function(ev, cx)
+	ensureTicking("focus")
+	for pane in unseen do
+		if cx.session:tab_of(pane) == ev.tab then unseen[pane] = nil end
+	end
+	followSoon(cx, ev.tab)
+end)
 for _, name in { "tab_created", "tab_closed", "pane_created" } do
 	tern.on(name, function(_ev, cx) ensureTicking(name); followSoon(cx) end)
 end
@@ -1952,9 +2107,18 @@ tern.on("pane_closed", function(ev, cx)
 		if request.token then tern.kv.set("form:" .. request.token, nil) end
 	end
 	if confirmation and confirmation.pane == ev.pane then confirmation = nil end
-	agentStates[ev.pane] = nil
+	agentStates[ev.pane], unseen[ev.pane] = nil, nil
 	ensureTicking("pane_closed")
 	followSoon(cx)
+end)
+-- Since Tern 0.9.16 processes outlive a reload, so an open folder picker would
+-- stay up with nowhere to send its answer. The reload is logged so tick
+-- restarts after it can be told from real stalls.
+tern.on("unload", function()
+	if picking then
+		pcall(tern.process.run, { "/usr/bin/pkill", "-f", "Choose a folder for the new space" }, function() end)
+	end
+	oplog.write("info", { op = "plugin", event = "unloaded" })
 end)
 -- Timers and processes are restarted on reload; window_start intentionally is not.
 scheduleTick(tickGeneration)

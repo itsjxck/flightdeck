@@ -31,7 +31,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 **Spaces** lists every session in the window, in Tern's order. A space is named after the folder of the first terminal in its first tab, following you as you `cd`, until you rename it; the line under the name is its branch, or its folder outside Git. When a space is open in a Git repository, the repository's other worktrees are nested under it. If several spaces are open in one repository, the one in its primary checkout holds the worktrees (else the first), and spaces open in those worktrees appear as their rows. Hover a worktree for its path, line counts, ahead/behind and PR.
 
-**Agents** sits at the bottom: every agent block and agent CLI in the window, named after its space (or its tab, if you named the tab), with its state and program. Click one to jump to it.
+**Agents** sits at the bottom: every agent block and agent CLI in the window, named after its space (or its tab, if you named the tab), with its state and, when it tracks one, its Huly issue. Click one to jump to it.
 
 | You see | It means |
 |---|---|
@@ -43,16 +43,19 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 | **conflicts** | A merge or rebase is stuck |
 | PR icon | Draft, open, merged or closed PR; click to open it in your browser |
 
+**Huly.** Agents that follow `skills/huly-tasks/` track their work as issues in a local Huly at `localhost:8087`, as the user `omp`. Each agent row shows its issue; click it to open the issue. Every 30 s Overseer sets each linked issue's **Agent state** from Tern and sends your new comments to the agent, so you can direct agents from Huly.
+
 ## Install
 
 You need macOS and:
 
 | | Required for | |
 |---|---|---|
-| [Tern](https://docs.stencil.so/tern/) desktop 0.9.12 or later | everything | tested with 0.9.12 |
+| [Tern](https://docs.stencil.so/tern/) desktop 0.9.16 or later | everything | tested with 0.9.18 |
 | [Worktrunk](https://worktrunk.dev) (`wt`), Git, Bash | worktrees | tested with wt 0.40.0 |
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Visualize PR | optional |
 | [omp](https://omp.sh) | Visualize PR | optional |
+| Local [Huly](https://github.com/hcengineering/huly-selfhost), Node.js | Huly bridge (`huly/`) | optional; set up as in `skills/huly-tasks/SKILL.md` |
 
 ```sh
 git clone git@github.com:itsjxck/tern-overseer.git
@@ -66,9 +69,13 @@ Linking reloads the plugin whenever the source changes. Use `tern plugin install
 
 1. **Show Spaces:** <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>P</kbd>, or **Show or hide Spaces** in the command palette. Press it again while the sidebar has focus to hide it.
 2. **New space:** **+** in the header opens the folder picker; the folder opens in a new session.
-3. **Switch:** click a space, a worktree or an agent.
-4. **New worktree:** **+** beside a space in a Git repository. Type a branch name (and, if you like, a friendly display name). Setup runs in a background **Create** tab, and a notification tells you when it's ready. **▾** hides or shows a space's worktrees.
-5. **Everything else is a right-click away:**
+3. **Switch:** click a space, a worktree or an agent. <kbd>⌃</kbd><kbd>⌘</kbd><kbd>]</kbd> and <kbd>⌃</kbd><kbd>⌘</kbd><kbd>[</kbd> go to the next and previous space in the sidebar's order, worktree sessions included (but not those inside a collapsed space), wrapping at the ends. For arrows instead, bind them in Tern's `settings.json`; this takes <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd>/<kbd>↓</kbd> from resizing splits, which is why Overseer can't make them its default:
+   ```json
+   "keybinds": { "ctrl+cmd+up": "plugin.overseer.previous-space", "ctrl+cmd+down": "plugin.overseer.next-space" }
+   ```
+4. **Reorder:** <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↑</kbd> and <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd> move the space you're in up and down, using Tern's own session order. Worktree sessions stay under their repository; move the repository's space instead. Drag and drop isn't possible: Tern doesn't give plugins drag events.
+5. **New worktree:** **+** beside a space in a Git repository. Type a branch name (and, if you like, a friendly display name). Setup runs in a background **Create** tab, and a notification tells you when it's ready. **▾** hides or shows a space's worktrees.
+6. **Everything else is a right-click away:**
    - On a space: **Rename space** (renames its Tern session; leave it blank to name it after its folder again), **New worktree**, **Change base branch** and **Close space**.
    - On a worktree: **Visualize PR** for a reviewer's outline of the branch's pull request, **Rename** (the row's label; the branch stays as it is), **Close session** (stops its programs and closes its tabs; the files stay) and **Delete worktree** (runs `wt remove` and always keeps the branch). A worktree with uncommitted changes lists them and asks again, as **Force delete**.
    - Closing and deleting ask first in a popup over the tab; Cancel, Esc or a click outside it keeps things as they are.
@@ -77,7 +84,7 @@ A worktree's session is named `repo / branch` in Tern's session list unless you 
 
 A new worktree's row appears as soon as setup starts: "creating", how long it's been running and Worktrunk's current step. If setup asks a question (a hook approval, say) or prints nothing for a minute, the row says **needs you?** and you get one notification; click the row to open the setup tab.
 
-**Show Overseer's operation log** (command palette) opens `ops.log`: every creation and deletion with its duration and outcome (and the first warning its setup printed), hook-approval waits, budget pauses and tick restarts. Nothing about it shows in the sidebar.
+**Show Overseer's operation log** (command palette) opens `ops.log`: every creation and deletion with its duration and outcome (and the first warning its setup printed), hook-approval waits, budget pauses, tick restarts and plugin reloads. Nothing about it shows in the sidebar.
 
 ### Visualize a PR
 
@@ -186,6 +193,7 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 - **Last terminal in a tab closed:** the sidebar would be left alone, so `follow` parks it; the tab closes as Tern would have, and the next shown tab (or new tab) takes the sidebar back. If that was the session's last tab, `closeEmptySessions` (after each follow and every `tick`) closes the session, which the parked sidebar would otherwise keep open with no tabs; the sidebar dies with it and `follow` opens a fresh one.
 - **Overseer closes a session:** `closeManagedSession` and `closeSpace` switch away and call `follow` first, so the sidebar leaves before the session closes.
 - **Tern closes the sidebar's tab or session:** the sidebar dies with it. If you wanted it (`panel-open`) and its last tab is gone, `follow` opens a fresh one in the shown tab. If its tab is still there, you closed the sidebar yourself, and it stays closed until the shortcut.
+- **A worktree is deleted outside Overseer** (`wt merge`, `wt remove`, an agent): `closeOrphanedSessions`, on every tick, closes a bound session whose folder no longer exists, through `closeManagedSession`. It skips sessions with an agent pane (any state), worktrees Overseer is deleting itself, and the repository's primary checkout, and logs `worktree gone` to `ops.log`.
 
 **Confirmations.** Close session, Close space and Delete worktree open a canvas with `how = "glimpse"`: over the whole tab, in no split, until the next click outside it. Glimpses can't be sized (`float` refuses them), so the dialog is a card centred inside. `confirmation` holds the request and its pane; `pane_closed` on that pane cancels it, and `endConfirmation` closes it when Overseer finishes. A deletion keeps it open, showing "Checking worktree…", while `wt.validate_removal` runs.
 
@@ -197,7 +205,7 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 
 **The tick and its watchdog.** The 750 ms `tick` checks forms, jobs, creations, sessions and the sidebar, each in a callback of its own, and queues the next tick before doing anything, so a tick Tern cuts short can't end the chain. Each chain carries a generation number. `ensureTicking`, called from every event hook and from `processClock` (a `/bin/sleep 5` process, outside the timer hook), starts a new generation when the tick is more than 5 s late and logs "tick restarted"; it waits while Tern has the timer hook paused. While timers can't run, the process clock itself finishes jobs whose receipts are in and keeps the sidebar following.
 
-**Agents.** `agentPanes` lists every pane that is an agent block or a terminal running an agent CLI (`omp`, `pi`, `claude`, `codex`, `opencode`, `gemini`, `aider`, `amp`, `cursor-agent`, `crush`, `goose`), in space and tab order. Native agent blocks' states come from `agentStates` (pane id → `"working"` or `"waiting"`, else idle): Tern's `agent_state` event keeps it current and triggers a redraw, `seedAgents` fills it once per load from `cx.agents:list()` since events only report changes, and `pane_closed` drops the pane. Agent CLIs only report progress, so they count as working while their pane is `busy`. A space's dot shows its agents' state, waiting winning over working. Don't poll `cx.agents:list()`: it reads every block's last message (10–45 ms cold).
+**Agents.** `agentPanes` lists every pane that is an agent block or a terminal running an agent CLI (`omp`, `pi`, `claude`, `codex`, `opencode`, `gemini`, `aider`, `amp`, `cursor-agent`, `crush`, `goose`), in space and tab order. Native agent blocks' states come from `agentStates` (pane id → `"working"` or `"waiting"`, else idle): Tern's `agent_state` event updates it at once and triggers a redraw, `syncAgents` resyncs it from `cx.agents:list()` every 30 s (a paused hook misses events; the call takes 7–20 ms, up to 45 ms cold, too slow for every tick), and `pane_closed` drops the pane. `setAgentState` marks an agent `unseen` when its turn ends (working or waiting → idle) while its tab isn't shown; it shows as waiting until a `focus` event lands on that tab. Agent CLIs only report progress, so they count as working while their pane is `busy`. A space's dot shows its agents' state, waiting winning over working.
 
 **Visualize PR.** `wt.pull_request_meta` (`gh pr view --json …`) and `wt.pull_request_diff` (`gh pr diff > file`) write the PR into a temp dir under plugin data. Then `omp -p --no-session --no-extensions --no-skills --no-title --tools=read,grep,glob "<prompt>"` runs in the worktree with a 10-minute timeout. Its stdout from the first Markdown heading becomes the canvas. The read-only guarantee is the tool allow-list. Keep it that way: never add shell, edit or write tools, and never let it call `gh`.
 

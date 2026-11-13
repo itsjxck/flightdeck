@@ -406,3 +406,29 @@
 [data-role='overseer.dangerButton']:hover {
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
+/* An agent's state line with its Huly issue: "idle · OWLTR-1 · title". The
+   state keeps its width; the issue takes the rest and ends in "…". */
+[data-role='overseer.agentStateLine'] {
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+[data-role='overseer.agentStateLine'] > :first-child {
+  flex-shrink: 0;
+}
+/* Same type as the state beside it (agentIdle and friends). */
+[data-role='overseer.taskLink'] {
+  font: inherit;
+  font-size: 0.82em;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+[data-role='overseer.taskLink']:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}

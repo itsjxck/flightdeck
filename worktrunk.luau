@@ -228,11 +228,14 @@ local function count(value)
 	return if type(value) == "number" and value >= 0 then value else nil
 end
 
+-- Ahead/behind counts. Worktrunk 0.81 names the upstream's remote `remote`;
+-- earlier versions call it `name`.
 local function divergence(value)
 	if type(value) ~= "table" then return nil end
 	local ahead, behind = count(value.ahead), count(value.behind)
 	if not ahead or not behind then return nil end
-	return { ahead = ahead, behind = behind, name = if type(value.name) == "string" then value.name else nil }
+	local name = if type(value.name) == "string" then value.name elseif type(value.remote) == "string" then value.remote else nil
+	return { ahead = ahead, behind = behind, name = name }
 end
 
 -- `fallow audit` registers a detached worktree in the temp directory while it checks
@@ -281,7 +284,8 @@ local function parse_worktrees(text, project)
 			end
 			-- A branch with no commits yet has no HEAD to compare against, so
 			-- Worktrunk reports neither a head nor changes. Show it as clean.
-			if changes == nil and schema2 and row.head == nil then
+			-- (Worktrunk 0.81 calls the commit `head`; earlier versions `commit`.)
+			if changes == nil and schema2 and row.head == nil and row.commit == nil then
 				changes = { staged = false, modified = false, untracked = false, renamed = false, deleted = false }
 			end
 			-- Worktrunk also omits changes when it can't read a worktree's status in
@@ -311,8 +315,10 @@ local function parse_worktrees(text, project)
 					renamed = changes.renamed, deleted = changes.deleted,
 					added_lines = count(diff.added), deleted_lines = count(diff.deleted),
 				},
-				-- Commits ahead/behind the default branch and the upstream.
-				base = divergence(row.main), remote = divergence(row.remote),
+				-- Commits ahead/behind the default branch and the upstream. Worktrunk
+				-- 0.81 renamed `main`/`remote` to `default_branch`/`upstream`.
+				base = divergence(row.default_branch) or divergence(row.main),
+				remote = divergence(row.upstream) or divergence(row.remote),
 			})
 		elseif not schema2 and type(row.kind) ~= "string" then
 			error("Worktrunk returned a row without a kind", 0)
