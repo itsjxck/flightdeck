@@ -43,7 +43,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 | **conflicts** | A merge or rebase is stuck |
 | PR icon | Draft, open, merged or closed PR; click to open it in your browser |
 
-**Huly.** Agents that follow `skills/huly-tasks/` track their work as issues in a local Huly at `localhost:8087`, as the user `omp`. Each agent row shows its issue; click it to open the issue. Every 30 s Overseer sets each linked issue's **Agent state** from Tern and sends your new comments to the agent, so you can direct agents from Huly. It is off until you run **Turn Huly bridge on or off** in the palette; the same command turns it off.
+**Huly.** Agents that follow `skills/huly-tasks/` track their work as issues in a local Huly at `localhost:8087`, as the user `omp`. Each agent row shows its issue; click it to open the issue. Every 30 s Overseer sets each linked issue's **Agent state** from Tern and sends your new comments to the agent, so you can direct agents from Huly. Agents in the same repository can also message each other in its Huly chat channel (`#<project>`), and Overseer routes each message to the agent it names. It is off until you run **Turn Huly bridge on or off** in the palette; the same command turns it off.
 
 ## Install
 

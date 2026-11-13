@@ -1,6 +1,6 @@
 // Runs huly-mcp-selfhost behind a stdio proxy that makes agents' comments
-// render formatted. The server stores add_comment's and update_comment's
-// `message` as raw Markdown, which Huly shows as
+// render formatted. The server stores the `message` of add_comment,
+// update_comment, send_message and reply_to_message as raw Markdown, which Huly shows as
 // one plain run of text with literal ** and -. Huly's editor stores comments
 // as ProseMirror JSON, so the proxy converts those fields before the server
 // sees them. Everything else passes through unchanged. (finish_work prefixes
@@ -16,7 +16,7 @@ const bin = (process.env.PATH || '').split(':').find((dir) => dir.includes('_npx
 if (!bin) throw new Error('run through npx -p huly-mcp-selfhost (see the header)')
 const { markdownToProseMirror } = require(path.join(path.dirname(bin), 'huly-mcp-selfhost/dist/utils/markdown.js'))
 
-const MARKDOWN_ARGS = { add_comment: 'message', update_comment: 'message' }
+const MARKDOWN_ARGS = { add_comment: 'message', update_comment: 'message', send_message: 'message', reply_to_message: 'message' }
 
 function rewrite (line) {
   let msg

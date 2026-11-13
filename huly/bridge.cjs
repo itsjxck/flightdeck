@@ -1,10 +1,13 @@
 // Overseer's link to Huly, run once per poll by window.luau:
 //   npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/bridge.cjs'
-// stdin:  {"panes": {"<pane id>": "working" | "waiting" | "idle"}, "seen": {"<issue id>": <createdOn ms>}}
+// stdin:  {"panes": {"<pane id>": "working" | "waiting" | "idle"}, "seen": {"<key>": <createdOn ms>}}
 //         `panes` lists every live agent pane in the window; `seen` is the newest
-//         comment already delivered per issue (kept by Overseer in kv).
+//         comment (key: issue id) or channel message (key: chat:<issue id>)
+//         already delivered, kept by Overseer in kv.
 // stdout: {"tasks": [{pane, id, ident, title, url}],
-//          "comments": [{pane, id, ident, title, createdOn, text}]}
+//          "comments": [{pane, id, ident, title, createdOn, text}],
+//          "chat": [{pane, id, ident, channel, byUser, from, thread, createdOn, text}],
+//          "seen": {<first sightings>}}
 //
 // Issues link to agents by `omp session` (the agent's $PI_SESSION_ID), which
 // outlives the pane: when Tern restarts, it resumes the session in a new pane.
@@ -95,7 +98,8 @@ async function main () {
   // Only open issues are linked: Done (Won) and Canceled (Lost) are not.
   const statuses = new Map((await client.findAll(tracker.class.IssueStatus, {})).map((s) => [s._id, s]))
 
-  const out = { tasks: [], comments: [], seen: {} }
+  const out = { tasks: [], comments: [], chat: [], seen: {} }
+  const live = [] // linked issues whose agent runs now: { pane, id, ident, space }
   // shortcut: scans the 500 most recently modified issues; linked ones are recent by nature.
   const issues = await client.findAll(tracker.class.Issue, {}, { limit: 500, sort: { modifiedOn: -1 } })
   for (const issue of issues) {
@@ -122,6 +126,7 @@ async function main () {
     }
     if (!panes[pane]) continue
     out.tasks.push({ pane, id: issue._id, ident, title, url: FRONT + '/workbench/' + WORKSPACE + '/tracker/' + ident })
+    live.push({ pane, id: issue._id, ident, space: issue.space })
 
     const comments = await client.findAll(chunter.class.ChatMessage, { attachedTo: issue._id }, { sort: { createdOn: 1 } })
     // Agents whose Huly MCP server started before mcp-proxy.cjs still post raw
@@ -141,8 +146,51 @@ async function main () {
       out.comments.push({ pane, id: issue._id, ident, title, createdOn: comment.createdOn, text: markupToText(comment.message) })
     }
   }
+  await routeChat(client, me, live, seen, out)
   process.stdout.write(JSON.stringify(out))
   await conn.closeConnection()
+}
+
+// Agents talk in their project's channel (#<project name>), each message led
+// by `SENDER → RECIPIENT:` issue ids, since every agent posts as `omp`. A
+// message reaches the recipient's agent; yours reach every live agent whose
+// issue id it mentions. `seen` per recipient is `chat:<issue id>`, newest
+// message handled; the first sighting starts from now.
+const LEAD = /^\s*([A-Z][A-Z0-9]*-\d+)\s*(?:→|->)\s*([A-Z][A-Z0-9]*-\d+)\s*:?/
+
+function channelName (projectName) {
+  return projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+async function routeChat (client, me, live, seen, out) {
+  const byProject = new Map()
+  for (const task of live) byProject.set(task.space, [...(byProject.get(task.space) || []), task])
+  for (const [space, tasks] of byProject) {
+    const project = await client.findOne(tracker.class.Project, { _id: space })
+    const channel = project && await client.findOne(chunter.class.Channel, { name: channelName(project.name) })
+    if (!channel) continue
+    // shortcut: the channel's last 200 messages (thread replies included); plenty between 30 s polls.
+    const messages = (await client.findAll(chunter.class.ChatMessage, { space: channel._id }, { sort: { createdOn: -1 }, limit: 200 })).reverse()
+    const newest = messages.reduce((max, m) => Math.max(max, m.createdOn || 0), 0)
+    for (const task of tasks) {
+      const key = 'chat:' + task.id
+      if (seen[key] == null) { out.seen[key] = newest; continue }
+      for (const msg of messages) {
+        if ((msg.createdOn || 0) <= seen[key]) continue
+        const text = markupToText(msg.message)
+        const lead = LEAD.exec(text)
+        const byUser = msg.createdBy !== me
+        const forTask = lead ? lead[2] === task.ident && lead[1] !== task.ident
+          : byUser && new RegExp('\\b' + task.ident + '\\b').test(text)
+        if (!forTask) continue
+        out.chat.push({
+          pane: task.pane, id: task.id, ident: task.ident, channel: channel.name, byUser, createdOn: msg.createdOn, text,
+          from: lead ? lead[1] : null,
+          thread: msg._class === chunter.class.ThreadMessage ? msg.attachedTo : msg._id
+        })
+      }
+    }
+  }
 }
 
 main().then(() => process.exit(0), (error) => {

@@ -1,6 +1,6 @@
-// Makes the workspace owner (you) a member and owner of every Huly project, so
-// projects agents create (as `omp`) show in your sidebar. Huly only lists
-// projects you belong to, and no MCP tool edits project members.
+// Makes the workspace owner (you) a member and owner of every Huly project and
+// chat channel, so the ones agents create (as `omp`) show in your sidebar. Huly
+// only lists spaces you belong to, and no MCP tool edits their members.
 //
 // Run through npx so the pinned huly-mcp-selfhost and its Huly client are on hand:
 //   npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/join-projects.cjs'
@@ -18,6 +18,7 @@ if (!bin) throw new Error('run through npx -p huly-mcp-selfhost (see the header)
 const modules = path.dirname(bin)
 const conn = require(path.join(modules, 'huly-mcp-selfhost/dist/connection.js'))
 const tracker = require(path.join(modules, '@hcengineering/tracker')).default
+const chunter = require(path.join(modules, '@hcengineering/chunter')).default
 const core = require(path.join(modules, '@hcengineering/core')).default
 
 ;(async () => {
@@ -28,16 +29,20 @@ const core = require(path.join(modules, '@hcengineering/core')).default
   if (owners.length !== 1) throw new Error('expected one workspace owner, found ' + owners.length)
   const user = owners[0].person
   let joined = 0
-  for (const project of await client.findAll(tracker.class.Project, {})) {
-    if ((project.members || []).includes(user) && (project.owners || []).includes(user)) continue
-    await client.updateDoc(tracker.class.Project, core.space.Space, project._id, {
-      members: [...new Set([...(project.members || []), user])],
-      owners: [...new Set([...(project.owners || []), user])]
+  const spaces = [
+    ...(await client.findAll(tracker.class.Project, {})).map((s) => ({ space: s, cls: tracker.class.Project, name: s.identifier })),
+    ...(await client.findAll(chunter.class.Channel, {})).map((s) => ({ space: s, cls: chunter.class.Channel, name: '#' + s.name }))
+  ]
+  for (const { space, cls, name } of spaces) {
+    if ((space.members || []).includes(user) && (space.owners || []).includes(user)) continue
+    await client.updateDoc(cls, core.space.Space, space._id, {
+      members: [...new Set([...(space.members || []), user])],
+      owners: [...new Set([...(space.owners || []), user])]
     })
     joined++
-    console.log('joined ' + project.identifier)
+    console.log('joined ' + name)
   }
-  console.log(joined + ' project(s) joined')
+  console.log(joined + ' space(s) joined')
   await conn.closeConnection()
   process.exit(0)
 })().catch((error) => {

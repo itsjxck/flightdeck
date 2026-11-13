@@ -55,6 +55,46 @@ local function deliver(cx, comments, seen)
 	end
 end
 
+-- Agent-to-agent messages reach one agent at most once per AGENT_CHAT_MS (they
+-- bundle meanwhile), so two agents can't keep each other busy; yours go at once.
+local AGENT_CHAT_MS = 120000
+local lastAgentChat = {}
+
+local function deliverChat(cx, messages, seen)
+	local byIssue, order = {}, {}
+	for _, msg in messages do
+		if not byIssue[msg.id] then byIssue[msg.id] = {}; table.insert(order, msg.id) end
+		table.insert(byIssue[msg.id], msg)
+	end
+	for _, id in order do
+		local list = byIssue[id]
+		table.sort(list, function(a, b) return a.createdOn < b.createdOn end)
+		local fromUser = false
+		for _, msg in list do fromUser = fromUser or msg.byUser end
+		local pane = list[1].pane
+		if fromUser or tern.now() - (lastAgentChat[pane] or -AGENT_CHAT_MS) >= AGENT_CHAT_MS then
+			local first, parts, newest = list[1], {}, 0
+			for _, msg in list do
+				local who = if msg.byUser then "the user" elseif msg.from then "the agent on " .. msg.from else "an agent"
+				table.insert(parts, "From " .. who .. " (thread " .. msg.thread .. "):\n" .. msg.text)
+				newest = math.max(newest, msg.createdOn)
+			end
+			local message = "Message" .. (if #list > 1 then "s" else "") .. " for " .. first.ident .. " in #" .. first.channel .. " (Huly chat):\n\n"
+				.. table.concat(parts, "\n\n---\n\n")
+				.. "\n\nReply only if it needs one: reply_to_message on the thread id, leading with **" .. first.ident
+				.. " → <their issue>:**. Anything that needs a decision goes to the user, as the huly-tasks skill says."
+			local ok, err = pcall(function() cx.agents:ask(tonumber(pane), message) end)
+			if ok then
+				seen["chat:" .. id] = newest
+				if not fromUser then lastAgentChat[pane] = tern.now() end
+				oplog.write("info", { op = "huly", event = "chat", detail = "#" .. first.channel .. " → " .. first.ident .. " (" .. tostring(#list) .. ")" })
+			else
+				warnOnce("chat " .. id .. tostring(err), "couldn't deliver chat to " .. first.ident .. ": " .. tostring(err))
+			end
+		end
+	end
+end
+
 -- Whether the bridge runs: off until turned on with **Turn Huly bridge on or off**,
 -- since it needs a local Huly (kv `huly`).
 function M.enabled()
@@ -87,6 +127,7 @@ function M.poll(agents, redraw)
 			if seenNow[id] == nil then seenNow[id] = newest end
 		end
 		if cx and type(out.comments) == "table" and #out.comments > 0 then deliver(cx, out.comments, seenNow) end
+		if cx and type(out.chat) == "table" and #out.chat > 0 then deliverChat(cx, out.chat, seenNow) end
 		tern.kv.set("huly-seen", seenNow)
 		local tasks = {}
 		for _, item in (out.tasks or {}) do
