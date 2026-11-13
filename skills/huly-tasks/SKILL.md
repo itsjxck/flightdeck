@@ -17,7 +17,7 @@ Custom fields on every issue, set with `set_custom_fields` (field name → value
 
 | Field | Value |
 |---|---|
-| `Tern pane` | `$TERN_PANE`, while you work on the issue; `null` once you stop |
+| `omp session` | `$PI_SESSION_ID` (read it with `echo "$PI_SESSION_ID"`), while you work on the issue; `null` once you stop. Set it again after `/new` or `/resume` |
 | `Agent state` | `Working`, `Waiting for you`, `Finished` (Overseer also sets `Idle` and `Gone`) |
 | `Branch` | `git branch --show-current` |
 | `PR` | The pull request URL, once there is one |
@@ -38,7 +38,7 @@ Huly answers lookups of something you just created a moment late: if an issue yo
 
 - The user named an issue (`OVERS-12`): `start_work` on it (it moves it to In Progress and assigns it to you).
 - Otherwise `create_issue` in the project: a short imperative title, `statusName: "In Progress"`, and a description of two or three sentences on the goal; then `update_issue` with `assignee: "omp agent"`.
-- Then `set_custom_fields`: `Tern pane`, `Agent state: "Working"`, `Branch`.
+- Then `set_custom_fields`: `omp session`, `Agent state: "Working"`, `Branch`.
 - Then comment once (see Comments): what you're about to do.
 
 ## 3. While working
@@ -50,8 +50,8 @@ Huly answers lookups of something you just created a moment late: if an issue yo
 
 ## 4. Finish
 
-- Done: comment the outcome (what changed, how it was verified, the PR if any); `update_issue` `statusName: "Done"`; then `Agent state: "Finished"`, `Tern pane: null`. Don't use `finish_work`: its summary isn't formatted.
-- Stopping without finishing: comment what's left, status `Todo`, `assignee: null`, `Agent state: null`, `Tern pane: null`.
+- Done: comment the outcome (what changed, how it was verified, the PR if any); `update_issue` `statusName: "Done"`; then `Agent state: "Finished"`, `omp session: null`. Don't use `finish_work`: its summary isn't formatted.
+- Stopping without finishing: comment what's left, status `Todo`, `assignee: null`, `Agent state: null`, `omp session: null`.
 
 ## Comments
 

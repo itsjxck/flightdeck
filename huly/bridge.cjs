@@ -6,11 +6,17 @@
 // stdout: {"tasks": [{pane, id, ident, title, url}],
 //          "comments": [{pane, id, ident, title, createdOn, text}]}
 //
-// For every open issue whose `Tern pane` is set it makes `Agent state` follow
-// Tern (Working / Idle, Gone once the pane has closed; `Waiting for you`, set by
-// the agent when it asks, stays until the agent works again), and returns your comments newer than
-// `seen`. A first sighting returns nothing and only reports the newest comment,
-// so history from before a link is never replayed.
+// Issues link to agents by `omp session` (the agent's $PI_SESSION_ID), which
+// outlives the pane: when Tern restarts, it resumes the session in a new pane.
+// sessionPanes() finds each live pane's session from the file omp keeps open
+// (`<…>_<session id>.jsonl`), else from `--resume <session id>` on its command.
+//
+// For every open linked issue it makes `Agent state` follow Tern (Working /
+// Idle, Gone once no pane runs the session; `Waiting for you`, set by the agent
+// when it asks, stays until the agent works again), and returns your comments
+// newer than `seen`. A first sighting returns nothing and only reports the
+// newest comment, so history from before a link is never replayed.
+const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
@@ -33,11 +39,55 @@ const chunter = require(path.join(modules, '@hcengineering/chunter')).default
 
 const TERN_STATE = { working: 'Working', waiting: 'Waiting for you', idle: 'Idle' }
 const CLOSED = new Set(['task:statusCategory:Won', 'task:statusCategory:Lost'])
+const TERN = process.env.TERN_EXE || '/Applications/Tern.app/Contents/MacOS/tern'
+const SESSION_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
+
+// Live pane ids → the omp session each runs: { "<session id>": "<pane id>" }.
+function sessionPanes (paneIds) {
+  const pidPane = new Map()
+  const fromArgv = {}
+  for (const pane of paneIds) {
+    try {
+      const info = JSON.parse(execFileSync(TERN, ['process', pane, '--json'], { encoding: 'utf8', timeout: 5000 }))
+      const proc = info.foreground || info.child
+      if (!proc || !proc.pid) continue
+      pidPane.set(String(proc.pid), pane)
+      const argv = proc.argv || []
+      const resume = argv.indexOf('--resume')
+      const id = resume >= 0 && SESSION_ID.exec(argv[resume + 1] || '')
+      if (id) fromArgv[pane] = id[0]
+    } catch {}
+  }
+  const fromFile = {}
+  if (pidPane.size > 0) {
+    let listing = ''
+    try {
+      listing = execFileSync('/usr/sbin/lsof', ['-a', '-p', [...pidPane.keys()].join(','), '-Fpn'], { encoding: 'utf8', timeout: 5000 })
+    } catch (error) {
+      listing = error.stdout || '' // lsof exits 1 when a pid has no match
+    }
+    let pane
+    for (const line of listing.split('\n')) {
+      if (line.startsWith('p')) pane = pidPane.get(line.slice(1))
+      else if (pane && line.startsWith('n') && line.includes('/.omp/') && line.includes('/sessions/') && line.endsWith('.jsonl')) {
+        const id = SESSION_ID.exec(path.basename(line))
+        if (id) fromFile[pane] = id[0]
+      }
+    }
+  }
+  const map = {}
+  for (const pane of paneIds) {
+    const id = fromFile[pane] || fromArgv[pane]
+    if (id) map[id] = pane
+  }
+  return map
+}
 
 async function main () {
   const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}')
   const panes = input.panes || {}
   const seen = input.seen || {}
+  const sessions = sessionPanes(Object.keys(panes))
   const client = await conn.getConnection(WORKSPACE)
   const me = client.user
   // Only open issues are linked: Done (Won) and Canceled (Lost) are not.
@@ -49,11 +99,12 @@ async function main () {
   for (const issue of issues) {
     const fields = await attributes.fieldsOf(client, issue)
     const byLabel = (label) => fields.find((f) => f.label === label)
-    const paneField = byLabel('Tern pane')
+    const sessionField = byLabel('omp session')
     const stateField = byLabel('Agent state')
-    if (!paneField || !stateField) continue
-    const pane = attributes.valueOf(issue, paneField)
-    if (!pane) continue
+    if (!sessionField || !stateField) continue
+    const session = attributes.valueOf(issue, sessionField)
+    if (!session) continue
+    const pane = sessions[session]
     const status = statuses.get(issue.status)
     if (status && CLOSED.has(status.category)) continue
     const ident = issue.identifier
