@@ -19,7 +19,6 @@ Custom fields on every issue, set with `set_custom_fields` (field name → value
 |---|---|
 | `Tern pane` | `$TERN_PANE`, while you work on the issue; `null` once you stop |
 | `Agent state` | `Working`, `Waiting for you`, `Finished` (Overseer also sets `Idle` and `Gone`) |
-| `Question` | What you need from the user, self-contained; `null` once answered |
 | `Branch` | `git branch --show-current` |
 | `PR` | The pull request URL, once there is one |
 
@@ -40,21 +39,34 @@ Huly answers lookups of something you just created a moment late: if an issue yo
 - The user named an issue (`OVERS-12`): `start_work` on it (it moves it to In Progress and assigns it to you).
 - Otherwise `create_issue` in the project: a short imperative title, `statusName: "In Progress"`, and a description of two or three sentences on the goal; then `update_issue` with `assignee: "omp agent"`.
 - Then `set_custom_fields`: `Tern pane`, `Agent state: "Working"`, `Branch`.
-- Then `add_comment` once: what you're about to do.
+- Then comment once (see Comments): what you're about to do.
 
 ## 3. While working
 
 - Comment at real milestones only: a decision made, a plan changed, a PR opened. Not every step.
-- **You need the user** (a question, an approval, a choice): set `Question` to the question with its options and your recommendation, `Agent state: "Waiting for you"`, and hand the issue to them with `update_issue` `assignee: "Jack Adam"`. Ask in your pane as usual too. Once answered: `Question: null`, `Agent state: "Working"`, `assignee: "omp agent"`.
+- **You need the user** (a question, an approval, a choice): post the question as a comment, self-contained, with numbered options and your recommendation first; set `Agent state: "Waiting for you"` and hand the issue to them with `update_issue` `assignee: "Jack Adam"`. Ask in your pane as usual too. Once answered: `Agent state: "Working"`, `assignee: "omp agent"`.
 - A PR opened: set `PR`.
 - A follow-up worth doing later: `create_issue` in state `Todo`, no custom fields, and mention it in a comment.
 
 ## 4. Finish
 
-- Done: `finish_work` with a summary (what changed, how it was verified) and the PR if any, `statusName: "Done"`; then `Agent state: "Finished"`, `Question: null`, `Tern pane: null`.
+- Done: comment the outcome (what changed, how it was verified, the PR if any); `update_issue` `statusName: "Done"`; then `Agent state: "Finished"`, `Tern pane: null`. Don't use `finish_work`: its summary isn't formatted.
 - Stopping without finishing: comment what's left, status `Todo`, `assignee: null`, `Agent state: null`, `Tern pane: null`.
 
-Keep comments to a few lines of Markdown; the user reads them at a glance.
+## Comments
+
+Never use `add_comment`: it stores Markdown as literal text, so Huly shows `**` and loses line breaks. Post Markdown through the helper, which converts it to Huly's rich text:
+
+```sh
+cd ~/projects/tern-plugins/overseer && NODE_OPTIONS=--no-experimental-webstorage \
+  npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/comment.cjs OVERS-12' <<'EOF'
+**Decided:** …
+
+- one point per bullet
+EOF
+```
+
+Structure each comment for a glance: a bold lead-in (**Started**, **Decided**, **Question**, **Done**), short paragraphs separated by blank lines, bullets for lists, numbered lists for options. A few lines at most.
 
 ## If Huly is unreachable
 

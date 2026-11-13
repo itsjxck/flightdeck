@@ -7,8 +7,8 @@
 //          "comments": [{pane, id, ident, title, createdOn, text}]}
 //
 // For every open issue whose `Tern pane` is set it makes `Agent state` follow
-// Tern (Working / Idle, Gone once the pane has closed; `Waiting for you` with a
-// Question stays, the agent owns it), and returns your comments newer than
+// Tern (Working / Idle, Gone once the pane has closed; `Waiting for you`, set by
+// the agent when it asks, stays until the agent works again), and returns your comments newer than
 // `seen`. A first sighting returns nothing and only reports the newest comment,
 // so history from before a link is never replayed.
 const fs = require('fs')
@@ -51,7 +51,6 @@ async function main () {
     const byLabel = (label) => fields.find((f) => f.label === label)
     const paneField = byLabel('Tern pane')
     const stateField = byLabel('Agent state')
-    const questionField = byLabel('Question')
     if (!paneField || !stateField) continue
     const pane = attributes.valueOf(issue, paneField)
     if (!pane) continue
@@ -60,11 +59,12 @@ async function main () {
     const ident = issue.identifier
     const title = issue.title
 
-    // Agent state follows Tern, except a question the agent is waiting on.
+    // Agent state follows Tern. An agent that asked ends its turn (Tern: idle),
+    // so `Waiting for you` stays until it works again or its pane closes.
     const current = attributes.valueOf(issue, stateField)
-    const asking = current === 'Waiting for you' && questionField && attributes.valueOf(issue, questionField)
     const wanted = panes[pane] ? TERN_STATE[panes[pane]] : 'Gone'
-    if (wanted && !asking && current !== wanted) {
+    const keepWaiting = current === 'Waiting for you' && panes[pane] && panes[pane] !== 'working'
+    if (wanted && !keepWaiting && current !== wanted) {
       await attributes.writeFields(client, issue, [{ field: stateField, value: await attributes.coerceValue(client, stateField, wanted) }])
     }
     if (!panes[pane]) continue
