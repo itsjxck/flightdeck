@@ -55,18 +55,14 @@ Huly answers lookups of something you just created a moment late: if an issue yo
 
 ## Comments
 
-Never use `add_comment`: it stores Markdown as literal text, so Huly shows `**` and loses line breaks. Post Markdown through the helper, which converts it to Huly's rich text:
+Post with `add_comment`, in Markdown; it renders formatted. Structure each comment for a glance:
 
-```sh
-cd ~/projects/tern-plugins/overseer && NODE_OPTIONS=--no-experimental-webstorage \
-  npx -y -p huly-mcp-selfhost@3.1.0 -c 'node huly/comment.cjs OVERS-12' <<'EOF'
-**Decided:** …
+- a bold lead-in: **Started**, **Decided**, **Question**, **Done**;
+- short paragraphs separated by blank lines;
+- bullets for lists, a numbered list for options (recommended first);
+- a few lines at most.
 
-- one point per bullet
-EOF
-```
-
-Structure each comment for a glance: a bold lead-in (**Started**, **Decided**, **Question**, **Done**), short paragraphs separated by blank lines, bullets for lists, numbered lists for options. A few lines at most.
+Write real line breaks: blank lines between paragraphs and each list item on its own line, never a list run into a sentence.
 
 ## If Huly is unreachable
 

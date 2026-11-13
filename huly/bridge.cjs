@@ -34,6 +34,7 @@ const dist = path.join(modules, 'huly-mcp-selfhost/dist')
 const conn = require(path.join(dist, 'connection.js'))
 const attributes = require(path.join(dist, 'utils/attributes.js'))
 const { markupToText } = require(path.join(dist, 'utils/format.js'))
+const { markdownToProseMirror } = require(path.join(dist, 'utils/markdown.js'))
 const tracker = require(path.join(modules, '@hcengineering/tracker')).default
 const chunter = require(path.join(modules, '@hcengineering/chunter')).default
 
@@ -122,6 +123,13 @@ async function main () {
     out.tasks.push({ pane, id: issue._id, ident, title, url: FRONT + '/workbench/' + WORKSPACE + '/tracker/' + ident })
 
     const comments = await client.findAll(chunter.class.ChatMessage, { attachedTo: issue._id }, { sort: { createdOn: 1 } })
+    // Agents whose Huly MCP server started before mcp-proxy.cjs still post raw
+    // Markdown, which Huly shows unformatted: convert it in place.
+    for (const comment of comments) {
+      if (comment.createdBy !== me || typeof comment.message !== 'string' || comment.message.trimStart().startsWith('{')) continue
+      await client.updateCollection(chunter.class.ChatMessage, comment.space, comment._id, issue._id, tracker.class.Issue, 'comments',
+        { message: JSON.stringify(markdownToProseMirror(comment.message)) })
+    }
     const newest = comments.reduce((max, c) => Math.max(max, c.createdOn || 0), 0)
     if (seen[issue._id] == null) {
       out.seen[issue._id] = newest
