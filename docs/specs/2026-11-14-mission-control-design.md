@@ -64,27 +64,51 @@ branch come from the pane's working directory.
 
 | Table | Columns |
 |---|---|
-| `tasks` | id (`T-12`), title, body (Markdown), repo, branch, pr, status (`todo` · `doing` · `done` · `dropped`), session, created, updated |
-| `events` | id, task, author (`you` · a session id · `overseer`), kind (`note` · `question` · `answer` · `message` · `status`), body (Markdown), options (JSON, questions only), to_task (messages only), created, delivered |
+| `goals` | id (`G-3`), title, body (Markdown), coordinator (session), status (`active` · `done` · `dropped`), created |
+| `tasks` | id (`T-12`), goal (optional), title, body (Markdown), repo, branch, worktree, pr, status (`todo` · `ready` · `doing` · `done` · `failed` · `dropped`), session, started_by (session, for workers), created, updated |
+| `deps` | task, needs (task): `task` becomes `ready` once every `needs` is `done` |
+| `events` | id, task, author (`you` · a session id · `overseer`), kind (`note` · `question` · `answer` · `message` · `done` · `status`), body (Markdown), options (JSON, questions only), to_task (messages only), created, delivered |
 
 - A task is **waiting** while it has a question with no answer after it.
 - Agent state (working, idle, gone) is not stored: Overseer knows it live from
   Tern and joins it at display time.
 
-## 4. MCP tools (v1)
+## 4. MCP tools
+
+Modelled on Orca's orchestration (runs, tasks, workers, inbox, `ask`,
+`worker_done`), built for omp.
+
+**Every agent**
 
 | Tool | Does |
 |---|---|
-| `task_start` | Creates a task for the calling session (or takes `id` to pick one up), status `doing` |
-| `task_note` | Adds a note: a decision, a plan change, a PR (sets `pr`) |
-| `ask_user` | Adds a question with optional numbered options and a recommended one; the task shows as waiting |
-| `message_task` | Sends a message to another task's agent (any repository) |
-| `task_done` | Status `done` with an outcome note; or `dropped` with what's left |
-| `task_list` | Tasks by repo, status or session; `mine` for the caller's |
-| `task_add` | Adds a `todo` task for later (a follow-up), any repository |
+| `task_start` | Creates a task for the calling session, or takes `id` to pick one up (a worker's brief names it); status `doing` |
+| `task_note` | A decision, a plan change, a PR (sets `pr`). Doubles as a heartbeat |
+| `ask_user` | A question with numbered options and a recommended one; the task shows in Needs you. The only way to reach you: agents never message you any other way |
+| `message` | To another task's agent (`T-12`), or `@goal` (every agent on the caller's goal), across repositories |
+| `task_done` | Exactly once: `succeeded` (outcome, files changed) or `failed` (what's left). A worker's `done` also reaches its coordinator |
+| `task_add` | A task for later, in any repository, optionally under a goal and depending on other tasks |
+| `task_list` | By goal, repository, status, or `mine` |
+
+**Coordinators** (any agent becomes one by creating a goal)
+
+| Tool | Does |
+|---|---|
+| `goal_create` | A goal and its tasks across repositories, with dependencies; the caller is its coordinator |
+| `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there with a brief naming the task |
+| `inbox` | Waits (up to a timeout) for the goal's `done` events, questions and messages; returns them and marks them handled |
+| `worker_stop` | Stops a worker; its task goes back to `ready` |
+
+**Sensible launching** (enforced by the server, not left to the prompt):
+
+- Writing tasks always get a new worktree, so parallel workers never share a checkout. Tasks marked `readonly` (research, review) may run in the repository's checkout.
+- At most 4 workers per goal at once (setting), and workers can't start workers of their own.
+- Only `ready` tasks can be started: dependencies done, no worker on it.
+- Every start and stop is logged on the goal and shown in Mission control, with Stop.
+- When a goal's last task finishes, its worktrees stay for review; Overseer's existing Delete removes them.
 
 Descriptions carry the rules (when to ask, keep notes short, decisions go to
-the user), so a short `AGENTS.md` note replaces the `huly-tasks` skill.
+you), so a short `AGENTS.md` note replaces the `huly-tasks` skill.
 
 ## 5. Delivery to agents
 
@@ -95,6 +119,11 @@ the user), so a short `AGENTS.md` note replaces the `huly-tasks` skill.
   send stays queued.
 - Agent-to-agent messages reach one agent at most once per 2 minutes, bundled.
   Yours go at once.
+- `worker_start` is carried out by Overseer too: the server queues a start
+  request, Overseer creates the worktree (Worktrunk, as New worktree does) and
+  opens omp there with `cx.agents:start`, then reports the pane back.
+- Coordinators wait with `inbox` instead of being prompted, so a finishing
+  worker doesn't interrupt them mid-turn.
 
 ## 6. Mission control block
 
@@ -104,8 +133,9 @@ tab of its own. Three sections, top to bottom:
 1. **Needs you**: each waiting task as a card: repo · task title, the question
    rendered as Markdown, options as buttons (recommended one marked), and a
    reply field. Answering records it and delivers it; the card leaves.
-2. **Working**: one row per task in `doing`: live dot, repo, title, last note
-   (one line), how long ago. Enter or click goes to the agent's pane; `o`
+2. **Working**: tasks in `doing`, grouped under their goal (with its
+   progress, e.g. 3 of 5 done) or under No goal; each row: live dot, repo,
+   title, last note (one line), how long ago; a worker row has Stop. Enter or click goes to the agent's pane; `o`
    opens the task's thread.
 3. **Todo**: collapsed count; expands to a list. `n` adds a task.
 
@@ -129,9 +159,8 @@ Keys: `↑↓` select, `↵` open/go, `1`–`9` pick an option, `r` reply, `n` n
 
 ## 8. Out of scope (v1)
 
-Goals and multi-repo plans with dispatching agents (v2, builds on
-`message_task` and `task_add`), due dates, priorities, search, a web view,
-other people.
+Due dates, priorities, search, a web view, other people, workers on other
+machines, agents other than omp as workers.
 
 ## Risks
 
@@ -150,9 +179,13 @@ other people.
 2. An omp agent started in Tern creates a task, asks a question; it appears in
    Needs you within a second; answering delivers it to that agent.
 3. Tern restart: the task stays linked to its resumed session.
-4. Two agents in different repositories exchange one `message_task`.
+4. Two agents in different repositories exchange one `message`.
+5. A coordinator creates a goal across two repositories with one dependency,
+   starts the ready task's worker in a new worktree, waits with `inbox`, and
+   starts the dependent task once the first is done.
 
 ## Estimate
 
-About 3–4 days: server and tools 1 day, delivery and identity 0.5, Mission
-control block and sidebar 1.5, migration and cutover 0.5.
+About 5 days: server and tools 1.5 days, delivery, identity and worker
+starts 1, Mission control block and sidebar 1.5, migration and cutover 0.5,
+a real multi-repo goal as the end-to-end test 0.5.
