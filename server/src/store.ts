@@ -248,10 +248,19 @@ export class Store {
     this.db.query("update goals set tern_session = ? where id = ?").run(ternSession, id);
   }
 
+  // Makes the caller the goal's coordinator, with a task of its own
+  // ("Coordinate …") so it can note progress and ask the user like any agent.
   joinGoal(caller: Caller, id: number): Goal {
     const g = this.goal(id);
     if (g.status !== "active") throw new Error(`${Store.gid(id)} is ${g.status}, not active`);
     this.db.query("update goals set coordinator = ? where id = ?").run(caller.session, id);
+    const own = this.db.query("select id from tasks where goal = ? and session = ? and status = 'doing'").get(id, caller.session);
+    if (!own) {
+      const now = this.now();
+      this.db.query(`insert into tasks (goal, title, body, repo, branch, worktree, status, readonly, session, created, updated)
+        values (?, ?, '', ?, ?, ?, 'doing', 1, ?, ?, ?)`)
+        .run(id, `Coordinate ${g.title}`, caller.repo, caller.branch, caller.cwd, caller.session, now, now);
+    }
     return this.goal(id);
   }
 
@@ -262,7 +271,9 @@ export class Store {
 
   private finishGoalIfDone(goal: number | null) {
     if (goal == null) return;
-    const open = this.db.query(`select count(*) as n from tasks where goal = ? and status not in ('done', 'dropped', 'failed')`)
+    // The coordinator's own task doesn't count: it ends after this summary.
+    const open = this.db.query(`select count(*) as n from tasks t join goals g on g.id = t.goal
+      where t.goal = ? and t.status not in ('done', 'dropped', 'failed') and t.session is not g.coordinator`)
       .get(goal) as { n: number };
     if (open.n > 0) return;
     this.addEvent({ task: null, goal, author: "overseer", kind: "status",

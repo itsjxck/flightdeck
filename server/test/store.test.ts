@@ -102,10 +102,23 @@ describe("goals and conversation", () => {
     store.startGoal(g.id);
     store.joinGoal({ ...me, session: "coord" }, g.id);
     expect(store.goal(g.id).coordinator).toBe("coord");
-    const [t] = store.listTasks({ goal: g.id });
+    const t = store.listTasks({ goal: g.id }).find((x) => x.session !== "coord")!;
     store.startTask({ ...me, session: "w" }, { id: t.id });
     store.doneTask("w", { outcome: "succeeded", summary: "done" });
     expect(store.goalEvents(g.id).map((e) => e.kind)).toContain("status");
+  });
+
+  test("a coordinator can ask the user, and its own task doesn't block the goal finishing", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const worker = store.listTasks({ goal: g.id }).find((t) => t.session !== "coord")!;
+    store.startTask({ ...me, session: "w" }, { id: worker.id });
+    store.doneTask("w", { outcome: "succeeded", summary: "done" });
+    expect(store.goalEvents(g.id).map((e) => e.kind)).toContain("status");
+    store.ask("coord", { question: "Merge order?" });
+    expect(store.waiting()[0].task.title).toBe("Coordinate Cross-repo auth");
   });
 
   test("a question makes the task waiting until answered", () => {
