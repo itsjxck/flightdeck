@@ -128,6 +128,9 @@ local AGENTS = {
 -- The agent CLI a shell command line runs, if any, e.g. "omp", "cd x && claude",
 -- "FOO=1 /usr/local/bin/codex --resume".
 local function runsAgent(line)
+	-- omp's /restart re-execs Tern's managed binary by full path, which has a
+	-- space in it: ".../Application Support/Tern/omp/versions/18.20.0 --restore …".
+	if string.find(line, "/omp/versions/", 1, true) then return "omp" end
 	for segment in string.gmatch(line, "[^;&|]+") do
 		for word in string.gmatch(segment, "%S+") do
 			if not string.find(word, "=", 1, true) then
@@ -139,6 +142,8 @@ local function runsAgent(line)
 	end
 	return nil
 end
+assert(runsAgent("/Users/j/Library/Application Support/Tern/omp/versions/18.20.0 --restore /x.jsonl") == "omp"
+	and runsAgent("FOO=1 /usr/local/bin/codex --resume") == "codex" and runsAgent("ls -la") == nil, "runsAgent self-check")
 
 -- Native agent blocks' states by pane id: "working", or "waiting" (it asked
 -- you something). Tern's agent_state events update it at once. The tick
