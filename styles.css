@@ -689,3 +689,10 @@
 @media (prefers-reduced-motion: reduce) {
   [data-role^='mission.option'] { transition: none; }
 }
+/* Separates Goals from Spaces in the sidebar. */
+[data-role='overseer.rule'] {
+  height: 1px;
+  min-height: 1px;
+  margin: 10px 4px 12px;
+  background: color-mix(in srgb, var(--t4) 25%, transparent);
+}

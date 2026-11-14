@@ -428,6 +428,7 @@ function View.render(model)
 	}))
 	for _, space in model.spaces do table.insert(spaces, spaceNode(space)) end
 	if model.goals and #model.goals > 0 then
+		table.insert(spaces, ui.el("div", { key = "goals-rule", role = "overseer.rule" }))
 		table.insert(spaces, ui.node("row", { key = "goals-header", role = "overseer.header" }, {
 			text("title", "Goals", "overseer.heading", { grow = 1 }),
 			text("count", tostring(#model.goals), "overseer.count"),
