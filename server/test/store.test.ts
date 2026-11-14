@@ -140,6 +140,16 @@ describe("goals and conversation", () => {
     expect(again.context).toBe("Also update the docs.");
   });
 
+  test("a repository scan adds, keeps ignore choices, reports name clashes and drops vanished repos", () => {
+    const store = new Store(":memory:");
+    expect(store.syncScanned([{ name: "a", path: "/p/a" }, { name: "b", path: "/p/b" }]).added).toBe(2);
+    store.setRepoIgnored("a", true);
+    expect(store.repos().map((r) => r.name)).toEqual(["b"]);
+    const again = store.syncScanned([{ name: "a", path: "/p/a" }, { name: "a", path: "/q/a" }]);
+    expect(again).toMatchObject({ added: 0, removed: 1, duplicates: [{ name: "a", path: "/q/a" }] });
+    expect(store.repos({ ignored: true })).toMatchObject([{ name: "a", ignored: 1 }]);
+  });
+
   test("a goal can start with no tasks; its coordinator adds, edits and rewires them", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });

@@ -55,6 +55,8 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 - **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
 - **Backlog** tab (<kbd>[</kbd> <kbd>]</kbd> switch tabs): every goal, newest first, with its status; <kbd>Enter</kbd> shows a goal's tasks. Then every task outside goals.
 
+- **Repos** tab: every Git repository Overseer knows. The server finds them by scanning your home folder (to 5 levels, skipping `Library`, `node_modules` and the like; rescans every 30 minutes, <kbd>s</kbd> scans now; roots, depth and skipped folders in `<plugin data>/repos.json`), plus ones agents work in. <kbd>Enter</kbd> ignores a repository: coordinators aren't told about it.
+
 A goal's coordinator owns its workers: it closes finished ones (`worker_stop`; the worktree stays) and starts fresh ones for follow-up work (`worker_start` with `context`, on a new task or a finished one, which reopens in its worktree).
 
 The sidebar button shows how many questions wait (**2 need you**); a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.

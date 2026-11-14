@@ -53,7 +53,8 @@ create table if not exists events (
 create table if not exists workers (
   id integer primary key, task integer not null references tasks(id), goal integer not null references goals(id),
   requested_by text not null, status text not null, pane text, created integer not null, context text);
-create table if not exists repos (name text primary key, path text not null);
+create table if not exists repos (name text primary key, path text not null,
+  source text not null default 'learned', ignored integer not null default 0);
 `;
 
 type PlanTask = { key: string; title: string; body?: string; repo: string; needs?: string[]; readonly?: boolean };
@@ -68,6 +69,11 @@ export class Store {
     // Added after the first release: databases created before it lack the column.
     const cols = this.db.query("select name from pragma_table_info('workers')").all() as { name: string }[];
     if (!cols.some((c) => c.name === "context")) this.db.exec("alter table workers add column context text");
+    const repoCols = this.db.query("select name from pragma_table_info('repos')").all() as { name: string }[];
+    if (!repoCols.some((c) => c.name === "ignored")) {
+      this.db.exec("alter table repos add column source text not null default 'learned'");
+      this.db.exec("alter table repos add column ignored integer not null default 0");
+    }
   }
 
   static tid(id: number) { return `T-${id}`; }
@@ -234,11 +240,48 @@ export class Store {
   // ── Repositories (name → folder, learned from callers) ─────────────────
 
   learnRepo(name: string, path: string) {
-    this.db.query("insert into repos (name, path) values (?, ?) on conflict(name) do update set path = excluded.path").run(name, path);
+    this.db.query("insert into repos (name, path) values (?, ?) on conflict(name) do update set path = excluded.path, source = 'learned'").run(name, path);
   }
 
-  repos(): { name: string; path: string }[] {
-    return this.db.query("select name, path from repos order by name").all() as { name: string; path: string }[];
+  // Records a scan (repos.ts): adds new repositories, drops scanned ones that are
+  // gone, keeps your ignore choices. A name already taken by another folder is
+  // returned as a duplicate (tasks name repositories by folder name).
+  syncScanned(found: { name: string; path: string }[]): { added: number; removed: number; duplicates: { name: string; path: string }[] } {
+    return this.db.transaction(() => {
+      let added = 0;
+      const duplicates: { name: string; path: string }[] = [];
+      const seen = new Set<string>();
+      for (const f of found) {
+        const row = this.db.query("select path from repos where name = ?").get(f.name) as { path: string } | null;
+        if (!row) {
+          this.db.query("insert into repos (name, path, source) values (?, ?, 'scanned')").run(f.name, f.path);
+          added++;
+        } else if (row.path !== f.path) {
+          duplicates.push(f);
+          continue;
+        }
+        seen.add(f.path);
+      }
+      const scanned = this.db.query("select name, path from repos where source = 'scanned'").all() as { name: string; path: string }[];
+      const gone = scanned.filter((r) => !seen.has(r.path));
+      for (const r of gone) this.db.query("delete from repos where name = ?").run(r.name);
+      return { added, removed: gone.length, duplicates };
+    })();
+  }
+
+  forgetRepo(name: string) {
+    this.db.query("delete from repos where name = ?").run(name);
+  }
+
+  setRepoIgnored(name: string, ignored: boolean) {
+    const r = this.db.query("update repos set ignored = ? where name = ?").run(ignored ? 1 : 0, name);
+    if (r.changes === 0) throw new Error(`unknown repository ${name}`);
+  }
+
+  // Every known repository; ignored ones only when asked (agents never see them).
+  repos(opts: { ignored?: boolean } = {}): { name: string; path: string; source: string; ignored: number }[] {
+    return this.db.query(`select name, path, source, ignored from repos ${opts.ignored ? "" : "where ignored = 0"} order by name`)
+      .all() as { name: string; path: string; source: string; ignored: number }[];
   }
 
   repoPath(name: string | null): string | null {

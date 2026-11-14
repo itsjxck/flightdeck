@@ -12,8 +12,8 @@ local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
 -- The selectable rows of the shown tab and the index of the selected one (by ref, so a refresh keeps it).
 local function rows(state)
-	local list = if state.tab == "backlog"
-		then (if state.backlog then model.backlogRows(state.backlog, state.expanded) else {})
+	local list = if state.tab == "backlog" then (if state.backlog then model.backlogRows(state.backlog, state.expanded) else {})
+		elseif state.tab == "repos" then (state.repos or {})
 		else model.selectable(state.sections, state.showTodo)
 	local index = 1
 	for i, r in list do
@@ -34,7 +34,7 @@ local function replyTarget(state)
 	if state.newGoal and not state.newGoal.title then return "New goal", "What should be true when it's done? A short title, Enter" end
 	if state.newGoal then return "New goal", "Details for the coordinator (repos, constraints), or Enter to skip" end
 	if state.thread then return state.thread.task, nil end
-	if state.tab == "backlog" then return nil, nil end
+	if state.tab ~= "now" then return nil, nil end
 	local row = selectedRow(state)
 	if row and row.kind == "question" then return row.item.task, nil end
 	return nil, nil
@@ -46,6 +46,12 @@ local function refresh(state, cx)
 		if s then state.sections = model.sections(s) end
 		local pending = tern.kv.get("mission:select")
 		if type(pending) == "string" then state.selectedRef = pending; tern.kv.set("mission:select", nil) end
+		if state.tab == "repos" then
+			model.api("GET", "/api/repos", nil, function(data)
+				if data then state.repos = model.repoRows(data) end
+				pcall(function() cx:render() end)
+			end)
+		end
 		if state.tab == "backlog" then
 			model.api("GET", "/api/backlog", nil, function(data)
 				if data then state.backlog = model.backlog(data) end
@@ -113,6 +119,15 @@ local function answerOption(state, cx, task, option)
 	return true
 end
 
+-- Hides a repository from agents, or uses it again.
+local function toggleRepo(state, cx, repo)
+	model.api("POST", "/api/repos/" .. repo.name .. "/ignore", { ignored = not repo.ignored }, function(_, err)
+		state.error = err
+		refresh(state, cx)
+	end)
+	repo.ignored = not repo.ignored
+end
+
 local function switchTab(state, cx, tab)
 	state.tab, state.thread = tab, nil
 	refresh(state, cx)
@@ -129,7 +144,9 @@ end
 local function activate(state, cx)
 	local row = selectedRow(state)
 	if not row then return end
-	if row.kind == "goal" then
+	if row.kind == "repo" then
+		toggleRepo(state, cx, row.item)
+	elseif row.kind == "goal" then
 		state.expanded[row.item.ref] = not state.expanded[row.item.ref] or nil
 	elseif row.kind == "proposal" then
 		model.request({ kind = "start", goal = row.item.ref })
@@ -160,7 +177,7 @@ local DEF = {
 		local to, hint = replyTarget(state)
 		local agents = tern.kv.get("mission:agents")
 		local main, dock = render.view({
-			tab = state.tab, backlog = state.backlog, expanded = state.expanded,
+			tab = state.tab, backlog = state.backlog, expanded = state.expanded, repos = state.repos,
 			sections = state.sections, selectedRef = row and (row.item.task or row.item.ref), showTodo = state.showTodo,
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
@@ -197,6 +214,13 @@ local DEF = {
 			state.showTodo = not state.showTodo
 		elseif not typing and key.name == "n" then
 			state.newTask = true
+		elseif not typing and key.name == "s" and state.tab == "repos" then
+			state.error = "Scanning for repositories…"
+			model.api("POST", "/api/repos/scan", {}, function(r, err)
+				state.error = err or (r and string.format("Scan done: %d added, %d removed%s.", r.added, r.removed,
+					if #r.duplicates > 0 then string.format(", %d skipped (name already taken)", #r.duplicates) else ""))
+				refresh(state, cx)
+			end)
 		elseif not typing and key.name == "g" then
 			state.newGoal = {}
 		else
@@ -225,6 +249,9 @@ local DEF = {
 		if verb == "answer" then answerOption(state, cx, a, tonumber(b))
 		elseif verb == "select" then state.selectedRef = a
 		elseif verb == "tab" then switchTab(state, cx, a)
+		elseif verb == "repo" then
+			state.selectedRef = a
+			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepo(state, cx, r.item) end end
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
 		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"

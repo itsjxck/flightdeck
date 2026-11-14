@@ -11,6 +11,10 @@ function field(body: Record<string, unknown>, key: string): string {
   return v;
 }
 
+// The user's SSH key lives on a hardware security key that has to be unlocked
+// (touch or PIN) about every hour. Agents must ask, never work around it.
+const SECURITY_KEY_NOTE = `Git over SSH (push, fetch, pull, clone) uses the user's hardware security key, which needs unlocking about every hour. If an SSH operation fails with "incorrect passphrase", "signing failed", "agent refused operation" or "Permission denied (publickey)", don't work around it: no HTTPS remotes, no new keys, no changing remotes or SSH config. Ask the user with ask_user to unlock their security key, then retry.`;
+
 function workerBrief(store: Store, workerId: number) {
   const w = store.worker(workerId);
   const t = store.task(w.task);
@@ -20,6 +24,7 @@ function workerBrief(store: Store, workerId: number) {
     `Your task is ${Store.tid(t.id)}: ${t.title}.`, t.body,
     `First call task_start with id "${Store.tid(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
+    SECURITY_KEY_NOTE,
     w.context ? `\nFrom your coordinator:\n${w.context}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -37,6 +42,7 @@ export function coordinatorBrief(store: Store, goal: number) {
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
     `When the goal is over, call task_done on your own task.`,
+    SECURITY_KEY_NOTE,
   ].filter(Boolean).join("\n");
 }
 
@@ -80,6 +86,14 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
           if (caller.repo && caller.root) store.learnRepo(caller.repo, caller.root);
         }
         return json(map);
+      }
+      case "GET repos":
+        return json({ repos: store.repos({ ignored: true }) });
+      case "POST repos": {
+        // POST /api/repos/<name>/ignore {ignored}
+        if (parts[2] !== "ignore") break;
+        store.setRepoIgnored(decodeURIComponent(parts[1] ?? ""), body.ignored === true);
+        return json({ ok: true });
       }
       case "GET backlog": {
         // Every goal and task, newest first, for Mission control's Backlog tab.

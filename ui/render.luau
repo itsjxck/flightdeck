@@ -197,7 +197,7 @@ local function dockNode(view, keys)
 end
 
 -- Mission control's tabs, in order: id and label.
-M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" } }
+M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "repos", label = "Repos" } }
 
 local function tabStrip(current, needs)
 	local tabs = {}
@@ -253,7 +253,29 @@ local function backlogNodes(view)
 	return out
 end
 
--- The whole block. `view`: { tab, sections, backlog, expanded, selectedRef, showTodo, thread, reply, replyTo,
+-- The Repos tab: every repository Overseer knows (found by scanning, or
+-- learned from agents), and whether agents may use it.
+local function repoNodes(view)
+	if not view.repos then return { text("loading", "Loading…", "mission.empty") } end
+	local rows, ignored = {}, 0
+	for _, r in view.repos do
+		local it = r.item
+		if it.ignored then ignored += 1 end
+		table.insert(rows, row("r" .. it.name, if it.ignored then "mission.repoIgnored" else "mission.repo", {
+			text("name", it.name, "mission.repoName"),
+			text("path", (string.gsub(it.path, "^/Users/[^/]+", "~")), "mission.repoPath", { grow = 1 }),
+			text("source", if it.source == "learned" then "from an agent" else "found", "mission.goalProgress"),
+			text("state", if it.ignored then "Ignored" else "Used", if it.ignored then "mission.statusChip-dropped" else "mission.statusChip-finished"),
+		}, { actions = { click = "repo=" .. it.name }, mark = if it.name == view.selectedRef then "pick" else nil,
+			title = if it.ignored then "Agents don't see it. Enter to use it again" else "Enter to hide it from agents" }))
+	end
+	return { col("repos", "mission.section", {
+		sectionHead("head", "Repositories", plural(#view.repos, "known", "known") .. " · " .. tostring(ignored) .. " ignored · rescanned every 30 min"),
+		if #rows > 0 then col("list", "mission.strips", rows) else text("none", "None found yet. Press s to scan.", "mission.empty"),
+	}) }
+end
+
+-- The whole block. `view`: { tab, sections, backlog, expanded, repos, selectedRef, showTodo, thread, reply, replyTo,
 -- replyHint, error, agentOf }. Returns the block's main and dock nodes.
 function M.view(view)
 	local s = view.sections
@@ -268,6 +290,11 @@ function M.view(view)
 	}))
 	table.insert(main, tabStrip(view.tab or "now", #s.needs))
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
+	if view.tab == "repos" then
+		for _, node in repoNodes(view) do table.insert(main, node) end
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+			dockNode(view, "[ ] tabs   ↑↓ move   Enter ignore / use   s scan now")
+	end
 	if view.tab == "backlog" then
 		view.agentOf = agentOf
 		for _, node in backlogNodes(view) do table.insert(main, node) end

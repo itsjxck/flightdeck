@@ -7,9 +7,23 @@ import { Store, type Caller } from "./store";
 import { buildServer } from "./tools";
 import { handleApi } from "./api";
 import { resolveCaller, resolvePane } from "./identity";
+import { loadConfig, scanRepos, type ScanConfig } from "./repos";
 
-export function startServer(opts: { port: number; dbPath: string; token: string; resolve?: (pane: string) => Caller | null }) {
+const RESCAN_MS = 30 * 60_000;
+
+export function startServer(opts: { port: number; dbPath: string; token: string; resolve?: (pane: string) => Caller | null; scan?: ScanConfig }) {
   const store = new Store(opts.dbPath);
+  // Repository discovery: at start, every RESCAN_MS, and on demand (POST /api/repos/scan).
+  const scan = async () => {
+    if (!opts.scan) return { added: 0, removed: 0, duplicates: [] };
+    const result = store.syncScanned(await scanRepos(opts.scan));
+    // Repositories learned from agents whose folder has since been deleted.
+    for (const r of store.repos({ ignored: true })) if (!existsSync(r.path)) { store.forgetRepo(r.name); result.removed++; }
+    console.log(`repos: ${result.added} added, ${result.removed} removed, ${result.duplicates.length} name clashes`);
+    return result;
+  };
+  scan().catch((e) => console.error("repo scan failed:", e));
+  const rescan = setInterval(() => scan().catch((e) => console.error("repo scan failed:", e)), RESCAN_MS);
   const resolve = opts.resolve ?? resolvePane;
   const resolveTool = opts.resolve ?? resolveCaller;
   const server = Bun.serve({
@@ -27,11 +41,12 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
         await buildServer(store, () => (pane ? resolveTool(pane) : null)).connect(transport);
         return transport.handleRequest(req);
       }
+      if (url.pathname === "/api/repos/scan" && req.method === "POST") return Response.json(await scan());
       if (url.pathname.startsWith("/api/")) return handleApi(store, req, url, resolve);
       return new Response("not found", { status: 404 });
     },
   });
-  return () => server.stop(true);
+  return () => { clearInterval(rescan); server.stop(true); };
 }
 
 // `bun src/main.ts <data dir>`: Overseer passes its plugin data directory.
@@ -42,6 +57,6 @@ if (import.meta.main) {
   if (!existsSync(tokenPath)) writeFileSync(tokenPath, crypto.randomUUID().replaceAll("-", ""), { mode: 0o600 });
   const token = readFileSync(tokenPath, "utf8").trim();
   const port = Number(process.env.OVERSEER_PORT ?? 8095);
-  startServer({ port, dbPath: join(dir, "overseer.db"), token });
+  startServer({ port, dbPath: join(dir, "overseer.db"), token, scan: loadConfig(dir) });
   console.log(`overseer-server on 127.0.0.1:${port}, data in ${dir}`);
 }

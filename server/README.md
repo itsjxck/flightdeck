@@ -14,8 +14,9 @@ bun src/main.ts <data dir>    # what Overseer runs; port 8095 (OVERSEER_PORT)
 |---|---|
 | `src/store.ts` | Schema and every read, write and rule: task statuses, dependencies (`promote`), goals and their coordinator, questions (`waiting`), messages, worker limits, the coordinator inbox, deliveries with the 2-minute agent-message gap. No I/O besides SQLite. Change behaviour here. |
 | `src/tools.ts` | The MCP tools agents see. Each resolves its caller, calls `store`, and turns a broken rule into a tool error. Tool descriptions are the agents' instructions. |
-| `src/api.ts` | Overseer's JSON API (`/api/*`): state, the backlog (every goal and task), threads, answers, goal start/session/close, deliveries, worker starts and stops, pane → session lookup. Also the coordinator and worker briefs. |
+| `src/api.ts` | Overseer's JSON API (`/api/*`): state, the backlog (every goal and task), repositories (list, ignore), threads, answers, goal start/session/close, deliveries, worker starts and stops, pane → session lookup. Also the coordinator and worker briefs. |
 | `src/identity.ts` | Which omp session a request comes from: `X-Tern-Pane` → `tern process` → the session file the pane's process group holds open (or `--resume`/`--restore`), plus its folder, repository and branch. |
+| `src/repos.ts` | Finds Git repositories (breadth-first from `repos.json` roots, default `~`, depth 5, skipping system and build folders; worktrees and nested repositories don't count). `main.ts` scans at start, every 30 minutes and on `POST /api/repos/scan`; `store.syncScanned` records it. |
 | `src/main.ts` | `Bun.serve` on 127.0.0.1: `/health` (open), `/mcp` and `/api/*` (bearer token from `<data dir>/token`, created on first start). |
 
 ## Data flow

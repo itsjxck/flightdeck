@@ -112,6 +112,20 @@ function M.backlogRows(backlog, expanded)
 	return rows
 end
 
+-- The Repos tab's rows, from /api/repos: each { kind = "repo", item } with item.ref = its name. Pure.
+function M.repoRows(data)
+	local rows = {}
+	for _, r in data.repos do
+		table.insert(rows, { kind = "repo", item = { ref = r.name, name = r.name, path = r.path, source = r.source, ignored = r.ignored == 1 } })
+	end
+	return rows
+end
+
+do
+	assert(M.repoRows({ repos = { { name = "a", path = "/a", source = "scanned", ignored = 1 } } })[1].item.ignored == true,
+		"ui.model.repoRows self-check")
+end
+
 do
 	local b = M.backlog({ now = 0,
 		goals = { { id = 2, ref = "G-2", coordinator = "c" }, { id = 1, ref = "G-1" } },
