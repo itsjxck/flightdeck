@@ -33,7 +33,7 @@ export function coordinatorBrief(store: Store, goal: number) {
 }
 
 function state(store: Store) {
-  const goals = [...store.listGoals("active"), ...store.listGoals("proposed")];
+  const goals = [...store.listGoals("active"), ...store.listGoals("finished"), ...store.listGoals("proposed")];
   const goalIds = new Set(goals.map((g) => g.id));
   const tasks = store.listTasks({})
     .filter((t) => !FINISHED.includes(t.status) || (t.goal != null && goalIds.has(t.goal)))

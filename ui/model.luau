@@ -49,7 +49,7 @@ function M.sections(state)
 	local groups, order = {}, {}
 	for _, t in state.tasks do
 		local goal = t.goal and goalsById[t.goal]
-		local inActiveGoal = goal ~= nil and goal.status == "active"
+		local inActiveGoal = goal ~= nil and (goal.status == "active" or goal.status == "finished")
 		if t.status == "doing" or (inActiveGoal and t.status ~= "dropped") then
 			local key = t.goal or 0
 			if not groups[key] then groups[key] = { goal = goal, tasks = {} }; table.insert(order, key) end

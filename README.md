@@ -51,6 +51,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 - **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
 - **Proposed goals**: <kbd>Enter</kbd> (or Start) opens the goal in a session of its own, with a coordinator that starts workers in their own worktrees.
 - **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
+- **Finished goals** (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
 - **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
 
 The sidebar button shows how many questions wait (**2 need you**); a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.

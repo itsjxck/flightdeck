@@ -200,6 +200,7 @@
 [data-role='overseer.dotIdle'],
 [data-role='overseer.dotBusy'],
 [data-role='overseer.dotAgent'],
+[data-role='overseer.dotDone'],
 [data-role='overseer.dotWaiting'] {
   width: 8px;
   height: 8px;
@@ -214,6 +215,9 @@
 }
 [data-role='overseer.dotBusy'] {
   background: var(--warn);
+}
+[data-role='overseer.dotDone'] {
+  background: var(--ok);
 }
 [data-role='overseer.dotAgent'] {
   background: var(--ok);

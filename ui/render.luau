@@ -85,12 +85,15 @@ local function summary(s, agentOf)
 	for _, g in s.working do
 		for _, t in g.tasks do if t.status == "doing" and agentOf(t.session) == "working" then working += 1 end end
 	end
-	local goals = 0
-	for _, g in s.working do if g.goal then goals += 1 end end
+	local goals, finished = 0, 0
+	for _, g in s.working do
+		if g.goal and g.goal.status == "finished" then finished += 1 elseif g.goal then goals += 1 end
+	end
 	local parts = {}
 	if #s.needs > 0 then table.insert(parts, plural(#s.needs, "question waits for you", "questions wait for you")) end
 	table.insert(parts, if working > 0 then plural(working, "agent working", "agents working") else "no agent working")
 	if goals > 0 then table.insert(parts, plural(goals, "goal running", "goals running")) end
+	if finished > 0 then table.insert(parts, plural(finished, "goal to review", "goals to review")) end
 	if #s.proposed > 0 then table.insert(parts, plural(#s.proposed, "goal to start", "goals to start")) end
 	return table.concat(parts, " · ")
 end
@@ -200,12 +203,14 @@ function M.view(view)
 		local strips = {}
 		for _, t in group.tasks do table.insert(strips, strip(t, t.ref == view.selectedRef, agentOf, waitingTasks)) end
 		if g then
-			local progress = if g.progress then tostring(g.progress.done) .. " of " .. tostring(g.progress.total) .. " done" else ""
+			local finished = g.status == "finished"
+			local progress = if finished then "Finished · review, then close"
+				elseif g.progress then tostring(g.progress.done) .. " of " .. tostring(g.progress.total) .. " done" else ""
 			table.insert(goalPanels, panel("g" .. g.ref, col("head", "mission.goalHead", {
 				row("line", "mission.goalLine", {
 					text("ref", g.ref, "mission.ref"),
 					text("title", g.title, "mission.goalTitle", { grow = 1 }),
-					if group.coordinator then (function()
+					if group.coordinator and not finished then (function()
 						local key, label = M.taskState(group.coordinator, agentOf(group.coordinator.session), waitingTasks[group.coordinator.ref])
 						return row("coord", "mission.coordinator", {
 							ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
@@ -215,6 +220,8 @@ function M.view(view)
 					text("progress", progress, "mission.goalProgress"),
 					ui.el("button", { key = "open", role = "mission.quiet", text = "Open session",
 						actions = { click = "session=" .. g.ref } }),
+					if finished then ui.button("Close goal", { key = "close", variant = "primary",
+						title = "Mark it done and close its session; the worktrees stay", actions = { click = "close=" .. g.ref } }) else nil,
 				}),
 				rail(group.tasks, agentOf, waitingTasks),
 			}), strips))
@@ -223,7 +230,7 @@ function M.view(view)
 		end
 	end
 	if #goalPanels > 0 then
-		table.insert(main, col("goals", "mission.section", { sectionHead("head", "Goals", plural(#goalPanels, "running", "running")), col("list", "mission.panels", goalPanels) }))
+		table.insert(main, col("goals", "mission.section", { sectionHead("head", "Goals", plural(#goalPanels, "goal", "goals")), col("list", "mission.panels", goalPanels) }))
 	end
 	if loose then
 		table.insert(main, col("loose", "mission.section", {

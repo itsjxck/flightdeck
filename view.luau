@@ -319,14 +319,18 @@ local TASK_STATUS = { ready = "ready", todo = "waiting on others", done = "done"
 
 -- A goal: its row (session, progress, menu) and, unfolded, one row per task.
 local function goalNode(goal)
-	local dot = if goal.dot then AGENT_STATES[goal.dot].dot else "overseer.dotOpen"
+	-- Finished (the coordinator reported): green until you close it, unless a question waits.
+	local dot = if goal.dot == "waiting" then AGENT_STATES.waiting.dot
+		elseif goal.finished then "overseer.dotDone"
+		elseif goal.dot then AGENT_STATES[goal.dot].dot else "overseer.dotOpen"
 	local head = {
 		ui.el("div", { key = "status", role = dot }),
 		text("name", goal.ref .. " · " .. goal.title, "overseer.spaceName", { grow = 1 }),
 	}
 	if goal.needsYou > 0 then table.insert(head, text("needs", tostring(goal.needsYou), "overseer.badgeBad", { title = "Questions waiting for you" })) end
-	table.insert(head, text("progress", tostring(goal.progress.done) .. "/" .. tostring(goal.progress.total), "overseer.count",
-		{ title = "Tasks done" }))
+	table.insert(head, if goal.finished
+		then text("progress", "finished", "overseer.count", { title = "Finished: review its worktrees, then Close goal (right-click)" })
+		else text("progress", tostring(goal.progress.done) .. "/" .. tostring(goal.progress.total), "overseer.count", { title = "Tasks done" }))
 	local line = ui.node("row", { key = "line", role = "overseer.spaceLine" }, {
 		ui.node("row", {
 			key = "row", role = "overseer.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",

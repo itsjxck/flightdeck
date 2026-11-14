@@ -434,15 +434,17 @@ local function model(cx)
 	result.goals = {}
 	local URGENCY = { waiting = 3, working = 2, idle = 1 }
 	for _, g in ms.goals do
-		if g.status == "active" then
+		if g.status == "active" or g.status == "finished" then
 			local goal = { ref = g.ref, title = g.title, session = g.tern_session, progress = g.progress or { done = 0, total = 0 },
+				finished = g.status == "finished",
 				needsYou = 0, dot = nil, tasks = {}, collapsed = collapsed["goal:" .. g.ref] == true }
 			for _, w in ms.waiting do if w.goal == g.ref then goal.needsYou += 1 end end
 			for _, t in ms.tasks do
 				if t.goal == g.id then
 					local pane = t.session and mission.sessionPanes[t.session]
 					local agent = pane and agentByPane[pane]
-					local state = if agent then agent.state else nil
+					-- A finished task's agent may linger idle; show the task's status instead.
+					local state = if agent and t.status == "doing" then agent.state else nil
 					if state and (not goal.dot or URGENCY[state] > URGENCY[goal.dot]) then goal.dot = state end
 					-- The coordinator's own task colours the goal's dot but isn't listed.
 					if t.session == nil or t.session ~= g.coordinator then
@@ -1933,7 +1935,7 @@ end
 
 -- Requests from the Mission control block (host half), which can't open
 -- sessions or focus panes itself: kv `mission:requests`, a list of
--- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" } or { kind = "session", goal = "G-3" }.
+-- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" }, { kind = "session", goal = "G-3" } or { kind = "close", goal = "G-3" }.
 -- Publishes how each task's agent is doing (kv `mission:agents`, omp session
 -- → "working" | "waiting" | "idle") for the Mission control block, which
 -- can't see agents. Written only when it changes.
@@ -1965,6 +1967,7 @@ local function missionRequests(cx)
 					end)
 				end
 			end
+		elseif r.kind == "close" then closeGoal(cx, r.goal)
 		elseif r.kind == "session" then
 			for _, g in ms.goals do
 				if g.ref == r.goal and g.tern_session then cx.sessions:switch(tonumber(g.tern_session)) end

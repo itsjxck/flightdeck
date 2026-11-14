@@ -121,6 +121,20 @@ describe("goals and conversation", () => {
     expect(store.waiting()[0].task.title).toBe("Coordinate Cross-repo auth");
   });
 
+  test("the coordinator finishing its own task marks the goal finished, without another summary request", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const worker = store.listTasks({ goal: g.id }).find((t) => t.session !== "coord")!;
+    store.startTask({ ...me, session: "w" }, { id: worker.id });
+    store.doneTask("w", { outcome: "succeeded", summary: "done" });
+    const before = store.goalEvents(g.id).filter((e) => e.kind === "status").length;
+    store.doneTask("coord", { outcome: "succeeded", summary: "closed as is" });
+    expect(store.goal(g.id).status).toBe("finished");
+    expect(store.goalEvents(g.id).filter((e) => e.kind === "status").length).toBe(before);
+  });
+
   test("a note marked answered closes the open question", () => {
     const store = new Store(":memory:");
     store.startTask(me, { title: "a" });

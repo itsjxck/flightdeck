@@ -181,6 +181,7 @@ local DEF = {
 		if verb == "answer" then answerOption(state, cx, a, tonumber(b))
 		elseif verb == "select" then state.selectedRef = a
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
+		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"
 		elseif verb == "start" then model.request({ kind = "start", goal = a }); state.error = "Starting " .. a .. " in a session of its own…"
 		end
 	end,

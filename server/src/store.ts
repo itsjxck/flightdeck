@@ -4,7 +4,9 @@
 import { Database } from "bun:sqlite";
 
 export type TaskStatus = "todo" | "ready" | "doing" | "done" | "failed" | "dropped";
-export type GoalStatus = "proposed" | "active" | "done" | "dropped";
+// finished: the coordinator has reported (its own task is done); the goal stays on
+// screen for review until the user closes it (done).
+export type GoalStatus = "proposed" | "active" | "finished" | "done" | "dropped";
 export type EventKind = "note" | "question" | "answer" | "message" | "done" | "status";
 
 export interface Task {
@@ -181,6 +183,12 @@ export class Store {
     const files = a.files?.length ? `\n\nFiles: ${a.files.map((f) => "`" + f + "`").join(", ")}` : "";
     this.addEvent({ task: t.id, goal: t.goal, author: session, kind: "done", body: `**${a.outcome}:** ${a.summary}${files}`,
       options: null, recommended: null, to_target: t.goal != null ? "coordinator" : null });
+    // The coordinator finishing its own task ends the goal's run.
+    const goal = t.goal != null ? this.goal(t.goal) : null;
+    if (goal && goal.coordinator === t.session && goal.status === "active") {
+      this.db.query("update goals set status = 'finished' where id = ?").run(goal.id);
+      return this.task(t.id);
+    }
     const dependents = this.db.query("select task from deps where needs = ?").all(t.id) as { task: number }[];
     for (const d of dependents) this.promote(d.task);
     this.finishGoalIfDone(t.goal);
