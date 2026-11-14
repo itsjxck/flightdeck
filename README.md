@@ -31,7 +31,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 **Spaces** lists every session in the window, in Tern's order. A space is named after the folder of the first terminal in its first tab, following you as you `cd`, until you rename it; the line under the name is its branch, or its folder outside Git. When a space is open in a Git repository, the repository's other worktrees are nested under it. If several spaces are open in one repository, the one in its primary checkout holds the worktrees (else the first), and spaces open in those worktrees appear as their rows. Hover a worktree for its path, line counts, ahead/behind and PR.
 
-**Agents** sits at the bottom: every agent block and agent CLI in the window, named after its space (or its tab, if you named the tab), with its state and, when it tracks one, its Huly issue. Click one to jump to it.
+**Agents** sits at the bottom: every agent block and agent CLI in the window, named after its space (or its tab, if you named the tab), with its state. Click one to jump to it.
 
 | You see | It means |
 |---|---|
@@ -43,7 +43,6 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 | **conflicts** | A merge or rebase is stuck |
 | PR icon | Draft, open, merged or closed PR; click to open it in your browser |
 
-**Huly.** Agents that follow `skills/huly-tasks/` track their work as issues in a local Huly at `localhost:8087`, as the user `omp`. Each agent row shows its issue; click it to open the issue. Every 30 s Overseer sets each linked issue's **Agent state** from Tern and sends your new comments to the agent, so you can direct agents from Huly. Agents in the same repository can also message each other in its Huly chat channel (`#<project>`), and Overseer routes each message to the agent it names. It is off until you run **Turn Huly bridge on or off** in the palette; the same command turns it off.
 
 ## Install
 
@@ -55,7 +54,6 @@ You need macOS and:
 | [Worktrunk](https://worktrunk.dev) (`wt`), Git, Bash | worktrees | tested with wt 0.40.0 |
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Visualize PR | optional |
 | [omp](https://omp.sh) | Visualize PR | optional |
-| Local [Huly](https://github.com/hcengineering/huly-selfhost), Node.js | Huly bridge (`huly/`) | optional; set up as in `skills/huly-tasks/SKILL.md` |
 
 ```sh
 git clone git@github.com:itsjxck/tern-overseer.git

@@ -58,7 +58,7 @@ omp's config for every session:
 ```
 
 The server maps pane → omp session (`tern process` + the open session file,
-else `--resume`/`--restore`, as `huly/bridge.cjs` does today), cached per pane.
+else `--resume`/`--restore`, as the removed Huly bridge did), cached per pane.
 Tasks belong to the session, so they survive Tern restarts. Repository and
 branch come from the pane's working directory.
 
@@ -112,7 +112,7 @@ Modelled on Orca's orchestration (runs, tasks, workers, inbox, `ask`,
 - When a goal's last task finishes, its worktrees stay for review; Overseer's existing Delete removes them.
 
 Descriptions carry the rules (when to ask, keep notes short, decisions go to
-you), so a short `AGENTS.md` note replaces the `huly-tasks` skill.
+you), so a short `AGENTS.md` note is all the instruction agents need.
 
 ## 5. Delivery to agents
 
@@ -187,12 +187,13 @@ goal runs lives in its goal's session.
 
 ## 8. Migration and cutover
 
-1. Build and run alongside Huly.
-2. Import open Huly issues (title, description, comments) into tasks with a
-   one-off script.
-3. Switch `AGENTS.md` to the Overseer tools; remove the `huly` MCP entry.
-4. Remove Huly as PERS-1 describes; delete `huly.luau`, `huly/`,
-   `skills/huly-tasks/`.
+Huly was removed on 2026-11-14. Its data (24 issues, 37 comments, one chat
+channel) is exported to `~/.local/share/overseer/huly-export/` as
+`huly-export.json` and `.md`.
+
+1. Import the open issues from `huly-export.json` into tasks (one-off script);
+   finished ones stay in the export.
+2. Add the `overseer` MCP entry and a short `AGENTS.md` note for agents.
 
 ## 9. Out of scope (v1)
 
@@ -206,7 +207,7 @@ machines, agents other than omp as workers.
 - **`${TERN_PANE}` header expansion** (checked 2026-11-14): an omp agent calling
   a probe MCP server sent `X-Tern-Pane` with its pane id.
 - **Session lookup relies on omp keeping its session file open** (and
-  `--resume`/`--restore` as fallback), as the Huly bridge does today.
+  `--resume`/`--restore` as fallback), as the removed Huly bridge did.
 - **Starting agents in the background** (checked 2026-11-14): `tern new
   session NAME --cwd DIR -- omp …` and `tern new tab SESSION --cwd DIR -- omp …`
   open in the background: the focused pane and shown session didn't change.

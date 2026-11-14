@@ -275,24 +275,12 @@ local AGENT_STATES = {
 
 local function agentNode(agent)
 	local state = AGENT_STATES[agent.state] or AGENT_STATES.idle
-	-- With a Huly issue (huly.luau), the state line names it after the state:
-	-- "idle · OWLTR-1 · title", the issue a link that opens it in Huly.
-	local stateLine = text("state", state.label, state.role)
-	if agent.task then
-		-- A plain text node, not a button: Tern's button styles add a box and a different font.
-		stateLine = ui.node("row", { key = "state", role = "overseer.agentStateLine" }, {
-			text("label", state.label .. " ·", state.role),
-			text("task", agent.task.ident .. " · " .. agent.task.title, "overseer.taskLink", {
-				title = "Open " .. agent.task.ident .. " in Huly", actions = { click = "huly=" .. agent.task.url },
-			}),
-		})
-	end
-	local lines = { text("name", agent.name, "overseer.spaceName"), stateLine }
+	local lines = { text("name", agent.name, "overseer.spaceName"), text("state", state.label, state.role) }
 	return ui.node("row", {
 		key = "a" .. tostring(agent.pane), role = "overseer.agentRow",
 		mark = if agent.active then "pick" else nil,
 		title = agent.title,
-		aria = agent.name .. ", " .. state.label .. (if agent.task then ", " .. agent.task.ident else ""),
+		aria = agent.name .. ", " .. state.label,
 		actions = { click = "agent=" .. tostring(agent.pane) },
 	}, {
 		ui.el("div", { key = "status", role = state.dot }),

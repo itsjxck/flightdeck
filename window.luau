@@ -3,7 +3,6 @@ local wt = require("./worktrunk")
 local view = require("./view")
 local visualize = require("./visualize")
 local oplog = require("./oplog")
-local huly = require("./huly")
 
 local cache = {}
 local inflight = {}
@@ -391,12 +390,10 @@ local function model(cx)
 	end)
 	for _, agent in agents do
 		local space = byId[agent.tab.session]
-		local task = huly.tasks[tostring(agent.pane)]
 		table.insert(result.agents, {
 			pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
 			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.label or space.name else "Agent",
 			active = agent.tab.id == shown,
-			task = task and { ident = task.ident, title = task.title, url = task.url },
 		})
 	end
 	return result, pending, renames
@@ -1730,13 +1727,6 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
 tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
-tern.command({ id = "huly", title = "Turn Huly bridge on or off", icon = "list", run = function(cx)
-	local on = not huly.enabled()
-	huly.setEnabled(on)
-	cx:toast("info", if on then "Huly bridge on" else "Huly bridge off",
-		if on then "Agent rows show their Huly issues, and your comments reach agents." else "Agent rows no longer show Huly issues.")
-	redraw(cx)
-end })
 
 -- Session ids in the order Spaces lists them: each space, then its worktrees'
 -- open sessions unless the space is collapsed. `at` gives every session's
@@ -1832,10 +1822,6 @@ tern.on("canvas_action", function(ev, cx)
 		local project = repoById(ev.value)
 		if project then openForm(cx, "create", project) end
 	elseif ev.act == "open" then openWorktree(cx, ev.value)
-	elseif ev.act == "huly" then
-		if huly.ownsUrl(ev.value) then
-			tern.process.run({ "/usr/bin/open", ev.value }, { timeout_ms = 10000 }, function() end)
-		end
 	elseif ev.act == "pr" then
 		-- In your default browser, where you're signed in to GitHub. (cx:open
 		-- follows Tern's link routing: a browser split beside the sidebar.)
@@ -1997,12 +1983,6 @@ tick = function(generation, cx)
 	end
 	separately(recordSessions)
 	separately(syncAgents)
-	separately(function(tickCx)
-		local tabsById, states = {}, {}
-		for _, tab in tickCx.session:tabs() do tabsById[tab.id] = tab end
-		for _, agent in agentPanes(tabsById, tickCx.session:panes()) do states[tostring(agent.pane)] = agent.state end
-		huly.poll(states, redraw)
-	end)
 	separately(follow)
 	separately(closeEmptySessions)
 	separately(closeOrphanedSessions)
