@@ -21,6 +21,8 @@ containers), mostly features you don't use, and needs workarounds: one shared
 | Storage | SQLite (`node:sqlite`, WAL), one file |
 | Who runs the server | Overseer: starts it, restarts it when it dies |
 | Agent identity | The pane, sent as a header; the server finds the omp session from it |
+| Goals | Each runs in a Tern session of its own (coordinator and workers as tabs), apart from your sessions |
+| Who starts a goal | You (Mission control, or an agent's proposal you accept); the coordinator then starts workers itself |
 | Web app | None |
 
 ## 1. Architecture
@@ -64,7 +66,7 @@ branch come from the pane's working directory.
 
 | Table | Columns |
 |---|---|
-| `goals` | id (`G-3`), title, body (Markdown), coordinator (session), status (`active` · `done` · `dropped`), created |
+| `goals` | id (`G-3`), title, body (Markdown), coordinator (session), tern_session, status (`proposed` · `active` · `done` · `dropped`), created |
 | `tasks` | id (`T-12`), goal (optional), title, body (Markdown), repo, branch, worktree, pr, status (`todo` · `ready` · `doing` · `done` · `failed` · `dropped`), session, started_by (session, for workers), created, updated |
 | `deps` | task, needs (task): `task` becomes `ready` once every `needs` is `done` |
 | `events` | id, task, author (`you` · a session id · `overseer`), kind (`note` · `question` · `answer` · `message` · `done` · `status`), body (Markdown), options (JSON, questions only), to_task (messages only), created, delivered |
@@ -90,12 +92,13 @@ Modelled on Orca's orchestration (runs, tasks, workers, inbox, `ask`,
 | `task_add` | A task for later, in any repository, optionally under a goal and depending on other tasks |
 | `task_list` | By goal, repository, status, or `mine` |
 
-**Coordinators** (any agent becomes one by creating a goal)
+**Coordinators** (the agent Overseer starts in a goal's session)
 
 | Tool | Does |
 |---|---|
-| `goal_create` | A goal and its tasks across repositories, with dependencies; the caller is its coordinator |
-| `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there with a brief naming the task |
+| `goal_propose` | Any agent: proposes a goal (title, plan, tasks across repositories, dependencies). It shows in Needs you; Start makes it a goal with its own session and coordinator |
+| `goal_plan` | Coordinator: adds, edits or drops its goal's tasks and dependencies |
+| `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there, as a new tab in the goal's session, with a brief naming the task |
 | `inbox` | Waits (up to a timeout) for the goal's `done` events, questions and messages; returns them and marks them handled |
 | `worker_stop` | Stops a worker; its task goes back to `ready` |
 
@@ -121,7 +124,8 @@ you), so a short `AGENTS.md` note replaces the `huly-tasks` skill.
   Yours go at once.
 - `worker_start` is carried out by Overseer too: the server queues a start
   request, Overseer creates the worktree (Worktrunk, as New worktree does) and
-  opens omp there with `cx.agents:start`, then reports the pane back.
+  opens omp there as a tab in the goal's session (section 7), then reports the
+  pane back.
 - Coordinators wait with `inbox` instead of being prompted, so a finishing
   worker doesn't interrupt them mid-turn.
 
@@ -142,13 +146,45 @@ tab of its own. Three sections, top to bottom:
 A task's **thread** (all its events, newest last, Markdown) opens beside the
 block, with a reply field.
 
-Sidebar: a **Needs you N** line at the top (click opens Mission control),
-and agent rows show their task (`idle · T-12 · title`), as today.
+Sidebar, top to bottom:
+
+- **Needs you N** (click opens Mission control).
+- **Spaces**: your sessions only, as today. Goal sessions never appear here.
+- **Goals** (new): one row per active goal: status dot (the most urgent of its
+  agents), title, progress (`3/5`), a Needs you count when there is one. Click
+  switches to the goal's session; the chevron unfolds its tasks, one row each
+  (dot, `T-12 · title`, worker state), click goes to that worker's tab.
+- **Agents**: agents in your sessions, as today (`idle · T-12 · title`).
+  Goal agents show under their goal instead.
 
 Keys: `↑↓` select, `↵` open/go, `1`–`9` pick an option, `r` reply, `n` new task,
 `o` thread, `Esc` back.
 
-## 7. Migration and cutover
+## 7. Goal sessions
+
+Your sessions are yours: Overseer never starts an agent in one. Everything a
+goal runs lives in its goal's session.
+
+- **Starting a goal** (Mission control › New goal, or Start on a proposal):
+  Overseer creates a Tern session named `G-3 · <title>`, records it on the goal,
+  and starts the coordinator in its first tab (`G-3 · coordinator`, in the
+  repository you pick, or `~` for a goal across several) with a brief: the
+  goal, its plan, and the coordinator tools.
+- **Workers** open as tabs in that session, one per task (`T-12 · <title>`),
+  each in its task's worktree.
+- **Working alongside:** switch to the goal's session (sidebar › Goals) and
+  type into any tab; your prompt goes to that agent like any other. To take a
+  task over yourself, Open worktree on its row opens the worktree in a session
+  of yours; the worker is stopped first.
+- **Finishing:** when every task is done or dropped, the coordinator sends a
+  summary as an `ask_user` (review, merge order, follow-ups). The session stays
+  until you Close goal (sidebar menu), which closes the session and keeps the
+  worktrees.
+- **Restarts:** Tern restores the goal's session with its tabs; Overseer finds
+  it again by the session id recorded on the goal, and agents by their omp
+  sessions.
+
+## 8. Migration and cutover
 
 1. Build and run alongside Huly.
 2. Import open Huly issues (title, description, comments) into tasks with a
@@ -157,7 +193,7 @@ Keys: `↑↓` select, `↵` open/go, `1`–`9` pick an option, `r` reply, `n` n
 4. Remove Huly as PERS-1 describes; delete `huly.luau`, `huly/`,
    `skills/huly-tasks/`.
 
-## 8. Out of scope (v1)
+## 9. Out of scope (v1)
 
 Due dates, priorities, search, a web view, other people, workers on other
 machines, agents other than omp as workers.
@@ -170,6 +206,12 @@ machines, agents other than omp as workers.
   optional `session` argument, read by the agent from `$PI_SESSION_ID`.
 - **Session lookup relies on omp keeping its session file open** (and
   `--resume`/`--restore` as fallback), as the Huly bridge does today.
+- **Starting native agent blocks in another session:** `cx.agents:start`
+  opens beside the focused pane, with no session argument, and
+  `tern new tab <session> -- omp` gives a plain terminal (no native agent
+  states). To check first; fallback is creating the tab in the goal session,
+  then `cx.agents:start` with `how = "replace_if_alone"` targeted at it, or
+  living with terminal-mode workers (states from busy only).
 - **Rich input in a block:** Tern blocks support text fields and buttons
   (Overseer's forms use them); long replies are written in the thread's field.
 
@@ -180,12 +222,15 @@ machines, agents other than omp as workers.
    Needs you within a second; answering delivers it to that agent.
 3. Tern restart: the task stays linked to its resumed session.
 4. Two agents in different repositories exchange one `message`.
-5. A coordinator creates a goal across two repositories with one dependency,
+5. A goal started from Mission control opens its own session; your sessions
+   gain no tabs; its workers appear under Goals in the sidebar.
+6. A coordinator creates a goal across two repositories with one dependency,
    starts the ready task's worker in a new worktree, waits with `inbox`, and
    starts the dependent task once the first is done.
 
 ## Estimate
 
-About 5 days: server and tools 1.5 days, delivery, identity and worker
-starts 1, Mission control block and sidebar 1.5, migration and cutover 0.5,
+About 6 days: server and tools 1.5 days, delivery, identity and worker
+starts 1, goal sessions 1, Mission control block and sidebar 1.5, migration
+and cutover 0.5,
 a real multi-repo goal as the end-to-end test 0.5.
