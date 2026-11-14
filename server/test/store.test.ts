@@ -1,0 +1,202 @@
+import { describe, expect, test } from "bun:test";
+import { Store } from "../src/store";
+
+const me = { session: "s-me", repo: "overseer", branch: "main", cwd: "/r/overseer" };
+
+describe("schema", () => {
+  test("opens an empty store and formats ids", () => {
+    const store = new Store(":memory:");
+    expect(store.listTasks({})).toEqual([]);
+    expect(Store.tid(12)).toBe("T-12");
+    expect(Store.parseTask("T-12")).toBe(12);
+    expect(() => Store.parseTask("X-1")).toThrow("not a task id");
+  });
+});
+
+describe("tasks", () => {
+  test("start creates a doing task for the caller", () => {
+    const store = new Store(":memory:");
+    const t = store.startTask(me, { title: "Fix tick" });
+    expect(t.status).toBe("doing");
+    expect(t.session).toBe("s-me");
+    expect(t.repo).toBe("overseer");
+    expect(store.myTask("s-me").id).toBe(t.id);
+  });
+
+  test("myTask needs an id when the caller has several", () => {
+    const store = new Store(":memory:");
+    store.startTask(me, { title: "a" });
+    store.startTask(me, { title: "b" });
+    expect(() => store.myTask("s-me")).toThrow("several tasks");
+  });
+
+  test("myTask refuses another session's task", () => {
+    const store = new Store(":memory:");
+    const t = store.startTask({ ...me, session: "s-other" }, { title: "theirs" });
+    expect(() => store.myTask("s-me", Store.tid(t.id))).toThrow("not yours");
+  });
+
+  test("done promotes dependents once every dependency is done", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });
+    const a = store.addTask(me, { title: "a", repo: "x", goal: g.id });
+    const b = store.addTask(me, { title: "b", repo: "y", goal: g.id });
+    const c = store.addTask(me, { title: "c", repo: "y", goal: g.id, needs: [a.id, b.id] });
+    expect(store.task(c.id).status).toBe("todo");
+    store.startTask({ ...me, session: "w1" }, { id: a.id });
+    store.doneTask("w1", { ref: Store.tid(a.id), outcome: "succeeded", summary: "ok" });
+    expect(store.task(c.id).status).toBe("todo");
+    store.startTask({ ...me, session: "w2" }, { id: b.id });
+    store.doneTask("w2", { ref: Store.tid(b.id), outcome: "succeeded", summary: "ok" });
+    expect(store.task(c.id).status).toBe("ready");
+  });
+
+  test("a failed task does not promote dependents", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });
+    const a = store.addTask(me, { title: "a", repo: "x", goal: g.id });
+    const c = store.addTask(me, { title: "c", repo: "x", goal: g.id, needs: [a.id] });
+    store.startTask({ ...me, session: "w1" }, { id: a.id });
+    store.doneTask("w1", { ref: Store.tid(a.id), outcome: "failed", summary: "no creds" });
+    expect(store.task(a.id).status).toBe("failed");
+    expect(store.task(c.id).status).toBe("todo");
+  });
+
+  test("note records an event and sets pr", () => {
+    const store = new Store(":memory:");
+    const t = store.startTask(me, { title: "a" });
+    store.note("s-me", { body: "**Opened PR**", pr: "https://github.com/x/y/pull/3" });
+    expect(store.task(t.id).pr).toBe("https://github.com/x/y/pull/3");
+    expect(store.events(t.id).map((e) => e.kind)).toEqual(["note"]);
+  });
+});
+
+describe("goals and conversation", () => {
+  const plan = {
+    title: "Cross-repo auth", body: "Swap token format",
+    tasks: [
+      { key: "api", title: "Issue new tokens", repo: "web-app" },
+      { key: "web", title: "Read new tokens", repo: "dashboard", needs: ["api"] },
+    ],
+  };
+
+  test("propose creates a proposed goal with dependent tasks", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, plan);
+    expect(g.status).toBe("proposed");
+    const [api, web] = store.listTasks({ goal: g.id });
+    expect(api.status).toBe("ready");
+    expect(web.status).toBe("todo");
+  });
+
+  test("a plan naming an unknown dependency is rejected whole", () => {
+    const store = new Store(":memory:");
+    expect(() => store.proposeGoal(me, { ...plan, tasks: [{ key: "b", title: "b", repo: "x", needs: ["missing"] }] }))
+      .toThrow("isn't listed before it");
+    expect(store.listGoals()).toEqual([]);
+  });
+
+  test("join makes the caller coordinator; finishing every task tells it", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    expect(store.goal(g.id).coordinator).toBe("coord");
+    const [t] = store.listTasks({ goal: g.id });
+    store.startTask({ ...me, session: "w" }, { id: t.id });
+    store.doneTask("w", { outcome: "succeeded", summary: "done" });
+    expect(store.goalEvents(g.id).map((e) => e.kind)).toContain("status");
+  });
+
+  test("a question makes the task waiting until answered", () => {
+    const store = new Store(":memory:");
+    const t = store.startTask(me, { title: "a" });
+    store.ask("s-me", { question: "Which?", options: ["one", "two"], recommended: 1 });
+    expect(store.waiting().map((w) => w.task.id)).toEqual([t.id]);
+    store.answer(t.id, "2");
+    expect(store.waiting()).toEqual([]);
+    const answer = store.events(t.id).at(-1)!;
+    expect(answer.kind).toBe("answer");
+    expect(answer.to_target).toBe(Store.tid(t.id));
+  });
+
+  test("@goal reaches every other task with an agent", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0], { key: "b", title: "b", repo: "x" }, { key: "c", title: "c", repo: "x" }] });
+    const [a, b] = store.listTasks({ goal: g.id });
+    store.startTask({ ...me, session: "wa" }, { id: a.id });
+    store.startTask({ ...me, session: "wb" }, { id: b.id });
+    const sent = store.message("wa", { to: "@goal", body: "heads up" });
+    expect(sent.map((e) => e.to_target)).toEqual([Store.tid(b.id)]);
+  });
+});
+
+describe("workers, inbox, deliveries", () => {
+  function goalWithCoordinator(store: Store, n = 1) {
+    const tasks = Array.from({ length: n }, (_, i) => ({ key: `t${i}`, title: `t${i}`, repo: "x" }));
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    return { g, tasks: store.listTasks({ goal: g.id }) };
+  }
+
+  test("a coordinator can request a worker on a ready task, once", () => {
+    const store = new Store(":memory:");
+    const { tasks } = goalWithCoordinator(store);
+    const w = store.requestWorker({ ...me, session: "coord" }, tasks[0].id);
+    expect(w.status).toBe("requested");
+    expect(() => store.requestWorker({ ...me, session: "coord" }, tasks[0].id)).toThrow("already has a worker");
+  });
+
+  test("only the coordinator may request workers", () => {
+    const store = new Store(":memory:");
+    const { tasks } = goalWithCoordinator(store);
+    expect(() => store.requestWorker(me, tasks[0].id)).toThrow("coordinator");
+  });
+
+  test("at most four workers per goal", () => {
+    const store = new Store(":memory:");
+    const { tasks } = goalWithCoordinator(store, 5);
+    for (const t of tasks.slice(0, 4)) store.requestWorker({ ...me, session: "coord" }, t.id);
+    expect(() => store.requestWorker({ ...me, session: "coord" }, tasks[4].id)).toThrow("4 workers");
+  });
+
+  test("stopping a worker puts its task back to ready", () => {
+    const store = new Store(":memory:");
+    const { tasks } = goalWithCoordinator(store);
+    const w = store.requestWorker({ ...me, session: "coord" }, tasks[0].id);
+    store.workerStarted(w.id, "123");
+    store.startTask({ ...me, session: "w" }, { id: tasks[0].id });
+    store.stopWorker({ ...me, session: "coord" }, tasks[0].id);
+    expect(store.task(tasks[0].id).status).toBe("ready");
+    expect(store.pendingWorkers().stops.map((s) => s.id)).toEqual([w.id]);
+  });
+
+  test("inbox returns a worker's done once", () => {
+    const store = new Store(":memory:");
+    const { tasks } = goalWithCoordinator(store);
+    store.startTask({ ...me, session: "w" }, { id: tasks[0].id });
+    store.doneTask("w", { outcome: "succeeded", summary: "ok" });
+    expect(store.inbox("coord").map((e) => e.kind)).toEqual(["done", "status"]);
+    expect(store.inbox("coord")).toEqual([]);
+  });
+
+  test("agent messages to one agent are spaced two minutes apart; answers aren't", () => {
+    let clock = 0;
+    const store = new Store(":memory:", () => clock);
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }] });
+    const [a, b] = store.listTasks({ goal: g.id });
+    store.startTask({ ...me, session: "wa" }, { id: a.id });
+    store.startTask({ ...me, session: "wb" }, { id: b.id });
+    store.message("wa", { to: Store.tid(b.id), body: "one" });
+    const firstBatch = store.pendingDeliveries();
+    expect(firstBatch.length).toBe(1);
+    store.markDelivered(firstBatch[0].event.id);
+    clock = 10_000;
+    store.message("wa", { to: Store.tid(b.id), body: "two" });
+    store.answer(b.id, "yes");
+    expect(store.pendingDeliveries().map((d) => d.event.kind)).toEqual(["answer"]);
+    clock = 130_000;
+    expect(store.pendingDeliveries().map((d) => d.event.kind)).toEqual(["message", "answer"]);
+  });
+});
