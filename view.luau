@@ -306,7 +306,7 @@ local function missionNode(count, active)
 			else ui.el("div", { key = "status", role = "overseer.missionIcon" }),
 		text("name", "Mission control", "overseer.spaceName", { grow = 1 }),
 	}
-	if count > 0 then table.insert(children, text("count", tostring(count) .. " need you", "overseer.badgeBad")) end
+	if count > 0 then table.insert(children, text("count", tostring(count) .. (if count == 1 then " needs you" else " need you"), "overseer.badgeBad")) end
 	return ui.node("row", {
 		key = "mission", role = if active then "overseer.missionActive" else "overseer.mission",
 		title = "Open Mission control (⌘⌥⇧M)",

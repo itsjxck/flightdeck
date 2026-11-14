@@ -41,12 +41,15 @@ function state(store: Store) {
       lastNote: store.events(t.id).filter((e) => e.kind === "note").at(-1)?.body ?? null }));
   const waiting = store.waiting().map((w) => ({ task: Store.tid(w.task.id), title: w.task.title, repo: w.task.repo,
     goal: w.task.goal != null ? Store.gid(w.task.goal) : null, question: w.question.body,
-    options: w.question.options ? JSON.parse(w.question.options) as string[] : null, recommended: w.question.recommended }));
+    options: w.question.options ? JSON.parse(w.question.options) as string[] : null, recommended: w.question.recommended,
+    asked: w.question.created }));
   const workers = store.db.query("select * from workers where status in ('requested', 'started', 'stopping')").all();
   return {
     goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id) })),
     goalSessions: goals.map((g) => g.tern_session).filter((s): s is string => !!s),
     tasks, waiting, workers,
+    // The server's clock, so clients can show ages ("3 min ago") without one of their own.
+    now: Date.now(),
   };
 }
 

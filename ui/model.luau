@@ -59,7 +59,7 @@ function M.sections(state)
 		end
 	end
 	for _, key in order do table.insert(working, groups[key]) end
-	return { needs = state.waiting, proposed = proposed, working = working, todo = todo }
+	return { needs = state.waiting, proposed = proposed, working = working, todo = todo, now = state.now }
 end
 
 -- What the cursor moves over, in screen order: { kind, item }, kind one of

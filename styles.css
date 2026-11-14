@@ -454,17 +454,238 @@
   color: var(--accent);
   text-decoration: underline;
 }
-/* The Mission control block (ui/render.luau). */
+
+/* The Mission control block (ui/render.luau).
+   State colours, used by strip edges, dots and rail segments:
+   working --live · waiting (your turn) --accent · idle --t3 · done --ok ·
+   failed --bad · lost (no agent) --warn · pending --l3. */
 [data-role='mission.main'] {
-  padding: 14px 20px;
-  gap: 14px;
+  padding: 28px 36px 40px;
+  gap: 30px;
+  font-family: var(--sans);
 }
-[data-role='mission.options'] {
+[data-role='mission.header'] { gap: 4px; }
+[data-role='mission.title'] {
+  font: 650 26px/1.15 var(--sans);
+  letter-spacing: -0.025em;
+  color: var(--t1);
+}
+[data-role='mission.summary'] { font-size: 14px; color: var(--t3); }
+[data-role='mission.notice'] {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--raise);
+  color: var(--t2);
+  font-size: 13px;
+}
+
+[data-role='mission.section'] { gap: 10px; }
+[data-role='mission.sectionHead'] { align-items: baseline; gap: 10px; }
+[data-role='mission.sectionTitle'] {
+  font: 600 12px/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t2);
+}
+[data-role='mission.sectionNote'],
+[data-role='mission.hint'] { font-size: 12px; color: var(--t3); }
+[data-role='mission.empty'] { font-size: 13px; color: var(--t3); }
+[data-role='mission.ref'] {
+  font: 500 12px/1 var(--mono);
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2em;
+}
+[data-role='mission.eyebrow'] { font: 12px/1.3 var(--mono); color: var(--t3); }
+
+/* Your turn: the question is the biggest text on the page. */
+[data-role='mission.questions'] { gap: 12px; }
+[data-role='mission.question'],
+[data-role='mission.questionPicked'] {
   gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
+  padding: 18px 22px 16px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgb(from var(--accent) r g b / 10%), transparent 60%), var(--card);
+  border: 1px solid var(--l2);
+  box-shadow: inset 3px 0 0 var(--accent);
+  cursor: default;
 }
+[data-role='mission.questionPicked'] { border-color: rgb(from var(--accent) r g b / 55%); }
+[data-role='mission.questionTask'] { font-size: 13px; color: var(--t2); }
+[data-role='mission.questionText'] { font-size: 17px; line-height: 1.45; color: var(--t1); }
+[data-role='mission.options'] { gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+[data-role='mission.option'],
+[data-role='mission.optionBest'] {
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px 7px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--l3);
+  background: var(--raise);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+[data-role='mission.option']:hover { border-color: var(--l4); background: var(--l1); }
+[data-role='mission.optionBest'] {
+  border-color: rgb(from var(--accent) r g b / 60%);
+  background: rgb(from var(--accent) r g b / 14%);
+}
+[data-role='mission.optionBest']:hover { background: rgb(from var(--accent) r g b / 22%); }
+[data-role='mission.keycap'] {
+  font: 600 12px/1 var(--mono);
+  min-width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--l3);
+  border-bottom-width: 2px;
+  color: var(--t1);
+  background: var(--card);
+}
+[data-role='mission.optionLabel'] { font-size: 14px; color: var(--t1); }
+[data-role='mission.optionNote'] { font-size: 11px; color: var(--accent); letter-spacing: 0.02em; }
+
+[data-role='mission.allClear'] {
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--l3);
+}
+[data-role='mission.allClearText'] { font-size: 14px; color: var(--t2); }
+
+/* Goals: a panel each, headed by its rail. */
+[data-role='mission.panels'] { gap: 14px; }
+[data-role='mission.panel'] {
+  border-radius: 12px;
+  border: 1px solid var(--l2);
+  background: var(--card);
+  overflow: hidden;
+}
+[data-role='mission.goalHead'] { gap: 10px; padding: 14px 16px 12px; }
+[data-role='mission.goalLine'] { align-items: center; gap: 10px; }
+[data-role='mission.goalTitle'] { font: 600 15px/1.3 var(--sans); color: var(--t1); }
+[data-role='mission.goalProgress'] { font: 12px/1 var(--mono); color: var(--t3); }
+[data-role='mission.quiet'] {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--t2);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+[data-role='mission.quiet']:hover { border-color: var(--l3); color: var(--t1); }
+[data-role='mission.rail'] { gap: 3px; height: 6px; }
+[data-role^='mission.seg-'] { flex: 1 1 0; border-radius: 3px; background: var(--l3); }
+[data-role='mission.seg-working'] { background: var(--live); }
+[data-role='mission.seg-waiting'] { background: var(--accent); }
+[data-role='mission.seg-idle'] { background: var(--t4); }
+[data-role='mission.seg-done'] { background: var(--ok); }
+[data-role='mission.seg-failed'] { background: var(--bad); }
+[data-role='mission.seg-lost'] { background: var(--warn); }
+[data-role='mission.panelBody'] { border-top: 1px solid var(--l1); }
+
+/* Strips: one row per task; the left edge is its state. */
+[data-role='mission.strips'] {
+  border-radius: 12px;
+  border: 1px solid var(--l2);
+  background: var(--card);
+  overflow: hidden;
+}
+[data-role^='mission.strip-'] {
+  align-items: center;
+  gap: 14px;
+  min-height: 44px;
+  padding: 8px 16px 8px 14px;
+  box-shadow: inset 3px 0 0 var(--l3);
+  cursor: default;
+}
+[data-role^='mission.strip-'] + [data-role^='mission.strip-'],
+[data-role^='mission.proposal'] + [data-role^='mission.proposal'] { border-top: 1px solid var(--l1); }
+[data-role^='mission.strip-']:hover { background: var(--l1); }
+[data-role^='mission.strip-'][data-mark='pick'] { background: rgb(from var(--accent) r g b / 9%); }
+[data-role='mission.strip-working'] { box-shadow: inset 3px 0 0 var(--live); }
+[data-role='mission.strip-waiting'] { box-shadow: inset 3px 0 0 var(--accent); }
+[data-role='mission.strip-idle'] { box-shadow: inset 3px 0 0 var(--t4); }
+[data-role='mission.strip-done'] { box-shadow: inset 3px 0 0 var(--ok); }
+[data-role='mission.strip-failed'] { box-shadow: inset 3px 0 0 var(--bad); }
+[data-role='mission.strip-lost'] { box-shadow: inset 3px 0 0 var(--warn); }
+[data-role='mission.strip-done'] [data-role='mission.stripTitle'] { color: var(--t3); }
+[data-role='mission.stripMain'] { gap: 2px; min-width: 0; }
+[data-role='mission.stripTitle'] {
+  font: 500 14px/1.3 var(--sans);
+  color: var(--t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-role='mission.stripNote'] {
+  font-size: 12px;
+  color: var(--t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-role='mission.where'] {
+  font: 12px/1 var(--mono);
+  color: var(--t3);
+  white-space: nowrap;
+  max-width: 28%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-role='mission.state'] { align-items: center; gap: 7px; min-width: 9.5em; }
+[data-role='mission.stateLabel'] { font-size: 12px; color: var(--t2); white-space: nowrap; }
+[data-role^='mission.dot-'] { width: 7px; height: 7px; min-width: 7px; border-radius: 50%; background: var(--l4); }
+[data-role='mission.dot-working'] { background: var(--live); box-shadow: 0 0 0 3px rgb(from var(--live) r g b / 22%); }
+[data-role='mission.dot-waiting'] { background: var(--accent); box-shadow: 0 0 0 3px rgb(from var(--accent) r g b / 22%); }
+[data-role='mission.dot-idle'] { background: var(--t4); }
+[data-role='mission.dot-done'] { background: var(--ok); }
+[data-role='mission.dot-failed'] { background: var(--bad); }
+[data-role='mission.dot-lost'] { background: var(--warn); }
+
+[data-role='mission.proposal'],
+[data-role='mission.proposalPicked'] {
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+}
+[data-role='mission.proposalPicked'] { background: rgb(from var(--accent) r g b / 9%); }
+
+/* Thread */
+[data-role='mission.thread'] { gap: 10px; }
+[data-role='mission.event-agent'],
+[data-role='mission.event-you'] {
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--l2);
+}
+[data-role='mission.event-you'] { background: rgb(from var(--accent) r g b / 8%); margin-left: 48px; }
+
+/* Dock */
 [data-role='mission.dock'] {
-  gap: 6px;
-  padding: 8px 20px 10px;
+  gap: 8px;
+  padding: 10px 36px 12px;
+  border-top: 1px solid var(--l1);
+}
+[data-role='mission.replyRow'] { align-items: center; gap: 10px; }
+[data-role='mission.replyTo'] { font: 500 12px/1 var(--mono); color: var(--accent); }
+[data-role='mission.reply'] {
+  flex: 1 1 auto;
+  font: 14px/1.4 var(--sans);
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--l3);
+  background: var(--card);
+  color: var(--t1);
+}
+[data-role='mission.keys'] { font: 11px/1 var(--mono); color: var(--t3); white-space: pre; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-role^='mission.option'] { transition: none; }
 }

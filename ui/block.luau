@@ -180,6 +180,7 @@ local DEF = {
 		local verb, a, b = string.match(act, "^(%a+)=([^=]+)=?(.*)$")
 		if verb == "answer" then answerOption(state, cx, a, tonumber(b))
 		elseif verb == "select" then state.selectedRef = a
+		elseif verb == "session" then model.request({ kind = "session", goal = a })
 		elseif verb == "start" then model.request({ kind = "start", goal = a }); state.error = "Starting " .. a .. " in a session of its own…"
 		end
 	end,

@@ -1930,7 +1930,7 @@ end
 
 -- Requests from the Mission control block (host half), which can't open
 -- sessions or focus panes itself: kv `mission:requests`, a list of
--- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" } or { kind = "review", task = "T-12" }.
+-- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" } or { kind = "session", goal = "G-3" }.
 -- Publishes how each task's agent is doing (kv `mission:agents`, omp session
 -- → "working" | "waiting" | "idle") for the Mission control block, which
 -- can't see agents. Written only when it changes.
@@ -1961,6 +1961,10 @@ local function missionRequests(cx)
 						if err then tern.log.warn("Overseer: couldn't start " .. g.ref .. ": " .. err) end
 					end)
 				end
+			end
+		elseif r.kind == "session" then
+			for _, g in ms.goals do
+				if g.ref == r.goal and g.tern_session then cx.sessions:switch(tonumber(g.tern_session)) end
 			end
 		elseif r.kind == "review" then
 			-- A tab in the task's worktree; the Branch widget there opens Tern's
