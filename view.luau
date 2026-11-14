@@ -331,7 +331,7 @@ local function goalNode(goal)
 		ui.node("row", {
 			key = "row", role = "overseer.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",
 			actions = { click = if goal.session then "goal=" .. goal.session else "mission", menu = { "Open Mission control", "Close goal" } },
-		}, head),
+		}, { ui.node("row", { key = "head", role = "overseer.spaceHead", grow = 1 }, head) }),
 		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
 			iconButton("collapse", if goal.collapsed then "iconCollapsed" else "iconExpanded", "collapse=goal:" .. goal.ref,
 				(if goal.collapsed then "Show " else "Hide ") .. tostring(#goal.tasks) .. " tasks"),

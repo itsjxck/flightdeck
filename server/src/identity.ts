@@ -76,6 +76,23 @@ export function resolvePane(pane: string): Caller | null {
   return caller;
 }
 
+// For a tool call: the caller is omp, so a miss means its session file isn't
+// there yet. omp creates it with the message holding its first tool call, a
+// moment before the call arrives, so ignore cached misses (the 2 s poll may
+// have just cached one) and look again for up to CALL_RETRY_MS.
+const CALL_RETRY_MS = 2_000;
+export function resolveCaller(pane: string): Caller | null {
+  const hit = cache.get(pane);
+  if (hit?.caller && Date.now() - hit.at < CACHE_MS) return hit.caller;
+  const until = Date.now() + CALL_RETRY_MS;
+  for (;;) {
+    const caller = lookup(pane);
+    cache.set(pane, { at: Date.now(), caller });
+    if (caller || Date.now() >= until) return caller;
+    Bun.sleepSync(250);
+  }
+}
+
 function lookup(pane: string): Caller | null {
   const proc = paneProcess(pane);
   if (!proc?.pid) return null;

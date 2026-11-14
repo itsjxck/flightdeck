@@ -112,13 +112,16 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     { task: z.string() },
     (c, a) => `${Store.wid(store.stopWorker(c, Store.parseTask(a.task)).id)} stopping; ${a.task} is ready again.`);
 
+  const INBOX_MAX_S = 25;
   server.registerTool("inbox", {
-    description: "Coordinator only: wait (up to timeout_s, default 600) for workers' done messages, messages to @coordinator and goal status. Returns them once.",
-    inputSchema: { timeout_s: z.number().int().min(1).max(1800).optional() },
+    // omp gives up on an MCP call after 30 s, and messages are returned once: a
+    // longer wait would lose them. Coordinators call again to keep waiting.
+    description: "Coordinator only: wait up to 25 s (timeout_s) for workers' done messages, messages to @coordinator and goal status. Returns them once; nothing new means call it again to keep waiting.",
+    inputSchema: { timeout_s: z.number().int().min(1).max(INBOX_MAX_S).optional() },
   }, async (args: { timeout_s?: number }) => {
     const caller = resolve();
     if (!caller) return fail(NO_CALLER);
-    const until = Date.now() + (args.timeout_s ?? 600) * 1000;
+    const until = Date.now() + (args.timeout_s ?? INBOX_MAX_S) * 1000;
     try {
       for (;;) {
         const events = store.inbox(caller.session);

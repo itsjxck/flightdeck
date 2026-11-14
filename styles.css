@@ -578,8 +578,9 @@
   cursor: pointer;
 }
 [data-role='mission.quiet']:hover { border-color: var(--l3); color: var(--t1); }
-[data-role='mission.rail'] { gap: 3px; height: 6px; }
-[data-role^='mission.seg-'] { flex: 1 1 0; border-radius: 3px; background: var(--l3); }
+[data-role='mission.rail'] { gap: 3px; height: 6px; min-height: 6px; width: 100%; align-self: stretch; }
+[data-role='mission.coordinator'] { align-items: center; gap: 7px; margin-right: 6px; }
+[data-role^='mission.seg-'] { flex: 1 1 0; min-width: 12px; height: 6px; border-radius: 3px; background: var(--l3); }
 [data-role='mission.seg-working'] { background: var(--live); }
 [data-role='mission.seg-waiting'] { background: var(--accent); }
 [data-role='mission.seg-idle'] { background: var(--t4); }

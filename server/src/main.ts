@@ -6,15 +6,16 @@ import { join } from "node:path";
 import { Store, type Caller } from "./store";
 import { buildServer } from "./tools";
 import { handleApi } from "./api";
-import { resolvePane } from "./identity";
+import { resolveCaller, resolvePane } from "./identity";
 
 export function startServer(opts: { port: number; dbPath: string; token: string; resolve?: (pane: string) => Caller | null }) {
   const store = new Store(opts.dbPath);
   const resolve = opts.resolve ?? resolvePane;
+  const resolveTool = opts.resolve ?? resolveCaller;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: opts.port,
-    idleTimeout: 0, // inbox waits up to 30 minutes
+    idleTimeout: 0, // inbox holds a request up to 25 s
     async fetch(req) {
       const url = new URL(req.url);
       if (url.pathname === "/health") return Response.json({ ok: true });
@@ -23,7 +24,7 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
         const pane = req.headers.get("x-tern-pane") ?? "";
         // Stateless: a fresh server and transport per request.
         const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-        await buildServer(store, () => (pane ? resolve(pane) : null)).connect(transport);
+        await buildServer(store, () => (pane ? resolveTool(pane) : null)).connect(transport);
         return transport.handleRequest(req);
       }
       if (url.pathname.startsWith("/api/")) return handleApi(store, req, url, resolve);

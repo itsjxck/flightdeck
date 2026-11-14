@@ -7,7 +7,8 @@
 -- seen an agent in the pane for BRIEF_DELAY_MS. A worker's pane runs
 -- Worktrunk first (worktree setup can take minutes), so the clock only starts
 -- when omp does. A brief whose pane never gets an agent is dropped after
--- GIVE_UP_MS, with a warning.
+-- GIVE_UP_MS, with a warning. Waiting briefs are kept in kv (`mission:briefs`)
+-- so a plugin reload doesn't lose them (tern.now() runs on across reloads).
 --
 -- `tern new session|tab` open without moving your focus (checked 2026-11-14).
 local client = require("./client")
@@ -18,7 +19,11 @@ local BRIEF_DELAY_MS = 8000
 local GIVE_UP_MS = 15 * 60 * 1000
 
 -- Briefs waiting for their pane: { pane, brief, at, agentSince }.
-local pending = {}
+local pending = tern.kv.get("mission:briefs")
+if type(pending) ~= "table" then pending = {} end
+local function save()
+	tern.kv.set("mission:briefs", pending)
+end
 
 -- The Tern session holding `pane`, from `tern ls --json` output; nil when absent.
 function M.sessionOfPane(lsJson, pane)
@@ -49,6 +54,7 @@ function M.open(args, brief, done)
 		local pane = if result.status == 0 then string.match(result.stdout or "", "%d+") else nil
 		if not pane then done("tern " .. tostring(args[1]) .. " " .. tostring(args[2]) .. " failed: " .. (result.stderr or ""), nil, cx); return end
 		table.insert(pending, { pane = pane, brief = brief, at = tern.now() })
+		save()
 		done(nil, pane, cx)
 	end)
 	if not ok then done(tostring(err)) end
@@ -56,7 +62,8 @@ end
 
 -- Sends briefs whose pane has run an agent for BRIEF_DELAY_MS; call it every tick.
 function M.flush(cx)
-	local keep = {}
+	if #pending == 0 then return end
+	local keep, changed = {}, false
 	for _, item in pending do
 		local hasAgent = pcall(function() cx.agents:get(tonumber(item.pane)) end)
 		if not hasAgent then
@@ -64,6 +71,7 @@ function M.flush(cx)
 			if tern.now() - item.at < GIVE_UP_MS then
 				table.insert(keep, item)
 			else
+				changed = true
 				client.warnOnce("brief " .. item.pane, "pane " .. item.pane .. " never ran an agent; its brief was dropped")
 			end
 		else
@@ -71,12 +79,14 @@ function M.flush(cx)
 			if tern.now() - item.agentSince < BRIEF_DELAY_MS then
 				table.insert(keep, item)
 			else
+				changed = true
 				local ok, err = pcall(function() cx.agents:ask(tonumber(item.pane), item.brief) end)
 				if not ok then client.warnOnce("brief " .. item.pane, "couldn't send the brief to pane " .. item.pane .. ": " .. tostring(err)) end
 			end
 		end
 	end
 	pending = keep
+	if changed then save() end
 end
 
 return M

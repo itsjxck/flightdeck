@@ -444,7 +444,10 @@ local function model(cx)
 					local agent = pane and agentByPane[pane]
 					local state = if agent then agent.state else nil
 					if state and (not goal.dot or URGENCY[state] > URGENCY[goal.dot]) then goal.dot = state end
-					table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
+					-- The coordinator's own task colours the goal's dot but isn't listed.
+					if t.session == nil or t.session ~= g.coordinator then
+						table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
+					end
 				end
 			end
 			if goal.needsYou > 0 then goal.dot = "waiting" end

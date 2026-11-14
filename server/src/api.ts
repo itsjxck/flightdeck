@@ -28,7 +28,7 @@ export function coordinatorBrief(store: Store, goal: number) {
   return [
     `You coordinate goal ${Store.gid(g.id)}: ${g.title}.`, g.body,
     `First call goal_join with "${Store.gid(g.id)}". Then start workers on ready tasks with worker_start,`,
-    `wait for results with inbox, adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
+    `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
   ].filter(Boolean).join("\n");
 }
 

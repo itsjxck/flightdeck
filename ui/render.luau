@@ -205,6 +205,13 @@ function M.view(view)
 				row("line", "mission.goalLine", {
 					text("ref", g.ref, "mission.ref"),
 					text("title", g.title, "mission.goalTitle", { grow = 1 }),
+					if group.coordinator then (function()
+						local key, label = M.taskState(group.coordinator, agentOf(group.coordinator.session), waitingTasks[group.coordinator.ref])
+						return row("coord", "mission.coordinator", {
+							ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
+							text("label", "Coordinator " .. string.lower(label), "mission.stateLabel"),
+						}, { title = group.coordinator.ref .. " · " .. (oneLine(group.coordinator.lastNote) or group.coordinator.title) })
+					end)() else nil,
 					text("progress", progress, "mission.goalProgress"),
 					ui.el("button", { key = "open", role = "mission.quiet", text = "Open session",
 						actions = { click = "session=" .. g.ref } }),

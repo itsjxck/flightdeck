@@ -53,7 +53,9 @@ function M.sections(state)
 		if t.status == "doing" or (inActiveGoal and t.status ~= "dropped") then
 			local key = t.goal or 0
 			if not groups[key] then groups[key] = { goal = goal, tasks = {} }; table.insert(order, key) end
-			table.insert(groups[key].tasks, t)
+			-- The coordinator's own task ("Coordinate …") is the goal's, not one of its tasks.
+			if goal and goal.coordinator ~= nil and t.session == goal.coordinator then groups[key].coordinator = t
+			else table.insert(groups[key].tasks, t) end
 		elseif t.status == "todo" or t.status == "ready" then
 			if not (goal and goal.status == "proposed") then table.insert(todo, t) end
 		end
@@ -77,13 +79,14 @@ end
 
 do
 	local s = M.sections({
-		goals = { { id = 1, ref = "G-1", title = "g", status = "active" }, { id = 2, ref = "G-2", title = "p", status = "proposed" } },
+		goals = { { id = 1, ref = "G-1", title = "g", status = "active", coordinator = "c" }, { id = 2, ref = "G-2", title = "p", status = "proposed" } },
 		waiting = { { task = "T-2" } },
 		tasks = { { ref = "T-1", goal = 1, status = "doing" }, { ref = "T-2", status = "doing" }, { ref = "T-3", status = "todo" },
+			{ ref = "T-6", goal = 1, status = "doing", session = "c" },
 			{ ref = "T-4", goal = 2, status = "ready" }, { ref = "T-5", goal = 1, status = "done" } },
 	})
 	assert(#s.needs == 1 and #s.proposed == 1 and #s.working == 2 and s.working[1].goal.ref == "G-1"
-		and #s.working[1].tasks == 2 and #s.todo == 1, "ui.model.sections self-check")
+		and #s.working[1].tasks == 2 and s.working[1].coordinator.ref == "T-6" and #s.todo == 1, "ui.model.sections self-check")
 	assert(#M.selectable(s, false) == 5 and #M.selectable(s, true) == 6, "ui.model.selectable self-check")
 end
 
