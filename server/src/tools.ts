@@ -103,14 +103,18 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     });
 
   tool("worker_start",
-    "Coordinator only: start an omp worker on a ready task. Overseer gives it its own worktree (read-only tasks may use the checkout) and opens it as a tab in the goal's session. At most 4 workers per goal.",
-    { task: z.string() },
-    (c, a) => `${Store.wid(store.requestWorker(c, Store.parseTask(a.task)).id)} requested for ${a.task}; its done arrives in your inbox.`);
+    "Coordinator only: start an omp worker on a task that's ready, or done/failed for follow-up work (it reopens; the worker continues in the task's worktree). Overseer opens it as a tab in the goal's session, in its own worktree (read-only tasks may use the checkout). `context` is added to its brief: what it should know from you or earlier workers. At most 4 open workers per goal.",
+    { task: z.string(), context: z.string().optional() },
+    (c, a) => `${Store.wid(store.requestWorker(c, Store.parseTask(a.task), a.context).id)} requested for ${a.task}; its done arrives in your inbox.`);
 
   tool("worker_stop",
-    "Coordinator only: stop a task's worker; the task goes back to ready.",
+    "Coordinator only: close a task's worker (its tab and omp session; the worktree stays). Use it once a finished worker's result is read. An unfinished task goes back to ready; a finished one stays finished.",
     { task: z.string() },
-    (c, a) => `${Store.wid(store.stopWorker(c, Store.parseTask(a.task)).id)} stopping; ${a.task} is ready again.`);
+    (c, a) => {
+      const w = store.stopWorker(c, Store.parseTask(a.task));
+      const t = store.task(w.task);
+      return `${Store.wid(w.id)} closing; ${a.task} is ${t.status}.`;
+    });
 
   const INBOX_MAX_S = 25;
   server.registerTool("inbox", {

@@ -27,8 +27,13 @@ function M.tabArgs(start, repoPath, wtPath, base)
 		table.insert(args, "omp")
 		return args
 	end
-	for _, a in { wtPath, "-C", repoPath, "switch", "--create", M.branchFor(start.task, start.title) } do table.insert(args, a) end
-	if base then table.insert(args, "--base"); table.insert(args, base) end
+	-- A reopened task's branch exists already (start.existing): switch to it.
+	if start.existing then
+		for _, a in { wtPath, "-C", repoPath, "switch", start.branch or M.branchFor(start.task, start.title) } do table.insert(args, a) end
+	else
+		for _, a in { wtPath, "-C", repoPath, "switch", "--create", M.branchFor(start.task, start.title) } do table.insert(args, a) end
+		if base then table.insert(args, "--base"); table.insert(args, base) end
+	end
 	table.insert(args, "-x")
 	table.insert(args, "omp")
 	return args
@@ -40,7 +45,10 @@ do
 	local s = { task = "T-3", title = "Add API", ternSession = "9", readonly = false }
 	local a = M.tabArgs(s, "/r", "/bin/wt", "main")
 	assert(a[3] == "9" and a[7] == "/bin/wt" and a[12] == "t-3-add-api" and a[14] == "main" and a[#a] == "omp", "workers.tabArgs self-check")
-	s.readonly = true
+	s.existing = true
+	local e = M.tabArgs(s, "/r", "/bin/wt", "main")
+	assert(e[11] == "t-3-add-api" and e[12] == "-x", "workers.tabArgs existing-branch self-check")
+	s.existing, s.readonly = nil, true
 	local r = M.tabArgs(s, "/r", "/bin/wt", nil)
 	assert(r[7] == "omp" and #r == 7, "workers.tabArgs read-only self-check")
 end

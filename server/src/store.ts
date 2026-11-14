@@ -26,6 +26,8 @@ export interface Event {
 export interface Worker {
   id: number; task: number; goal: number; requested_by: string;
   status: "requested" | "started" | "stopping" | "stopped" | "failed"; pane: string | null; created: number;
+  // What the coordinator wants this worker to know, added to its brief.
+  context: string | null;
 }
 export interface Caller { session: string; repo: string | null; branch: string | null; cwd: string | null; root?: string | null }
 
@@ -50,7 +52,7 @@ create table if not exists events (
   to_target text, created integer not null, delivered integer, handled integer);
 create table if not exists workers (
   id integer primary key, task integer not null references tasks(id), goal integer not null references goals(id),
-  requested_by text not null, status text not null, pane text, created integer not null);
+  requested_by text not null, status text not null, pane text, created integer not null, context text);
 create table if not exists repos (name text primary key, path text not null);
 `;
 
@@ -63,6 +65,9 @@ export class Store {
     this.db = new Database(path, { create: true, strict: true });
     this.db.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
     this.db.exec(SCHEMA);
+    // Added after the first release: databases created before it lack the column.
+    const cols = this.db.query("select name from pragma_table_info('workers')").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "context")) this.db.exec("alter table workers add column context text");
   }
 
   static tid(id: number) { return `T-${id}`; }
@@ -360,20 +365,21 @@ export class Store {
     return w;
   }
 
-  requestWorker(caller: Caller, task: number): Worker {
+  // A finished or failed task can get a new worker (follow-up work): it is reopened.
+  requestWorker(caller: Caller, task: number, context?: string): Worker {
     const g = this.coordinatorGoalFor(caller.session);
     const t = this.task(task);
     if (t.goal !== g.id) throw new Error(`${Store.tid(t.id)} isn't part of ${Store.gid(g.id)}`);
     const isWorker = this.db.query("select 1 from tasks where session = ? and started_by is not null").get(caller.session);
     if (isWorker) throw new Error("workers can't start workers");
-    if (t.status !== "ready") throw new Error(`${Store.tid(t.id)} is ${t.status}; only ready tasks can be started`);
+    if (!["ready", "done", "failed"].includes(t.status)) throw new Error(`${Store.tid(t.id)} is ${t.status}; only ready, done or failed tasks can be started`);
     const busy = this.db.query("select 1 from workers where task = ? and status in ('requested', 'started')").get(t.id);
     if (busy) throw new Error(`${Store.tid(t.id)} already has a worker`);
     const active = this.db.query("select count(*) as n from workers where goal = ? and status in ('requested', 'started', 'stopping')").get(g.id) as { n: number };
-    if (active.n >= MAX_WORKERS) throw new Error(`${Store.gid(g.id)} already has ${MAX_WORKERS} workers; wait for one with inbox`);
-    this.db.query("update tasks set started_by = ? where id = ?").run(caller.session, t.id);
-    return this.db.query("insert into workers (task, goal, requested_by, status, created) values (?, ?, ?, 'requested', ?) returning *")
-      .get(t.id, g.id, caller.session, this.now()) as Worker;
+    if (active.n >= MAX_WORKERS) throw new Error(`${Store.gid(g.id)} already has ${MAX_WORKERS} workers open; close finished ones with worker_stop, or wait for one with inbox`);
+    this.db.query("update tasks set started_by = ?, status = 'ready' where id = ?").run(caller.session, t.id);
+    return this.db.query("insert into workers (task, goal, requested_by, status, created, context) values (?, ?, ?, 'requested', ?, ?) returning *")
+      .get(t.id, g.id, caller.session, this.now(), context ?? null) as Worker;
   }
 
   workerStarted(id: number, pane: string) {
@@ -394,7 +400,9 @@ export class Store {
       .get(task, g.id) as Worker | null;
     if (!w) throw new Error(`${Store.tid(task)} has no running worker`);
     this.db.query("update workers set status = 'stopping' where id = ?").run(w.id);
-    this.touch(task, { status: "ready", session: null });
+    // A finished task stays finished: stopping just closes its worker.
+    const t = this.task(task);
+    if (t.status === "doing" || t.status === "ready") this.touch(task, { status: "ready", session: null });
     return this.worker(w.id);
   }
 

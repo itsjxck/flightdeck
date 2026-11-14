@@ -166,8 +166,80 @@ local function sectionHead(key, title, note)
 	})
 end
 
--- The whole block. `view`: { sections, selectedRef, showTodo, thread, reply, replyTo, replyHint, error, agentOf }.
--- Returns the block's main and dock nodes.
+-- A task's thread: every event, oldest first.
+local function threadSection(thread, now)
+	local events = {}
+	for _, e in thread.events do
+		local who = if e.author == "you" then "You" elseif e.author == "overseer" then "Overseer" else "Agent"
+		table.insert(events, col("e" .. tostring(e.id), "mission.event-" .. (if e.author == "you" then "you" else "agent"), {
+			text("who", who .. " · " .. e.kind .. (if M.ago(now, e.created) then " · " .. M.ago(now, e.created) else ""), "mission.eyebrow"),
+			ui.md(e.body),
+		}))
+	end
+	if #events == 0 then table.insert(events, text("none", "No notes yet.", "mission.empty")) end
+	return col("thread", "mission.section", {
+		sectionHead("head", thread.task .. " thread", "Esc closes"),
+		col("events", "mission.thread", events),
+	})
+end
+
+-- Mission control's tabs, in order: id and label.
+M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" } }
+
+local function tabStrip(current, needs)
+	local tabs = {}
+	for _, t in M.TABS do
+		local label = t.label .. (if t.id == "now" and needs > 0 then " · " .. tostring(needs) else "")
+		table.insert(tabs, ui.el("button", { key = t.id, role = if t.id == current then "mission.tabOn" else "mission.tab",
+			text = label, actions = { click = "tab=" .. t.id } }))
+	end
+	return row("tabs", "mission.tabs", tabs)
+end
+
+local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
+
+-- The Backlog tab: every goal (newest first, click to show its tasks) and every task outside goals.
+local function backlogNodes(view)
+	local b = view.backlog
+	local out = {}
+	if not b then return { text("loading", "Loading…", "mission.empty") } end
+	local goals = {}
+	for _, entry in b.goals do
+		local g = entry.goal
+		local open = view.expanded[g.ref] == true
+		local progress = if g.progress and g.progress.total > 0 then tostring(g.progress.done) .. "/" .. tostring(g.progress.total) else ""
+		local strips = {}
+		if open then
+			for _, t in entry.tasks do table.insert(strips, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
+			if #strips == 0 then table.insert(strips, text("none", "No tasks.", "mission.empty")) end
+		end
+		table.insert(goals, col("g" .. g.ref, "mission.backlogGoal", {
+			row("line", "mission.backlogLine-" .. g.status, {
+				text("chev", if open then "▾" else "▸", "mission.chev"),
+				text("ref", g.ref, "mission.ref"),
+				text("title", g.title, "mission.stripTitle", { grow = 1 }),
+				text("progress", progress, "mission.goalProgress"),
+				text("age", M.ago(b.now, g.created) or "", "mission.goalProgress"),
+				text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
+			}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
+			if open then col("tasks", "mission.backlogTasks", strips) else nil,
+		}))
+	end
+	table.insert(out, col("goals", "mission.section", {
+		sectionHead("head", "Goals", plural(#b.goals, "goal", "goals") .. " · Enter shows tasks"),
+		if #goals > 0 then col("list", "mission.strips", goals) else text("none", "No goals yet. Agents propose them with goal_propose.", "mission.empty"),
+	}))
+	local loose = {}
+	for _, t in b.loose do table.insert(loose, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
+	table.insert(out, col("loose", "mission.section", {
+		sectionHead("head", "Tasks outside goals", plural(#b.loose, "task", "tasks")),
+		if #loose > 0 then col("list", "mission.strips", loose) else text("none", "None.", "mission.empty"),
+	}))
+	return out
+end
+
+-- The whole block. `view`: { tab, sections, backlog, expanded, selectedRef, showTodo, thread, reply, replyTo,
+-- replyHint, error, agentOf }. Returns the block's main and dock nodes.
 function M.view(view)
 	local s = view.sections
 	local agentOf = view.agentOf or function() return nil end
@@ -179,7 +251,16 @@ function M.view(view)
 		text("title", "Mission control", "mission.title"),
 		text("summary", summary(s, agentOf), "mission.summary"),
 	}))
+	table.insert(main, tabStrip(view.tab or "now", #s.needs))
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
+	if view.tab == "backlog" then
+		view.agentOf = agentOf
+		for _, node in backlogNodes(view) do table.insert(main, node) end
+		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main), col("dock", "mission.dock", {
+			text("keys", "[ ] tabs   ↑↓ move   Enter show tasks / go to agent   o thread", "mission.keys"),
+		})
+	end
 
 	-- Your turn
 	if #s.needs > 0 then
@@ -274,22 +355,7 @@ function M.view(view)
 		if view.showTodo then col("list", "mission.strips", todo) else nil,
 	}))
 
-	-- Thread
-	if view.thread then
-		local events = {}
-		for _, e in view.thread.events do
-			local who = if e.author == "you" then "You" elseif e.author == "overseer" then "Overseer" else "Agent"
-			table.insert(events, col("e" .. tostring(e.id), "mission.event-" .. (if e.author == "you" then "you" else "agent"), {
-				text("who", who .. " · " .. e.kind .. (if M.ago(s.now, e.created) then " · " .. M.ago(s.now, e.created) else ""), "mission.eyebrow"),
-				ui.md(e.body),
-			}))
-		end
-		if #events == 0 then table.insert(events, text("none", "No notes yet.", "mission.empty")) end
-		table.insert(main, col("thread", "mission.section", {
-			sectionHead("head", view.thread.task .. " thread", "Esc closes"),
-			col("events", "mission.thread", events),
-		}))
-	end
+	if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 
 	local dock = {}
 	if view.replyTo then
@@ -298,7 +364,7 @@ function M.view(view)
 		props.placeholder = view.replyHint or ("Answer " .. view.replyTo .. " and press Enter")
 		table.insert(dock, row("replyRow", "mission.replyRow", { text("to", view.replyTo, "mission.replyTo"), ui.node("input", props) }))
 	end
-	table.insert(dock, text("keys", "↑↓ move   1–9 answer   Enter go to agent   o thread   r review   t later   n new task", "mission.keys"))
+	table.insert(dock, text("keys", "[ ] tabs   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   t later   n new task", "mission.keys"))
 
 	return ui.node("scroll", { key = "main", role = "mission.main" }, main), col("dock", "mission.dock", dock)
 end
@@ -315,6 +381,9 @@ do
 	local main, dock = M.view({ sections = sections, selectedRef = "T-1", showTodo = true, reply = Input.new(""), replyTo = "T-1",
 		agentOf = function() return "working" end })
 	assert(main ~= nil and dock ~= nil, "ui.render.view self-check")
+	local backlog = { now = 0, goals = { { goal = { ref = "G-1", title = "g", status = "done", created = 0 }, tasks = { { ref = "T-2", title = "x", status = "done" } } } }, loose = {} }
+	local bm = M.view({ tab = "backlog", sections = sections, backlog = backlog, expanded = { ["G-1"] = true }, reply = Input.new("") })
+	assert(bm ~= nil, "ui.render.view backlog self-check")
 end
 
 return M

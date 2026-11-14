@@ -20,6 +20,7 @@ function workerBrief(store: Store, workerId: number) {
     `Your task is ${Store.tid(t.id)}: ${t.title}.`, t.body,
     `First call task_start with id "${Store.tid(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
+    w.context ? `\nFrom your coordinator:\n${w.context}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -29,6 +30,9 @@ export function coordinatorBrief(store: Store, goal: number) {
     `You coordinate goal ${Store.gid(g.id)}: ${g.title}.`, g.body,
     `First call goal_join with "${Store.gid(g.id)}". Then start workers on ready tasks with worker_start,`,
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
+    `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
+    `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
+    `When the goal is over, call task_done on your own task.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -73,6 +77,12 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         }
         return json(map);
       }
+      case "GET backlog": {
+        // Every goal and task, newest first, for Mission control's Backlog tab.
+        const goals = store.listGoals().reverse().map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id) }));
+        const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: Store.tid(t.id) }));
+        return json({ goals, tasks, now: Date.now() });
+      }
       case "GET thread":
         return json(store.events(Store.parseTask(parts[1] ?? "")));
       case "POST answer":
@@ -100,7 +110,9 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         return json({
           starts: starts.map((w) => {
             const t = store.task(w.task);
+            // existing: the task's branch was made by an earlier worker, so switch to it rather than create it.
             return { id: w.id, task: Store.tid(t.id), title: t.title, repo: t.repo, repoPath: store.repoPath(t.repo), readonly: t.readonly === 1,
+              existing: t.branch != null && t.worktree != null, branch: t.branch,
               goal: Store.gid(w.goal), ternSession: store.goal(w.goal).tern_session, brief: workerBrief(store, w.id) };
           }),
           stops: stops.map((w) => ({ id: w.id, pane: w.pane })),

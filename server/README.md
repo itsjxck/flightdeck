@@ -14,7 +14,7 @@ bun src/main.ts <data dir>    # what Overseer runs; port 8095 (OVERSEER_PORT)
 |---|---|
 | `src/store.ts` | Schema and every read, write and rule: task statuses, dependencies (`promote`), goals and their coordinator, questions (`waiting`), messages, worker limits, the coordinator inbox, deliveries with the 2-minute agent-message gap. No I/O besides SQLite. Change behaviour here. |
 | `src/tools.ts` | The MCP tools agents see. Each resolves its caller, calls `store`, and turns a broken rule into a tool error. Tool descriptions are the agents' instructions. |
-| `src/api.ts` | Overseer's JSON API (`/api/*`): state, threads, answers, goal start/session/close, deliveries, worker starts and stops, pane → session lookup. Also the coordinator and worker briefs. |
+| `src/api.ts` | Overseer's JSON API (`/api/*`): state, the backlog (every goal and task), threads, answers, goal start/session/close, deliveries, worker starts and stops, pane → session lookup. Also the coordinator and worker briefs. |
 | `src/identity.ts` | Which omp session a request comes from: `X-Tern-Pane` → `tern process` → the session file the pane's process group holds open (or `--resume`/`--restore`), plus its folder, repository and branch. |
 | `src/main.ts` | `Bun.serve` on 127.0.0.1: `/health` (open), `/mcp` and `/api/*` (bearer token from `<data dir>/token`, created on first start). |
 
@@ -29,7 +29,7 @@ flowchart LR
   S --> DB[(overseer.db)]
 ```
 
-Answers and agents' messages are queued as events; Overseer fetches `/api/deliveries`, sends each to the pane running its session, then acks it. Worker starts are queued the same way (`/api/workers`), and Overseer opens them.
+Answers and agents' messages are queued as events; Overseer fetches `/api/deliveries`, sends each to the pane running its session, then acks it. Worker starts are queued the same way (`/api/workers`), and Overseer opens them. Goal lifecycle: proposed → active (started) → finished (the coordinator called `task_done` on its own task) → done (the user closed it) or dropped. Coordinators manage workers: `worker_stop` closes one (a finished task stays finished), `worker_start` on a done or failed task reopens it, switching to its existing branch, with optional `context` added to the brief.
 
 ## Conventions
 

@@ -121,6 +121,25 @@ describe("goals and conversation", () => {
     expect(store.waiting()[0].task.title).toBe("Coordinate Cross-repo auth");
   });
 
+  test("a coordinator closes a finished worker without reopening its task, and can restart it with context", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
+    store.startGoal(g.id);
+    const coord = { ...me, session: "coord" };
+    store.joinGoal(coord, g.id);
+    const t = store.listTasks({ goal: g.id }).find((x) => x.session !== "coord")!;
+    const w = store.requestWorker(coord, t.id);
+    store.workerStarted(w.id, "42");
+    store.startTask({ ...me, session: "w" }, { id: t.id });
+    store.doneTask("w", { outcome: "succeeded", summary: "done" });
+    store.stopWorker(coord, t.id);
+    expect(store.task(t.id).status).toBe("done");
+    store.workerStopped(w.id);
+    const again = store.requestWorker(coord, t.id, "Also update the docs.");
+    expect(store.task(t.id).status).toBe("ready");
+    expect(again.context).toBe("Also update the docs.");
+  });
+
   test("the coordinator finishing its own task marks the goal finished, without another summary request", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });

@@ -77,6 +77,49 @@ function M.selectable(sections, showTodo)
 	return rows
 end
 
+-- The Backlog tab's groups, from /api/backlog. Pure.
+-- goals: newest first, each { goal, tasks } (its coordinator's task left out);
+-- loose: tasks outside goals, newest first.
+function M.backlog(data)
+	local byGoal, goals, loose = {}, {}, {}
+	for _, g in data.goals do
+		local entry = { goal = g, tasks = {} }
+		byGoal[g.id] = entry
+		table.insert(goals, entry)
+	end
+	for _, t in data.tasks do
+		local entry = t.goal and byGoal[t.goal]
+		if entry then
+			if t.session == nil or t.session ~= entry.goal.coordinator then table.insert(entry.tasks, t) end
+		else
+			table.insert(loose, t)
+		end
+	end
+	return { goals = goals, loose = loose, now = data.now }
+end
+
+-- What the cursor moves over in the Backlog tab: goals, the tasks of expanded
+-- goals under them, then tasks outside goals. Pure.
+function M.backlogRows(backlog, expanded)
+	local rows = {}
+	for _, entry in backlog.goals do
+		table.insert(rows, { kind = "goal", item = entry.goal })
+		if expanded[entry.goal.ref] then
+			for _, t in entry.tasks do table.insert(rows, { kind = "task", item = t }) end
+		end
+	end
+	for _, t in backlog.loose do table.insert(rows, { kind = "task", item = t }) end
+	return rows
+end
+
+do
+	local b = M.backlog({ now = 0,
+		goals = { { id = 2, ref = "G-2", coordinator = "c" }, { id = 1, ref = "G-1" } },
+		tasks = { { ref = "T-3", goal = 2, session = "c" }, { ref = "T-2", goal = 2 }, { ref = "T-1" } } })
+	assert(#b.goals == 2 and #b.goals[1].tasks == 1 and #b.loose == 1, "ui.model.backlog self-check")
+	assert(#M.backlogRows(b, {}) == 3 and #M.backlogRows(b, { ["G-2"] = true }) == 4, "ui.model.backlogRows self-check")
+end
+
 do
 	local s = M.sections({
 		goals = { { id = 1, ref = "G-1", title = "g", status = "active", coordinator = "c" }, { id = 2, ref = "G-2", title = "p", status = "proposed" } },

@@ -10,9 +10,11 @@ local POLL_MS = 2000
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
--- The selectable rows and the index of the selected one (by ref, so a refresh keeps it).
+-- The selectable rows of the shown tab and the index of the selected one (by ref, so a refresh keeps it).
 local function rows(state)
-	local list = model.selectable(state.sections, state.showTodo)
+	local list = if state.tab == "backlog"
+		then (if state.backlog then model.backlogRows(state.backlog, state.expanded) else {})
+		else model.selectable(state.sections, state.showTodo)
 	local index = 1
 	for i, r in list do
 		local ref = r.item.task or r.item.ref
@@ -30,6 +32,7 @@ end
 local function replyTarget(state)
 	if state.newTask then return "New task", "Title of a task for later, Enter adds it" end
 	if state.thread then return state.thread.task, nil end
+	if state.tab == "backlog" then return nil, nil end
 	local row = selectedRow(state)
 	if row and row.kind == "question" then return row.item.task, nil end
 	return nil, nil
@@ -41,6 +44,12 @@ local function refresh(state, cx)
 		if s then state.sections = model.sections(s) end
 		local pending = tern.kv.get("mission:select")
 		if type(pending) == "string" then state.selectedRef = pending; tern.kv.set("mission:select", nil) end
+		if state.tab == "backlog" then
+			model.api("GET", "/api/backlog", nil, function(data)
+				if data then state.backlog = model.backlog(data) end
+				pcall(function() cx:render() end)
+			end)
+		end
 		if state.thread then
 			model.api("GET", "/api/thread/" .. state.thread.task, nil, function(events)
 				if events and state.thread then state.thread.events = events end
@@ -89,11 +98,25 @@ local function answerOption(state, cx, task, option)
 	return true
 end
 
--- Enter on a row with an empty reply: start a proposal, go to a task's agent.
+local function switchTab(state, cx, tab)
+	state.tab, state.thread = tab, nil
+	refresh(state, cx)
+end
+
+-- The tab after (step 1) or before (step -1) the shown one.
+local function stepTab(state, step)
+	local index = 1
+	for i, t in render.TABS do if t.id == state.tab then index = i end end
+	return render.TABS[(index - 1 + step) % #render.TABS + 1].id
+end
+
+-- Enter on a row with an empty reply: start a proposal, go to a task's agent, show a goal's tasks.
 local function activate(state, cx)
 	local row = selectedRow(state)
 	if not row then return end
-	if row.kind == "proposal" then
+	if row.kind == "goal" then
+		state.expanded[row.item.ref] = not state.expanded[row.item.ref] or nil
+	elseif row.kind == "proposal" then
 		model.request({ kind = "start", goal = row.item.ref })
 		state.error = "Starting " .. row.item.ref .. " in a session of its own…"
 	elseif row.kind == "task" or row.kind == "todo" then
@@ -105,6 +128,7 @@ local DEF = {
 	init = function(cx, args)
 		local state = {
 			sections = EMPTY, selectedRef = args[1], showTodo = false, thread = nil,
+			tab = "now", backlog = nil, expanded = {},
 			reply = Input.new(""), newTask = false, error = nil, alive = true,
 		}
 		refresh(state, cx)
@@ -121,6 +145,7 @@ local DEF = {
 		local to, hint = replyTarget(state)
 		local agents = tern.kv.get("mission:agents")
 		local main, dock = render.view({
+			tab = state.tab, backlog = state.backlog, expanded = state.expanded,
 			sections = state.sections, selectedRef = row and (row.item.task or row.item.ref), showTodo = state.showTodo,
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
@@ -138,6 +163,8 @@ local DEF = {
 			elseif state.newTask then state.newTask = false
 			elseif state.thread then state.thread = nil
 			else return false end
+		elseif not typing and not state.newTask and (key.name == "[" or key.name == "]" or key.name == "bracketleft" or key.name == "bracketright") then
+			switchTab(state, cx, stepTab(state, if key.name == "[" or key.name == "bracketleft" then -1 else 1))
 		elseif key.name == "enter" then
 			if typing then send(state, cx) else activate(state, cx) end
 		elseif not typing and not state.newTask and string.match(key.name, "^[1-9]$") then
@@ -145,7 +172,7 @@ local DEF = {
 			if not (row and row.kind == "question" and answerOption(state, cx, row.item.task, tonumber(key.name))) then return false end
 		elseif not typing and not state.newTask and key.name == "o" then
 			local row = list[index]
-			if not row or row.kind == "proposal" then return false end
+			if not row or row.kind == "proposal" or row.kind == "goal" then return false end
 			openThread(state, cx, row.item.task or row.item.ref)
 		elseif not typing and not state.newTask and key.name == "r" then
 			local row = list[index]
@@ -180,6 +207,8 @@ local DEF = {
 		local verb, a, b = string.match(act, "^(%a+)=([^=]+)=?(.*)$")
 		if verb == "answer" then answerOption(state, cx, a, tonumber(b))
 		elseif verb == "select" then state.selectedRef = a
+		elseif verb == "tab" then switchTab(state, cx, a)
+		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
 		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"
 		elseif verb == "start" then model.request({ kind = "start", goal = a }); state.error = "Starting " .. a .. " in a session of its own…"

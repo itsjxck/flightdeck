@@ -53,6 +53,9 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 - **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
 - **Finished goals** (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
 - **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
+- **Backlog** tab (<kbd>[</kbd> <kbd>]</kbd> switch tabs): every goal, newest first, with its status; <kbd>Enter</kbd> shows a goal's tasks. Then every task outside goals.
+
+A goal's coordinator owns its workers: it closes finished ones (`worker_stop`; the worktree stays) and starts fresh ones for follow-up work (`worker_start` with `context`, on a new task or a finished one, which reopens in its worktree).
 
 The sidebar button shows how many questions wait (**2 need you**); a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.
 
