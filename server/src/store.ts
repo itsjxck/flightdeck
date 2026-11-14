@@ -163,10 +163,15 @@ export class Store {
     return doing[0];
   }
 
-  note(session: string, a: { ref?: string; body: string; pr?: string }): Task {
+  note(session: string, a: { ref?: string; body: string; pr?: string; answered?: boolean }): Task {
     const t = this.myTask(session, a.ref);
     this.touch(t.id, a.pr ? { pr: a.pr } : {});
     this.addEvent({ task: t.id, goal: t.goal, author: session, kind: "note", body: a.body, options: null, recommended: null, to_target: null });
+    // Answered in the agent's own pane: record it as the answer, already delivered.
+    if (a.answered) {
+      const e = this.addEvent({ task: t.id, goal: t.goal, author: "you", kind: "answer", body: a.body, options: null, recommended: null, to_target: null });
+      this.markDelivered(e.id);
+    }
     return this.task(t.id);
   }
 
@@ -279,6 +284,13 @@ export class Store {
     this.addEvent({ task: null, goal, author: "overseer", kind: "status",
       body: "Every task is finished. Summarise the outcome for the user with ask_user (what to review, merge order, follow-ups).",
       options: null, recommended: null, to_target: "coordinator" });
+  }
+
+  // Finished worker tasks of a goal, out of all but dropped ones; the coordinator's own task isn't counted.
+  progress(goal: number): { done: number; total: number } {
+    const r = this.db.query(`select count(*) as total, sum(t.status = 'done') as done from tasks t join goals g on g.id = t.goal
+      where t.goal = ? and t.session is not g.coordinator and t.status != 'dropped'`).get(goal) as { total: number; done: number | null };
+    return { done: r.done ?? 0, total: r.total };
   }
 
   coordinatorGoalFor(session: string): Goal {

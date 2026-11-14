@@ -39,11 +39,12 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
 
   tool("task_note",
     "Record a real milestone on your task: a decision, a plan change, a PR opened (pass pr). Not every step; a few lines of Markdown with a bold lead-in.",
-    { id, body: z.string(), pr: z.string().url().optional() },
-    (c, a) => line(store.note(c.session, { ref: a.id, body: a.body, pr: a.pr })) + " — noted.");
+    { id, body: z.string(), pr: z.string().url().optional(),
+      answered: z.boolean().optional().describe("True when this note records the user's answer to your open question, given in your pane") },
+    (c, a) => line(store.note(c.session, { ref: a.id, body: a.body, pr: a.pr, answered: a.answered })) + " — noted.");
 
   tool("ask_user",
-    "Ask the user for a decision, approval or choice. The only way to reach them. Self-contained question, numbered options, your recommendation as `recommended` (1-based). Ask in your pane too, then wait for the answer.",
+    "Ask the user for a decision, approval or choice. The only way to reach them. Self-contained question, numbered options, your recommendation as `recommended` (1-based). Ask in your pane too, then wait for the answer. If the user answers in your pane, record it with task_note answered: true.",
     { id, question: z.string(), options: z.array(z.string()).optional(), recommended: z.number().int().optional() },
     (c, a) => line(store.ask(c.session, { ref: a.id, question: a.question, options: a.options, recommended: a.recommended })) + " — waiting for the user.");
 

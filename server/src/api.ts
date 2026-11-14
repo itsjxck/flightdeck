@@ -43,7 +43,11 @@ function state(store: Store) {
     goal: w.task.goal != null ? Store.gid(w.task.goal) : null, question: w.question.body,
     options: w.question.options ? JSON.parse(w.question.options) as string[] : null, recommended: w.question.recommended }));
   const workers = store.db.query("select * from workers where status in ('requested', 'started', 'stopping')").all();
-  return { goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id) })), tasks, waiting, workers };
+  return {
+    goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id) })),
+    goalSessions: goals.map((g) => g.tern_session).filter((s): s is string => !!s),
+    tasks, waiting, workers,
+  };
 }
 
 export async function handleApi(store: Store, req: Request, url: URL, resolve: (pane: string) => Caller | null): Promise<Response> {

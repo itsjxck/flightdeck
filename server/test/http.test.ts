@@ -49,3 +49,8 @@ test("pane ids map to the omp sessions running in them", async () => {
     body: JSON.stringify({ panes: ["42", "7"] }) });
   expect(await r.json()).toEqual({ s42: "42" });
 });
+
+test("state lists goal sessions", async () => {
+  const state = await (await fetch(`${base}/api/state`, { headers: auth })).json() as { goalSessions: string[] };
+  expect(Array.isArray(state.goalSessions)).toBe(true);
+});

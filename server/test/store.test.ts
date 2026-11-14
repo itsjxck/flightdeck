@@ -121,6 +121,25 @@ describe("goals and conversation", () => {
     expect(store.waiting()[0].task.title).toBe("Coordinate Cross-repo auth");
   });
 
+  test("a note marked answered closes the open question", () => {
+    const store = new Store(":memory:");
+    store.startTask(me, { title: "a" });
+    store.ask("s-me", { question: "Which?" });
+    store.note("s-me", { body: "User chose 2 in the pane", answered: true });
+    expect(store.waiting()).toEqual([]);
+  });
+
+  test("goal progress counts finished worker tasks, not the coordinator's", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const a = store.listTasks({ goal: g.id }).find((t) => t.title === "a")!;
+    store.startTask({ ...me, session: "w" }, { id: a.id });
+    store.doneTask("w", { outcome: "succeeded", summary: "ok" });
+    expect(store.progress(g.id)).toEqual({ done: 1, total: 2 });
+  });
+
   test("a question makes the task waiting until answered", () => {
     const store = new Store(":memory:");
     const t = store.startTask(me, { title: "a" });
