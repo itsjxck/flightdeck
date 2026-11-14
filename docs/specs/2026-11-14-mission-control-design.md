@@ -98,7 +98,7 @@ Modelled on Orca's orchestration (runs, tasks, workers, inbox, `ask`,
 |---|---|
 | `goal_propose` | Any agent: proposes a goal (title, plan, tasks across repositories, dependencies). It shows in Needs you; Start makes it a goal with its own session and coordinator |
 | `goal_plan` | Coordinator: adds, edits or drops its goal's tasks and dependencies |
-| `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there, as a new tab in the goal's session, with a brief naming the task |
+| `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there, as a background tab in the goal's session (`tern new tab`), with a brief naming the task |
 | `inbox` | Waits (up to a timeout) for the goal's `done` events, questions and messages; returns them and marks them handled |
 | `worker_stop` | Stops a worker; its task goes back to `ready` |
 
@@ -206,12 +206,12 @@ machines, agents other than omp as workers.
   optional `session` argument, read by the agent from `$PI_SESSION_ID`.
 - **Session lookup relies on omp keeping its session file open** (and
   `--resume`/`--restore` as fallback), as the Huly bridge does today.
-- **Starting native agent blocks in another session:** `cx.agents:start`
-  opens beside the focused pane, with no session argument, and
-  `tern new tab <session> -- omp` gives a plain terminal (no native agent
-  states). To check first; fallback is creating the tab in the goal session,
-  then `cx.agents:start` with `how = "replace_if_alone"` targeted at it, or
-  living with terminal-mode workers (states from busy only).
+- **Starting agents in the background** (checked 2026-11-14): `tern new
+  session NAME --cwd DIR -- omp …` and `tern new tab SESSION --cwd DIR -- omp …`
+  open in the background: the focused pane and shown session didn't change.
+  These panes look the same to Tern as the omp sessions in use today (a shell
+  running `omp`). Overseer starts goal sessions and workers this way, never
+  with `cx.agents:start`, which opens beside the focused pane.
 - **Rich input in a block:** Tern blocks support text fields and buttons
   (Overseer's forms use them); long replies are written in the thread's field.
 
