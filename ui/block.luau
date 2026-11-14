@@ -117,11 +117,15 @@ local DEF = {
 	end,
 	view = function(state)
 		local list, index = rows(state)
+		local row = list[index]
 		local to, hint = replyTarget(state)
-		return { main = render.view({
-			sections = state.sections, selected = if #list > 0 then index else 0, showTodo = state.showTodo,
+		local agents = tern.kv.get("mission:agents")
+		local main, dock = render.view({
+			sections = state.sections, selectedRef = row and (row.item.task or row.item.ref), showTodo = state.showTodo,
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
-		}) }
+			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
+		})
+		return { main = main, dock = dock }
 	end,
 	key = function(state, key, cx)
 		local list, index = rows(state)
@@ -160,6 +164,16 @@ local DEF = {
 		return true
 	end,
 	event = function(state, ev, cx)
+		-- Table rows: a click selects, a double click goes to the agent (or starts the goal).
+		if (ev.ev == "select" or ev.ev == "activate") and type(ev.item) == "string" then
+			state.selectedRef = ev.item
+			if ev.ev == "activate" then activate(state, cx) end
+			return
+		end
+		if ev.ev == "action" and ev.act == "start" and type(ev.item) == "string" then
+			model.request({ kind = "start", goal = ev.item }); state.error = "Starting " .. ev.item .. " in a session of its own…"
+			return
+		end
 		if ev.ev ~= "action" or type(ev.act) ~= "string" then return end
 		-- Tern splits "verb=value" actions at the first "="; put them back together.
 		local act = if ev.value ~= nil then ev.act .. "=" .. tostring(ev.value) else ev.act

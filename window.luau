@@ -1913,7 +1913,22 @@ end
 -- Requests from the Mission control block (host half), which can't open
 -- sessions or focus panes itself: kv `mission:requests`, a list of
 -- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" } or { kind = "review", task = "T-12" }.
+-- Publishes how each task's agent is doing (kv `mission:agents`, omp session
+-- → "working" | "waiting" | "idle") for the Mission control block, which
+-- can't see agents. Written only when it changes.
+local publishedAgents = ""
+local function publishAgents()
+	local states = {}
+	for session, pane in mission.sessionPanes or {} do
+		local id = tonumber(pane)
+		if id then states[session] = agentStates[id] or (if unseen[id] then "waiting" else "idle") end
+	end
+	local encoded = tern.json.encode(states)
+	if encoded ~= publishedAgents then publishedAgents = encoded; tern.kv.set("mission:agents", states) end
+end
+
 local function missionRequests(cx)
+	publishAgents()
 	local requests = tern.kv.get("mission:requests")
 	if type(requests) ~= "table" or #requests == 0 then return end
 	tern.kv.set("mission:requests", {})

@@ -1,125 +1,167 @@
--- Mission control's view (host half). Pure: model in, nodes out. Rows the
--- cursor can select are counted in the same order as model.selectable, so
--- `selected` (1-based) marks the matching row.
+-- Mission control's view (host half). Pure: model in, nodes out. Built from
+-- Tern's own components (stats, cards, tables, sections, empty states) in the
+-- sans face, so it looks like the rest of Tern. The reply field sits in the
+-- block's dock, below the scrolling main area.
 local ui = tern.ui
 local Input = require("../input")
 
 local M = {}
 
-local function text(key, value, role, props)
-	props = props or {}
-	props.key, props.text, props.role = key, value, role
-	return ui.node("text", props)
+-- How an agent is doing on a task, as a table cell with a status dot.
+-- `agent`: "working" | "waiting" | "idle" | nil (no live agent).
+local AGENT = {
+	working = { text = "Working", dot = "success" },
+	waiting = { text = "Waiting for you", dot = "accent" },
+	idle = { text = "Idle", dot = "muted" },
+}
+local STATUS = { ready = "Ready to start", todo = "Waiting on others", done = "Done", failed = "Failed", dropped = "Dropped" }
+
+local function stateCell(t, agentOf)
+	if t.status == "doing" then
+		local a = AGENT[agentOf(t.session)]
+		if a then return { text = a.text, dot = a.dot } end
+		return { text = "No agent", dot = "warning", title = "The agent working on this task isn't running" }
+	end
+	return { text = STATUS[t.status] or t.status, dot = if t.status == "done" then "success" elseif t.status == "failed" then "error" else "muted" }
 end
 
-local function header(key, title, count, hint)
-	local children = { text("title", title, "overseer.heading", { grow = 1 }) }
-	if hint then table.insert(children, text("hint", hint, "overseer.hint")) end
-	if count then table.insert(children, text("count", tostring(count), "overseer.count")) end
-	return ui.node("row", { key = key, role = "overseer.header" }, children)
+-- Sets props (key, …) on a node a ui builder returned ({k, p, c}).
+local function keyed(node, props)
+	node.p = node.p or {}
+	for k, v in props do node.p[k] = v end
+	return node
 end
 
-local STATUS = { doing = "working", ready = "ready to start", todo = "waiting on others", done = "done", failed = "failed" }
+local function muted(key, text)
+	return ui.node("text", { key = key, text = text, role = "overseer.hint" })
+end
 
--- A question waiting on you: where it's from, the question, its options.
-local function questionNode(q, picked)
-	local options = {}
+local function oneLine(s)
+	return if s then (string.gsub(s, "%s+", " ")) else ""
+end
+
+local TASK_COLS = {
+	{ id = "ref", head = "Task", mono = true },
+	{ id = "title", head = "Title", grow = 2, truncate = "end" },
+	{ id = "state", head = "State" },
+	{ id = "repo", head = "Repository", priority = -1, mono = true },
+	{ id = "note", head = "Latest", grow = 3, priority = -2, truncate = "end" },
+}
+
+local function taskTable(key, tasks, selected, agentOf, empty)
+	local rows = {}
+	for _, t in tasks do
+		table.insert(rows, { id = t.ref, cells = {
+			t.ref, t.title, stateCell(t, agentOf), t.repo or "", oneLine(t.lastNote),
+		}, title = t.title })
+	end
+	return keyed(ui.table(TASK_COLS, rows, { selectable = true, selected = selected, empty = empty or "Nothing here" }), { key = key })
+end
+
+-- A question waiting on you, as a card: the question, then its options as buttons.
+local function questionCard(q, picked)
+	local buttons = {}
 	for i, option in (q.options or {}) do
-		table.insert(options, ui.el("button", {
-			key = "o" .. i, role = if q.recommended == i then "overseer.primaryButton" else "overseer.button",
-			text = tostring(i) .. ". " .. option .. (if q.recommended == i then " (recommended)" else ""),
+		table.insert(buttons, ui.button(tostring(i) .. "  " .. option, {
+			key = "o" .. i, variant = if q.recommended == i then "primary" else "default",
+			title = if q.recommended == i then "Recommended" else nil,
 			actions = { click = "answer=" .. q.task .. "=" .. tostring(i) },
 		}))
 	end
-	local children = {
-		text("from", q.task .. " · " .. q.title .. (if q.repo then " · " .. q.repo else ""), "overseer.hint"),
-		ui.md(q.question),
-	}
-	if #options > 0 then table.insert(children, ui.node("row", { key = "options", role = "overseer.formButtons" }, options)) end
-	return ui.node("col", { key = "q" .. q.task, role = "mission.card", mark = if picked then "pick" else nil,
-		actions = { click = "select=" .. q.task } }, children)
-end
-
-local function taskRow(t, picked)
-	return ui.node("row", { key = "t" .. t.ref, role = "mission.row", mark = if picked then "pick" else nil,
-		actions = { click = "select=" .. t.ref } }, {
-		text("ref", t.ref, "mission.ref"),
-		ui.node("col", { key = "body", grow = 1 }, {
-			text("title", t.title, "overseer.spaceName"),
-			text("meta", (STATUS[t.status] or t.status) .. (if t.repo then " · " .. t.repo else "")
-				.. (if t.lastNote then " · " .. (string.gsub(t.lastNote, "%s+", " ")) else ""), "overseer.hint"),
-		}),
+	local body = { ui.md(q.question) }
+	if #buttons > 0 then table.insert(body, ui.node("row", { key = "options", role = "mission.options" }, buttons)) end
+	return keyed(ui.card({ q.task .. " · " .. q.title }, body, { icon = "bell", meta = { q.repo or "" } }), {
+		key = "q" .. q.task, mark = if picked then "pick" else nil, actions = { click = "select=" .. q.task },
 	})
 end
 
--- A task's thread: every event, oldest first.
-local function threadNode(thread)
-	local items = { header("th", thread.task .. " thread", nil, "Esc closes") }
-	for _, e in thread.events do
-		local who = if e.author == "you" then "You" elseif e.author == "overseer" then "Overseer" else "Agent"
-		table.insert(items, ui.node("col", { key = "e" .. tostring(e.id), role = "mission.event" }, {
-			text("who", who .. " · " .. e.kind, "overseer.hint"), ui.md(e.body),
-		}))
-	end
-	return ui.node("col", { key = "thread", role = "mission.thread" }, items)
-end
-
--- The whole block. `view`: { sections, selected, showTodo, thread, reply (Input field), replyTo, error }.
+-- The whole block. `view`: { sections, selectedRef, showTodo, thread, reply, replyTo, replyHint, error, agentOf }.
+-- Returns the block's { main, dock }.
 function M.view(view)
 	local s = view.sections
-	local rows, index = {}, 0
-	local function picked() index += 1; return index == view.selected end
-	if view.error then table.insert(rows, text("error", view.error, "overseer.error")) end
+	local agentOf = view.agentOf or function() return nil end
+	local main = {}
+	if view.error then table.insert(main, ui.node("text", { key = "error", text = view.error, role = "overseer.error" })) end
 
-	table.insert(rows, header("h-needs", "Needs you", #s.needs, "1–9 answers · type to reply"))
-	for _, q in s.needs do table.insert(rows, questionNode(q, picked())) end
-	if #s.needs == 0 then table.insert(rows, text("none", "Nothing needs you.", "overseer.hint")) end
+	local working = 0
+	for _, g in s.working do working += #g.tasks end
+	table.insert(main, keyed(ui.stats({
+		{ label = "Needs you", value = tostring(#s.needs), tone = if #s.needs > 0 then "accent" else nil },
+		{ label = "Proposed goals", value = tostring(#s.proposed) },
+		{ label = "In progress", value = tostring(working) },
+		{ label = "Todo", value = tostring(#s.todo) },
+	}), { key = "stats" }))
 
+	-- Needs you
+	local needs = {}
+	for _, q in s.needs do table.insert(needs, questionCard(q, q.task == view.selectedRef)) end
+	if #needs == 0 then
+		table.insert(needs, muted("none", "Nothing needs you. Questions agents ask with ask_user show up here."))
+	end
+	table.insert(main, keyed(ui.section({ "Needs you" }, needs), { key = "s-needs" }))
+
+	-- Proposed goals
 	if #s.proposed > 0 then
-		table.insert(rows, header("h-proposed", "Proposed goals", #s.proposed, "Enter starts"))
+		local rows = {}
 		for _, g in s.proposed do
-			table.insert(rows, ui.node("row", { key = "p" .. g.ref, role = "mission.row", mark = if picked() then "pick" else nil }, {
-				text("ref", g.ref, "mission.ref"),
-				text("title", g.title, "overseer.spaceName", { grow = 1 }),
-				ui.el("button", { key = "start", text = "Start", role = "overseer.primaryButton", actions = { click = "start=" .. g.ref } }),
-			}))
+			table.insert(rows, { id = g.ref, cells = { g.ref, g.title, { button = { text = "Start", act = "start" } } } })
 		end
+		table.insert(main, keyed(ui.section({ "Proposed goals" }, {
+			keyed(ui.table({ { id = "ref", head = "Goal", mono = true }, { id = "title", head = "Title", grow = 1 }, { id = "start", head = "" } },
+				rows, { selectable = true, selected = view.selectedRef }), { key = "proposed" }),
+		}), { key = "s-proposed" }))
 	end
 
-	table.insert(rows, header("h-working", "Working", nil, "Enter goes to the agent · o thread · r review"))
+	-- Working, a card per goal
+	local groups = {}
 	for _, group in s.working do
 		local g = group.goal
-		table.insert(rows, text("g" .. (if g then g.ref else "none"),
-			if g then g.ref .. " · " .. g.title .. (if g.progress then " · " .. g.progress.done .. "/" .. g.progress.total .. " done" else "")
-			else "No goal", "mission.group"))
-		for _, t in group.tasks do table.insert(rows, taskRow(t, picked())) end
+		local head = if g then { g.ref .. " · " .. g.title } else { "Not part of a goal" }
+		local meta = if g and g.progress then { tostring(g.progress.done) .. " of " .. tostring(g.progress.total) .. " done" } else { "" }
+		table.insert(groups, keyed(ui.card(head, { taskTable("w" .. (if g then g.ref else "none"), group.tasks, view.selectedRef, agentOf) },
+			{ icon = if g then "target" else "list", meta = meta }), { key = "g" .. (if g then g.ref else "none") }))
 	end
-	if #s.working == 0 then table.insert(rows, text("idle", "No agent is working on a task.", "overseer.hint")) end
+	if #groups == 0 then
+		table.insert(groups, muted("idle", "No tasks in progress. Agents start tasks with task_start; goals run in sessions of their own."))
+	end
+	table.insert(main, keyed(ui.section({ "In progress" }, groups), { key = "s-working" }))
 
-	table.insert(rows, header("h-todo", "Todo", #s.todo, if view.showTodo then "t hides · n adds" else "t shows · n adds"))
-	if view.showTodo then for _, t in s.todo do table.insert(rows, taskRow(t, picked())) end end
+	-- Todo
+	table.insert(main, keyed(ui.section({ "Todo" }, if view.showTodo
+		then { taskTable("todo", s.todo, view.selectedRef, agentOf, "No tasks for later") }
+		else { muted("todo-hint", tostring(#s.todo) .. " for later · press t to show") }), { key = "s-todo" }))
 
-	local main = ui.node("scroll", { key = "main", grow = 1 }, rows)
-	local foot = {}
+	-- Thread of the selected task
+	if view.thread then
+		local events = {}
+		for _, e in view.thread.events do
+			local who = if e.author == "you" then "You" elseif e.author == "overseer" then "Overseer" else "Agent"
+			table.insert(events, keyed(ui.card({ who }, { ui.md(e.body) }, { meta = { e.kind } }), { key = "e" .. tostring(e.id) }))
+		end
+		if #events == 0 then table.insert(events, muted("none", "No notes yet.")) end
+		table.insert(main, keyed(ui.section({ view.thread.task .. " thread · Esc closes" }, events), { key = "s-thread" }))
+	end
+
+	-- Dock: the reply field, and what the keys do.
+	local dock = {}
 	if view.replyTo then
 		local props = Input.props(view.reply)
-		props.key, props.role, props.placeholder = "reply", "overseer.field", view.replyHint or ("Reply to " .. view.replyTo .. "…")
-		props.grow = 1
-		foot = { ui.node("row", { key = "foot", role = "mission.foot" }, { text("to", view.replyTo, "mission.ref"), ui.node("input", props) }) }
+		props.key, props.role, props.grow = "reply", "overseer.field", 1
+		props.placeholder = view.replyHint or ("Reply to " .. view.replyTo .. ", Enter sends")
+		table.insert(dock, ui.node("input", props))
 	end
-	local body = { main }
-	if view.thread then body = { main, ui.node("scroll", { key = "side", grow = 1 }, { threadNode(view.thread) }) } end
-	local content = ui.node("row", { key = "body", grow = 1 }, body)
-	local children = { content }
-	for _, f in foot do table.insert(children, f) end
-	return ui.node("col", { key = "mission", role = "mission.root" }, children)
+	table.insert(dock, ui.node("text", { key = "keys", role = "overseer.hint",
+		text = "↑↓ select · 1–9 answer · Enter go to agent / start · o thread · r review · t todo · n new task" }))
+
+	return ui.node("scroll", { key = "main", role = "mission.main" }, main), ui.node("col", { key = "dock", role = "mission.dock" }, dock)
 end
 
 do
 	local sections = { needs = { { task = "T-1", title = "t", question = "Q?", options = { "a", "b" }, recommended = 1 } },
-		proposed = {}, working = {}, todo = {} }
-	assert(M.view({ sections = sections, selected = 1, showTodo = false, reply = Input.new(""), replyTo = "T-1" }) ~= nil,
-		"ui.render.view self-check")
+		proposed = {}, working = { { goal = nil, tasks = { { ref = "T-2", title = "x", status = "doing", session = "s" } } } }, todo = {} }
+	local main, dock = M.view({ sections = sections, selectedRef = "T-1", showTodo = false, reply = Input.new(""), replyTo = "T-1",
+		agentOf = function() return "working" end })
+	assert(main ~= nil and dock ~= nil, "ui.render.view self-check")
 end
 
 return M

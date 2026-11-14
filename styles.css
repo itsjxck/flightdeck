@@ -443,61 +443,17 @@
   color: var(--accent);
   text-decoration: underline;
 }
-/* The Mission control block. */
-[data-role='mission.root'] {
-  height: 100%;
-  padding: 10px 14px;
-  gap: 8px;
+/* The Mission control block (ui/render.luau). */
+[data-role='mission.main'] {
+  padding: 14px 20px;
+  gap: 14px;
 }
-[data-role='mission.card'] {
+[data-role='mission.options'] {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+[data-role='mission.dock'] {
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-[data-role='mission.row'] {
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-[data-role='mission.row']:hover,
-[data-role='mission.card']:hover {
-  background: color-mix(in srgb, var(--t4) 9%, transparent);
-}
-[data-role='mission.ref'] {
-  color: var(--t3);
-  font-variant-numeric: tabular-nums;
-  min-width: 3.5em;
-}
-[data-role='mission.group'] {
-  color: var(--t2);
-  font-weight: 600;
-  margin: 8px 0 2px;
-}
-[data-role='mission.thread'] {
-  gap: 8px;
-  padding-left: 14px;
-  border-left: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
-}
-[data-role='mission.event'] {
-  gap: 2px;
-}
-[data-role='mission.foot'] {
-  align-items: center;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
-}
-[data-role='mission.root'] {
-  justify-content: flex-start;
-  align-items: stretch;
-}
-[data-role='mission.root'] > [data-key='body'] {
-  align-items: flex-start;
-}
-[data-role='mission.foot'] > [data-role='overseer.field'] {
-  flex: 1 1 auto;
+  padding: 8px 20px 10px;
 }
