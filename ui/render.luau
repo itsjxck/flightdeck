@@ -203,8 +203,10 @@ local function tabStrip(current, needs)
 	local tabs = {}
 	for _, t in M.TABS do
 		local label = t.label .. (if t.id == "now" and needs > 0 then " · " .. tostring(needs) else "")
-		table.insert(tabs, ui.el("button", { key = t.id, role = if t.id == current then "mission.tabOn" else "mission.tab",
-			text = label, actions = { click = "tab=" .. t.id } }))
+		-- A row, not a button element: Tern's button chrome can't be fully restyled.
+		table.insert(tabs, row(t.id, if t.id == current then "mission.tabOn" else "mission.tab",
+			{ text("label", label, "mission.tabLabel") },
+			{ actions = { click = "tab=" .. t.id }, aria = t.label .. " tab" .. (if t.id == current then ", selected" else "") }))
 	end
 	return row("tabs", "mission.tabs", tabs)
 end
