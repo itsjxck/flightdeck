@@ -36,3 +36,13 @@ Answers and agents' messages are queued as events; Overseer fetches `/api/delive
 - Ids are integers in SQLite, shown as `T-12`, `G-3`, `W-5` (`Store.tid/gid/wid`, `parseTask/parseGoal`).
 - Rule errors are thrown as `Error` with a message an agent can act on; `tools.ts` and `api.ts` return them, never crash.
 - Tests use an in-memory store and an injected clock (`new Store(":memory:", () => clock)`).
+
+## Demo scenarios
+
+`bun scripts/demo.ts` creates three small repositories in `~/projects/overseer-demo` (`demo-payments`, `demo-storefront`, `demo-design-system`) and proposes three goals across them, plus one task for later:
+
+- **Add Apple Pay to checkout**: three tasks in three repos; the storefront task waits for the other two.
+- **Dark mode**: two tasks; the first asks you which brand colour to use.
+- **Rate-limit login**: one task that asks you how to limit.
+
+Start one from Mission control. `bun scripts/demo.ts --reset` drops the demo goals and tasks and deletes the repos and their worktrees (`~/worktrees/demo-*`); close any started goal's session with **Close goal** first.
