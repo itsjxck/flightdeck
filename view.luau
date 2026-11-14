@@ -275,17 +275,86 @@ local AGENT_STATES = {
 
 local function agentNode(agent)
 	local state = AGENT_STATES[agent.state] or AGENT_STATES.idle
-	local lines = { text("name", agent.name, "overseer.spaceName"), text("state", state.label, state.role) }
+	local stateLine = text("state", state.label, state.role)
+	-- With a Mission control task, the state line names it: "idle · T-12 · title"; the task opens Mission control.
+	if agent.task then
+		stateLine = ui.node("row", { key = "state", role = "overseer.agentStateLine" }, {
+			text("label", state.label .. " ·", state.role),
+			text("task", agent.task.ref .. " · " .. agent.task.title, "overseer.taskLink", {
+				title = "Open " .. agent.task.ref .. " in Mission control", actions = { click = "mission=" .. agent.task.ref },
+			}),
+		})
+	end
 	return ui.node("row", {
 		key = "a" .. tostring(agent.pane), role = "overseer.agentRow",
 		mark = if agent.active then "pick" else nil,
 		title = agent.title,
-		aria = agent.name .. ", " .. state.label,
+		aria = agent.name .. ", " .. state.label .. (if agent.task then ", " .. agent.task.ref else ""),
 		actions = { click = "agent=" .. tostring(agent.pane) },
 	}, {
 		ui.el("div", { key = "status", role = state.dot }),
-		ui.node("col", { key = "text", role = "overseer.agentText", grow = 1 }, lines),
+		ui.node("col", { key = "text", role = "overseer.agentText", grow = 1 }, { text("name", agent.name, "overseer.spaceName"), stateLine }),
 	})
+end
+
+-- "Needs you N": the sidebar's top line while questions wait; opens Mission control.
+local function needsYouNode(count)
+	return ui.node("row", {
+		key = "needs", role = "overseer.needsYou", title = "Open Mission control",
+		aria = tostring(count) .. (if count == 1 then " question needs you" else " questions need you"),
+		actions = { click = "mission" },
+	}, {
+		ui.el("div", { key = "status", role = "overseer.dotWaiting" }),
+		text("name", "Needs you", "overseer.spaceName", { grow = 1 }),
+		text("count", tostring(count), "overseer.count"),
+	})
+end
+
+local TASK_STATUS = { ready = "ready", todo = "waiting on others", done = "done", failed = "failed", dropped = "dropped" }
+
+-- A goal: its row (session, progress, menu) and, unfolded, one row per task.
+local function goalNode(goal)
+	local dot = if goal.dot then AGENT_STATES[goal.dot].dot else "overseer.dotOpen"
+	local head = {
+		ui.el("div", { key = "status", role = dot }),
+		text("name", goal.ref .. " · " .. goal.title, "overseer.spaceName", { grow = 1 }),
+	}
+	if goal.needsYou > 0 then table.insert(head, text("needs", tostring(goal.needsYou), "overseer.badgeBad", { title = "Questions waiting for you" })) end
+	table.insert(head, text("progress", tostring(goal.progress.done) .. "/" .. tostring(goal.progress.total), "overseer.count",
+		{ title = "Tasks done" }))
+	local line = ui.node("row", { key = "line", role = "overseer.spaceLine" }, {
+		ui.node("row", {
+			key = "row", role = "overseer.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",
+			actions = { click = if goal.session then "goal=" .. goal.session else "mission", menu = { "Open Mission control", "Close goal" } },
+		}, head),
+		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
+			iconButton("collapse", if goal.collapsed then "iconCollapsed" else "iconExpanded", "collapse=goal:" .. goal.ref,
+				(if goal.collapsed then "Show " else "Hide ") .. tostring(#goal.tasks) .. " tasks"),
+		}),
+	})
+	local children = { line }
+	if not goal.collapsed then
+		local rows = {}
+		for _, t in goal.tasks do
+			local state = t.state and AGENT_STATES[t.state]
+			table.insert(rows, ui.node("row", {
+				key = "t" .. t.ref, role = "overseer.worktreeRow",
+				title = t.ref .. " · " .. t.title .. "\n" .. (if state then "Agent " .. state.label else TASK_STATUS[t.status] or t.status),
+				actions = { click = if t.pane then "pane=" .. t.pane else "mission=" .. t.ref },
+			}, {
+				ui.el("div", { key = "status", role = if state then state.dot else "overseer.dotIdle" }),
+				text("name", t.ref .. " · " .. t.title, "overseer.worktreeName", { grow = 1 }),
+				text("status", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.hint"),
+			}))
+		end
+		table.insert(children, ui.node("col", { key = "tasks", role = "overseer.worktrees" }, rows))
+	end
+	return ui.node("col", { key = "g" .. goal.ref, role = "overseer.space" }, children)
+end
+
+-- The goal whose sidebar row `node` (an action's node id) belongs to, e.g. "G-3".
+function View.goalRef(node)
+	return type(node) == "string" and node:match("%.g(G%-%d+)%.line") or nil
 end
 
 -- A confirmation, shown in a canvas of its own over the tab; the canvas's
@@ -342,17 +411,24 @@ function View.confirmation(request)
 end
 
 function View.render(model)
-	local spaces = {
-		ui.node("row", { key = "header", role = "overseer.header" }, {
-			text("title", "Spaces", "overseer.heading", { grow = 1 }),
-			ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
-				iconButton("add", "iconPlus", "add", "New space in a folder"),
-				iconButton("refresh", if model.refreshing then "iconSyncSpin" else "iconSync", "refresh",
-					if model.refreshing then "Refreshing…" else "Refresh worktrees"),
-			}),
+	local spaces = {}
+	if (model.needsYou or 0) > 0 then table.insert(spaces, needsYouNode(model.needsYou)) end
+	table.insert(spaces, ui.node("row", { key = "header", role = "overseer.header" }, {
+		text("title", "Spaces", "overseer.heading", { grow = 1 }),
+		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
+			iconButton("add", "iconPlus", "add", "New space in a folder"),
+			iconButton("refresh", if model.refreshing then "iconSyncSpin" else "iconSync", "refresh",
+				if model.refreshing then "Refreshing…" else "Refresh worktrees"),
 		}),
-	}
+	}))
 	for _, space in model.spaces do table.insert(spaces, spaceNode(space)) end
+	if model.goals and #model.goals > 0 then
+		table.insert(spaces, ui.node("row", { key = "goals-header", role = "overseer.header" }, {
+			text("title", "Goals", "overseer.heading", { grow = 1 }),
+			text("count", tostring(#model.goals), "overseer.count"),
+		}))
+		for _, goal in model.goals do table.insert(spaces, goalNode(goal)) end
+	end
 
 	local agents = {
 		ui.node("row", { key = "header", role = "overseer.header" }, {

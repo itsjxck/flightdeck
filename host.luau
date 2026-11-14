@@ -231,3 +231,6 @@ tern.block.define("form", {
 		}
 	end,
 })
+
+-- Mission control (ui/): what agents need from you, what they work on, goals.
+require("./ui/block")

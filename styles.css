@@ -406,3 +406,98 @@
 [data-role='overseer.dangerButton']:hover {
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
+/* Mission control in the sidebar: the Needs you line, and an agent's task. */
+[data-role='overseer.needsYou'] {
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+[data-role='overseer.needsYou']:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+[data-role='overseer.agentStateLine'] {
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+[data-role='overseer.agentStateLine'] > :first-child {
+  flex-shrink: 0;
+}
+/* Same type as the state beside it (agentIdle and friends). */
+[data-role='overseer.taskLink'] {
+  font: inherit;
+  font-size: 0.82em;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+[data-role='overseer.taskLink']:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+/* The Mission control block. */
+[data-role='mission.root'] {
+  height: 100%;
+  padding: 10px 14px;
+  gap: 8px;
+}
+[data-role='mission.card'] {
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+[data-role='mission.row'] {
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+[data-role='mission.row']:hover,
+[data-role='mission.card']:hover {
+  background: color-mix(in srgb, var(--t4) 9%, transparent);
+}
+[data-role='mission.ref'] {
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+}
+[data-role='mission.group'] {
+  color: var(--t2);
+  font-weight: 600;
+  margin: 8px 0 2px;
+}
+[data-role='mission.thread'] {
+  gap: 8px;
+  padding-left: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
+}
+[data-role='mission.event'] {
+  gap: 2px;
+}
+[data-role='mission.foot'] {
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
+}
+[data-role='mission.root'] {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+[data-role='mission.root'] > [data-key='body'] {
+  align-items: flex-start;
+}
+[data-role='mission.foot'] > [data-role='overseer.field'] {
+  flex: 1 1 auto;
+}

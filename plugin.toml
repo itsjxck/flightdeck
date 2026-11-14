@@ -12,3 +12,8 @@ styles = ["styles.css", "icons.css"]
 id = "form"
 title = "Overseer form"
 palette = false
+
+[[blocks]]
+id = "mission"
+title = "Mission control"
+palette = false

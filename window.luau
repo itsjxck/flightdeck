@@ -417,13 +417,46 @@ local function model(cx)
 		if a.tab.position ~= b.tab.position then return a.tab.position < b.tab.position end
 		return a.pane < b.pane
 	end)
+	-- Mission control: what needs you, goals with their tasks, each agent's task.
+	local ms = mission.state.get()
+	local agentByPane = {}
+	for _, agent in agents do agentByPane[tostring(agent.pane)] = agent end
+	local sessionOfPane = {}
+	for session, pane in mission.sessionPanes do sessionOfPane[pane] = session end
+	result.needsYou = #ms.waiting
+	result.goals = {}
+	local URGENCY = { waiting = 3, working = 2, idle = 1 }
+	for _, g in ms.goals do
+		if g.status == "active" then
+			local goal = { ref = g.ref, title = g.title, session = g.tern_session, progress = g.progress or { done = 0, total = 0 },
+				needsYou = 0, dot = nil, tasks = {}, collapsed = collapsed["goal:" .. g.ref] == true }
+			for _, w in ms.waiting do if w.goal == g.ref then goal.needsYou += 1 end end
+			for _, t in ms.tasks do
+				if t.goal == g.id then
+					local pane = t.session and mission.sessionPanes[t.session]
+					local agent = pane and agentByPane[pane]
+					local state = if agent then agent.state else nil
+					if state and (not goal.dot or URGENCY[state] > URGENCY[goal.dot]) then goal.dot = state end
+					table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
+				end
+			end
+			if goal.needsYou > 0 then goal.dot = "waiting" end
+			table.insert(result.goals, goal)
+		end
+	end
 	for _, agent in agents do
-		local space = byId[agent.tab.session]
-		table.insert(result.agents, {
-			pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
-			name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.label or space.name else "Agent",
-			active = agent.tab.id == shown,
-		})
+		-- Agents in goal sessions show under their goal instead.
+		if not mission.state.isGoalSession(agent.tab.session) then
+			local space = byId[agent.tab.session]
+			local session = sessionOfPane[tostring(agent.pane)]
+			local task = session and mission.state.taskOf(session)
+			table.insert(result.agents, {
+				pane = agent.pane, state = agent.state, program = agent.program, title = agent.title,
+				name = if agent.tab.name and agent.tab.name ~= "" then agent.tab.name elseif space then space.label or space.name else "Agent",
+				active = agent.tab.id == shown,
+				task = task and { ref = task.ref, title = task.title },
+			})
+		end
 	end
 	return result, pending, renames
 end
@@ -1847,6 +1880,73 @@ local function showPane(cx, pane)
 	cx.layout:focus(pane)
 end
 
+-- Opens Mission control in a tab of its own, or shows the one already open.
+-- `task` (T-12) selects that task.
+local function openMissionControl(cx, task)
+	for _, pane in cx.session:panes() do
+		if pane.block == "overseer.mission" then
+			if task then tern.kv.set("mission:select", task) end
+			showPane(cx, pane.pane)
+			return
+		end
+	end
+	local ok, pane = pcall(function() return cx:new_block("overseer.mission", if task then { task } else {}, "tab") end)
+	if not ok or not pane then report(cx, "Couldn't open Mission control: " .. tostring(pane)) end
+end
+
+tern.command({ id = "mission", title = "Mission control", icon = "list", keys = { "cmd+alt+shift+m" },
+	run = function(cx) openMissionControl(cx) end })
+
+-- Closes goal `ref` (G-3): marks it done on the server and closes its session.
+-- Its worktrees stay, for review; Delete worktree removes them.
+local function closeGoal(cx, ref)
+	local goal
+	for _, g in mission.state.get().goals do if g.ref == ref then goal = g end end
+	if not goal then report(cx, "That goal is no longer active."); return end
+	mission.api("POST", "/api/goals/" .. goal.ref .. "/close", { status = "done" }, function(_, err, nextCx)
+		if err then if nextCx then report(nextCx, "Couldn't close " .. goal.ref .. ": " .. err) end; return end
+		if nextCx and goal.tern_session then pcall(function() nextCx.sessions:close(tonumber(goal.tern_session)) end) end
+		oplog.write("info", { op = "mission", event = "goal closed", detail = goal.ref })
+	end)
+end
+
+-- Requests from the Mission control block (host half), which can't open
+-- sessions or focus panes itself: kv `mission:requests`, a list of
+-- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" } or { kind = "review", task = "T-12" }.
+local function missionRequests(cx)
+	local requests = tern.kv.get("mission:requests")
+	if type(requests) ~= "table" or #requests == 0 then return end
+	tern.kv.set("mission:requests", {})
+	local ms = mission.state.get()
+	for _, r in requests do
+		if r.kind == "start" then
+			for _, g in ms.goals do
+				if g.ref == r.goal and g.status == "proposed" then
+					local dir
+					for _, t in ms.tasks do if t.goal == g.id then dir = t.repoPath or missionHooks.repoPath(t.repo); break end end
+					mission.startGoal(g, dir or tern.getenv("HOME") or "/", function(err)
+						if err then tern.log.warn("Overseer: couldn't start " .. g.ref .. ": " .. err) end
+					end)
+				end
+			end
+		elseif r.kind == "review" then
+			-- A tab in the task's worktree; the Branch widget there opens Tern's
+			-- Review changes (plugins can't open it directly in Tern 0.9.21).
+			for _, t in ms.tasks do
+				if t.ref == r.task and t.worktree then
+					cx.layout:new_tab({ cwd = t.worktree })
+					cx:toast("info", "Review " .. t.ref, "Click the Branch widget to step through its changes.")
+				end
+			end
+		elseif r.kind == "go" then
+			for _, t in ms.tasks do
+				local pane = t.ref == r.task and t.session and mission.sessionPanes[t.session]
+				if pane then showPane(cx, tonumber(pane)) end
+			end
+		end
+	end
+end
+
 local function spaceRepo(cx, node)
 	local space = spaceInfo(cx, view.spaceId(node))
 	local repo = space and repoById(space.repo)
@@ -1860,6 +1960,11 @@ tern.on("canvas_action", function(ev, cx)
 	elseif ev.act == "refresh" then
 		refreshByHand(cx)
 	elseif ev.act == "collapse" then collapsed[ev.value] = not collapsed[ev.value]; redraw(cx)
+	elseif ev.act == "mission" or ev.act == "Open Mission control" then openMissionControl(cx, ev.value)
+	elseif ev.act == "goal" then
+		local id = tonumber(ev.value)
+		if id then cx.sessions:switch(id); follow(cx) end
+	elseif ev.act == "Close goal" then closeGoal(cx, view.goalRef(ev.node))
 	elseif ev.act == "create" then
 		local project = repoById(ev.value)
 		if project then openForm(cx, "create", project) end
@@ -2032,6 +2137,7 @@ tick = function(generation, cx)
 		end
 		mission.tick(tickCx, live, missionHooks)
 	end)
+	separately(missionRequests)
 	separately(follow)
 	separately(closeEmptySessions)
 	separately(closeOrphanedSessions)
