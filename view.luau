@@ -349,7 +349,7 @@ local function goalNode(goal)
 			}, {
 				ui.el("div", { key = "status", role = if state then state.dot else "overseer.dotIdle" }),
 				text("name", t.ref .. " · " .. t.title, "overseer.worktreeName", { grow = 1 }),
-				text("status", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.hint"),
+				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.hint"),
 			}))
 		end
 		table.insert(children, ui.node("col", { key = "tasks", role = "overseer.worktrees" }, rows))
