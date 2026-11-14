@@ -167,10 +167,19 @@ local function setAgentState(cx, pane, state)
 end
 local AGENT_RESYNC_MS = 30000
 local agentsSyncedAt = -AGENT_RESYNC_MS
+-- Agent blocks Tern lists as running an agent. Their pane can report a shell
+-- as its program with no command line (omp re-exec'd by /restart), so this,
+-- not the program name, says an agent block is live.
+local liveAgents = {}
 local function syncAgents(cx)
 	if tern.now() - agentsSyncedAt < AGENT_RESYNC_MS then return end
 	agentsSyncedAt = tern.now()
-	for _, agent in cx.agents:list() do setAgentState(cx, agent.pane, agent.state) end
+	local live = {}
+	for _, agent in cx.agents:list() do
+		setAgentState(cx, agent.pane, agent.state)
+		if agent.state ~= "exited" then live[agent.pane] = true end
+	end
+	liveAgents = live
 end
 
 local HOME = tern.getenv("HOME") or ""
@@ -236,9 +245,9 @@ end
 
 -- Running agents in this window, and agent activity per session id (as a
 -- string). Native agent blocks report their state (agentStates). A block
--- whose agent has exited falls back to its shell, so it counts while its
--- program, or the command running in it, is an agent CLI (a block started
--- without a shell has no `running` line). Agent CLIs in plain terminals only
+-- counts while Tern lists it as running an agent (liveAgents) or its program
+-- or command line is an agent CLI; a block whose agent exited back to its
+-- shell drops out. Agent CLIs in plain terminals only
 -- report progress, which Tern exposes as `busy` (a CLI that hasn't reported
 -- progress yet counts as busy while it runs).
 local function agentPanes(tabsById, panes)
@@ -249,8 +258,8 @@ local function agentPanes(tabsById, panes)
 			local state, program
 			local line = pane.running and pane.running.line
 			local cli = (line and runsAgent(line)) or (if AGENTS[pane.program or ""] then pane.program else nil)
-			if pane.kind == "agent" and cli then
-				state, program = agentStates[pane.pane] or (if unseen[pane.pane] then "waiting" else "idle"), cli
+			if pane.kind == "agent" and (cli or liveAgents[pane.pane]) then
+				state, program = agentStates[pane.pane] or (if unseen[pane.pane] then "waiting" else "idle"), cli or "omp"
 			elseif pane.kind == "terminal" and line then
 				program = runsAgent(line)
 				if program then state = if pane.busy then "working" else "idle" end
