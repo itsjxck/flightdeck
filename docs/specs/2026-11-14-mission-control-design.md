@@ -209,9 +209,14 @@ machines, agents other than omp as workers.
 - **Starting agents in the background** (checked 2026-11-14): `tern new
   session NAME --cwd DIR -- omp …` and `tern new tab SESSION --cwd DIR -- omp …`
   open in the background: the focused pane and shown session didn't change.
-  These panes look the same to Tern as the omp sessions in use today (a shell
-  running `omp`). Overseer starts goal sessions and workers this way, never
-  with `cx.agents:start`, which opens beside the focused pane.
+  omp started this way opens in Tern's native omp view (confirmed by the user),
+  like the omp sessions in use today. Overseer starts goal sessions and
+  workers this way, never with `cx.agents:start`, which opens beside the
+  focused pane.
+- **Focus:** omp started with a prompt pulled focus to its pane within seconds
+  (twice); without a prompt it didn't. Cause unknown. To test first: start omp
+  without a prompt, then send the brief with `tern send`. If focus still moves,
+  ask Stencil.
 - **Rich input in a block:** Tern blocks support text fields and buttons
   (Overseer's forms use them); long replies are written in the thread's field.
 
