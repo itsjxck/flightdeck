@@ -304,9 +304,11 @@ local function model(cx)
 		end
 	end
 
-	-- Every session is a space, named by you or else after its folder.
+	-- Every session is a space, named by you or else after its folder. Goal
+	-- sessions (Mission control) are left out: they show under Goals.
 	local spaces, byId = {}, {}
 	for index, info in cx.session:sessions() do
+		if mission.state.isGoalSession(info.id) then continue end
 		local dir = spaceDir(cx, info, panesById)
 		local repo = if dir then dirRepo[dir] else nil
 		if dir and repo == nil then pending[dir] = true end
@@ -520,6 +522,8 @@ local function redraw(_cx)
 		if not ok and problem ~= tostring(err) then report(cx, err) end
 	end)
 end
+-- A new Mission control state redraws the sidebar (Goals, Needs you, agents' tasks).
+missionHooks.changed = redraw
 
 local PR_REFRESH_MS = 120000
 

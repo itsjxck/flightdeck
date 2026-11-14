@@ -7,6 +7,7 @@
 --   launch.luau      opens agent panes in the background, then sends their brief
 --   goals.luau       starts goals in sessions of their own
 --   workers.luau     starts workers (own worktree, tab in the goal's session), stops them
+--   state.luau       the last server state, for the sidebar
 --
 -- Every server call is a tern.fetch with a callback of its own, so no single
 -- callback nears Tern's 50 ms budget.
@@ -16,6 +17,7 @@ local deliveries = require("./mission/deliveries")
 local launch = require("./mission/launch")
 local goals = require("./mission/goals")
 local workers = require("./mission/workers")
+local state = require("./mission/state")
 
 local M = {}
 
@@ -23,13 +25,16 @@ local POLL_MS = 2000
 
 M.api = client.api
 M.startOldestProposedGoal = goals.startOldestProposed
+M.startGoal = goals.start
+M.state = state
 -- Which pane each omp session runs in, from the last poll ({ [session] = pane }).
 M.sessionPanes = {}
 
 local polling, lastPoll = false, -POLL_MS
 
 -- Called from Overseer's tick. `panes`: every live terminal and agent pane id (strings).
--- `hooks`: what the window knows (see missionHooks in window.luau).
+-- `hooks`: what the window knows (see missionHooks in window.luau); hooks.changed(cx)
+-- runs when the server's state changed, so the sidebar redraws.
 function M.tick(cx, panes, hooks)
 	server.watch()
 	launch.flush(cx)
@@ -40,7 +45,12 @@ function M.tick(cx, panes, hooks)
 		if err or type(map) ~= "table" then polling = false; return end
 		M.sessionPanes = map
 		deliveries.run(map, function()
-			workers.run(hooks, function() polling = false end)
+			workers.run(hooks, function()
+				client.api("GET", "/api/state", nil, function(fresh, _, stateCx)
+					polling = false
+					if state.set(fresh) and stateCx then hooks.changed(stateCx) end
+				end)
+			end)
 		end)
 	end)
 end
