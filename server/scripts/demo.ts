@@ -1,5 +1,5 @@
 // Demo scenarios for Mission control: three small fake repositories and
-// three proposed goals across them, for trying goals end to end with real
+// four proposed goals across them (one with no tasks, for the coordinator to plan), for trying goals end to end with real
 // agents. Start a goal from Mission control; its coordinator and workers do
 // the work in worktrees (~/worktrees/demo-*).
 //
@@ -127,6 +127,12 @@ const GOALS = [
       { key: "css", repo: "demo-storefront", title: "Use dark tokens when the system is dark", needs: ["tokens"],
         body: "Add a prefers-color-scheme: dark block to src/theme.css using the new dark tokens." },
     ],
+  },
+  {
+    // No tasks: the coordinator reads the repos and plans the work itself.
+    title: "Order history",
+    body: "Signed-in shoppers can see their past orders. demo-payments should list a shopper's charges (an in-memory list is fine), and demo-storefront should show them on an order history page model. No tasks are planned: work out the tasks across demo-payments and demo-storefront yourself.",
+    tasks: [],
   },
   {
     title: "Rate-limit login",

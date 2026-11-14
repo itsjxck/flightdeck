@@ -31,6 +31,8 @@ end
 -- Who the reply field writes to: the open thread, else the selected question.
 local function replyTarget(state)
 	if state.newTask then return "New task", "Title of a task for later, Enter adds it" end
+	if state.newGoal and not state.newGoal.title then return "New goal", "What should be true when it's done? A short title, Enter" end
+	if state.newGoal then return "New goal", "Details for the coordinator (repos, constraints), or Enter to skip" end
 	if state.thread then return state.thread.task, nil end
 	if state.tab == "backlog" then return nil, nil end
 	local row = selectedRow(state)
@@ -76,8 +78,21 @@ end
 
 local function send(state, cx)
 	local body = state.reply.text
+	-- A new goal's details are optional: Enter on an empty field proposes it.
+	if state.newGoal and state.newGoal.title then
+		model.api("POST", "/api/goals", { title = state.newGoal.title, body = body }, function(g, err)
+			state.error = err or (g and (g.ref .. " proposed. Start it when you're ready; its coordinator plans the tasks."))
+			refresh(state, cx)
+		end)
+		state.newGoal, state.reply = nil, Input.new("")
+		return
+	end
 	if not string.find(body, "%S") then return end
 	local target = replyTarget(state)
+	if state.newGoal then
+		state.newGoal.title, state.reply = body, Input.new("")
+		return
+	end
 	if state.newTask then
 		local row = selectedRow(state)
 		local repo = row and row.item.repo or "personal"
@@ -154,34 +169,36 @@ local DEF = {
 	end,
 	key = function(state, key, cx)
 		local list, index = rows(state)
-		local typing = state.reply.text ~= ""
+		local typing = state.reply.text ~= "" or state.newTask or state.newGoal ~= nil
 		if key.name == "up" or key.name == "down" then
 			local next = list[math.clamp(index + (if key.name == "up" then -1 else 1), 1, math.max(#list, 1))]
 			if next then state.selectedRef = next.item.task or next.item.ref end
 		elseif key.name == "escape" or key.name == "esc" then
-			if typing then state.reply = Input.new("")
-			elseif state.newTask then state.newTask = false
+			if state.reply.text ~= "" then state.reply = Input.new("")
+			elseif state.newTask or state.newGoal then state.newTask, state.newGoal = false, nil
 			elseif state.thread then state.thread = nil
 			else return false end
-		elseif not typing and not state.newTask and (key.name == "[" or key.name == "]" or key.name == "bracketleft" or key.name == "bracketright") then
+		elseif not typing and (key.name == "[" or key.name == "]" or key.name == "bracketleft" or key.name == "bracketright") then
 			switchTab(state, cx, stepTab(state, if key.name == "[" or key.name == "bracketleft" then -1 else 1))
 		elseif key.name == "enter" then
 			if typing then send(state, cx) else activate(state, cx) end
-		elseif not typing and not state.newTask and string.match(key.name, "^[1-9]$") then
+		elseif not typing and string.match(key.name, "^[1-9]$") then
 			local row = list[index]
 			if not (row and row.kind == "question" and answerOption(state, cx, row.item.task, tonumber(key.name))) then return false end
-		elseif not typing and not state.newTask and key.name == "o" then
+		elseif not typing and key.name == "o" then
 			local row = list[index]
 			if not row or row.kind == "proposal" or row.kind == "goal" then return false end
 			openThread(state, cx, row.item.task or row.item.ref)
-		elseif not typing and not state.newTask and key.name == "r" then
+		elseif not typing and key.name == "r" then
 			local row = list[index]
 			if not row or row.kind ~= "task" then return false end
 			model.request({ kind = "review", task = row.item.ref })
-		elseif not typing and not state.newTask and key.name == "t" then
+		elseif not typing and key.name == "t" then
 			state.showTodo = not state.showTodo
-		elseif not typing and not state.newTask and key.name == "n" then
+		elseif not typing and key.name == "n" then
 			state.newTask = true
+		elseif not typing and key.name == "g" then
+			state.newGoal = {}
 		else
 			if not replyTarget(state) then return false end
 			local handled, err = Input.key(state.reply, key)

@@ -39,10 +39,11 @@ Answers and agents' messages are queued as events; Overseer fetches `/api/delive
 
 ## Demo scenarios
 
-`bun scripts/demo.ts` creates three small repositories in `~/projects/overseer-demo` (`demo-payments`, `demo-storefront`, `demo-design-system`) and proposes three goals across them, plus one task for later:
+`bun scripts/demo.ts` creates three small repositories in `~/projects/overseer-demo` (`demo-payments`, `demo-storefront`, `demo-design-system`) and proposes four goals across them, plus one task for later:
 
 - **Add Apple Pay to checkout**: three tasks in three repos; the storefront task waits for the other two.
 - **Dark mode**: two tasks; the first asks you which brand colour to use.
 - **Rate-limit login**: one task that asks you how to limit.
+- **Order history**: no tasks; its coordinator reads the repos and plans them.
 
 Start one from Mission control. `bun scripts/demo.ts --reset` drops the demo goals and tasks and deletes the repos and their worktrees (`~/worktrees/demo-*`); close any started goal's session with **Close goal** first.

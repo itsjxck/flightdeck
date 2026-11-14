@@ -200,6 +200,29 @@ export class Store {
     return this.task(t.id);
   }
 
+  // A coordinator reshaping its plan. Title and body change any time; repo and
+  // needs only before the task starts (needs replaces the list).
+  editTask(goal: number, task: number, a: { title?: string; body?: string; repo?: string; needs?: number[] }) {
+    const t = this.task(task);
+    if (t.goal !== goal) throw new Error(`${Store.tid(task)} isn't part of ${Store.gid(goal)}`);
+    const started = !["todo", "ready"].includes(t.status);
+    if (started && (a.repo != null || a.needs != null)) throw new Error(`${Store.tid(task)} has started; only its title and body can change`);
+    const fields: Partial<Task> = {};
+    if (a.title != null) fields.title = a.title;
+    if (a.body != null) fields.body = a.body;
+    if (a.repo != null) fields.repo = a.repo;
+    if (Object.keys(fields).length) this.touch(task, fields);
+    if (a.needs != null) {
+      for (const n of a.needs) if (this.task(n).goal !== goal) throw new Error(`${Store.tid(n)} isn't part of ${Store.gid(goal)}`);
+      this.db.query("delete from deps where task = ?").run(task);
+      for (const n of a.needs) this.db.query("insert into deps (task, needs) values (?, ?)").run(task, n);
+      // Re-derive readiness from the new needs.
+      this.touch(task, { status: "todo" });
+      this.promote(task);
+    }
+    return this.task(task);
+  }
+
   dropTask(goal: number, task: number) {
     const t = this.task(task);
     if (t.goal !== goal) throw new Error(`${Store.tid(task)} isn't part of ${Store.gid(goal)}`);
@@ -212,6 +235,10 @@ export class Store {
 
   learnRepo(name: string, path: string) {
     this.db.query("insert into repos (name, path) values (?, ?) on conflict(name) do update set path = excluded.path").run(name, path);
+  }
+
+  repos(): { name: string; path: string }[] {
+    return this.db.query("select name, path from repos order by name").all() as { name: string; path: string }[];
   }
 
   repoPath(name: string | null): string | null {

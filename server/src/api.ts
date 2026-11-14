@@ -26,9 +26,13 @@ function workerBrief(store: Store, workerId: number) {
 
 export function coordinatorBrief(store: Store, goal: number) {
   const g = store.goal(goal);
+  const repos = store.repos();
   return [
     `You coordinate goal ${Store.gid(g.id)}: ${g.title}.`, g.body,
-    `First call goal_join with "${Store.gid(g.id)}". Then start workers on ready tasks with worker_start,`,
+    `First call goal_join with "${Store.gid(g.id)}"; it lists any tasks planned so far.`,
+    `You own the plan: it may be empty or partial. Read the repositories you need, then break the goal into tasks with goal_plan (add, edit, drop) as you learn more; ask the user with ask_user when the goal is unclear.`,
+    repos.length ? `Repositories Overseer knows (use these names as a task's repo):\n${repos.map((r) => `- ${r.name}: ${r.path}`).join("\n")}` : "",
+    `Start workers on ready tasks with worker_start,`,
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
@@ -93,6 +97,12 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
           { title: field(body, "title"), body: typeof body.body === "string" ? body.body : "", repo }));
       }
       case "POST goals": {
+        // A goal you propose from Mission control: a title and what done looks like; its coordinator plans the tasks.
+        if (!parts[1]) {
+          const g = store.proposeGoal({ session: "you", repo: null, branch: null, cwd: null },
+            { title: field(body, "title"), body: typeof body.body === "string" ? body.body : "", tasks: [] });
+          return json({ ...g, ref: Store.gid(g.id) });
+        }
         const goal = Store.parseGoal(parts[1] ?? "");
         if (parts[2] === "start") { store.startGoal(goal); return json({ brief: coordinatorBrief(store, goal) }); }
         if (parts[2] === "session") { store.setGoalSession(goal, field(body, "ternSession")); return json({ ok: true }); }

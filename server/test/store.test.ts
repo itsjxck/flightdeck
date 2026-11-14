@@ -140,6 +140,20 @@ describe("goals and conversation", () => {
     expect(again.context).toBe("Also update the docs.");
   });
 
+  test("a goal can start with no tasks; its coordinator adds, edits and rewires them", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const a = store.addTask(me, { title: "a", repo: "x", goal: g.id });
+    const b = store.addTask(me, { title: "b", repo: "x", goal: g.id });
+    expect(store.task(b.id).status).toBe("ready");
+    store.editTask(g.id, b.id, { title: "b2", needs: [a.id] });
+    expect(store.task(b.id)).toMatchObject({ title: "b2", status: "todo" });
+    store.editTask(g.id, b.id, { needs: [] });
+    expect(store.task(b.id).status).toBe("ready");
+  });
+
   test("the coordinator finishing its own task marks the goal finished, without another summary request", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });

@@ -183,6 +183,19 @@ local function threadSection(thread, now)
 	})
 end
 
+-- The dock: the reply field when something takes text, then what the keys do.
+local function dockNode(view, keys)
+	local dock = {}
+	if view.replyTo then
+		local props = Input.props(view.reply)
+		props.key, props.role, props.grow = "reply", "mission.reply", 1
+		props.placeholder = view.replyHint or ("Answer " .. view.replyTo .. " and press Enter")
+		table.insert(dock, row("replyRow", "mission.replyRow", { text("to", view.replyTo, "mission.replyTo"), ui.node("input", props) }))
+	end
+	table.insert(dock, text("keys", keys, "mission.keys"))
+	return col("dock", "mission.dock", dock)
+end
+
 -- Mission control's tabs, in order: id and label.
 M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" } }
 
@@ -257,9 +270,8 @@ function M.view(view)
 		view.agentOf = agentOf
 		for _, node in backlogNodes(view) do table.insert(main, node) end
 		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main), col("dock", "mission.dock", {
-			text("keys", "[ ] tabs   ↑↓ move   Enter show tasks / go to agent   o thread", "mission.keys"),
-		})
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+			dockNode(view, "[ ] tabs   ↑↓ move   Enter show tasks / go to agent   o thread   g new goal")
 	end
 
 	-- Your turn
@@ -339,7 +351,7 @@ function M.view(view)
 			}, { actions = { click = "select=" .. g.ref } }))
 		end
 		table.insert(main, col("proposed", "mission.section", {
-			sectionHead("head", "Proposed by agents", "starting one opens its own session"),
+			sectionHead("head", "Proposed goals", "starting one opens its own session; its coordinator plans the tasks"),
 			col("list", "mission.strips", cards),
 		}))
 	end
@@ -357,16 +369,8 @@ function M.view(view)
 
 	if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 
-	local dock = {}
-	if view.replyTo then
-		local props = Input.props(view.reply)
-		props.key, props.role, props.grow = "reply", "mission.reply", 1
-		props.placeholder = view.replyHint or ("Answer " .. view.replyTo .. " and press Enter")
-		table.insert(dock, row("replyRow", "mission.replyRow", { text("to", view.replyTo, "mission.replyTo"), ui.node("input", props) }))
-	end
-	table.insert(dock, text("keys", "[ ] tabs   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   t later   n new task", "mission.keys"))
-
-	return ui.node("scroll", { key = "main", role = "mission.main" }, main), col("dock", "mission.dock", dock)
+	return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+		dockNode(view, "[ ] tabs   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   t later   n new task   g new goal")
 end
 
 do

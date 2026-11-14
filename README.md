@@ -49,7 +49,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 **Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a locked session of its own, also called Mission control, left out of Spaces. It shows:
 
 - **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
-- **Proposed goals**: <kbd>Enter</kbd> (or Start) opens the goal in a session of its own, with a coordinator that starts workers in their own worktrees.
+- **Proposed goals**: from agents (`goal_propose`) or from you (<kbd>g</kbd>: a title, then optional details). A goal needs no tasks: <kbd>Enter</kbd> (or Start goal) opens it in a session of its own, where its coordinator reads the repositories, plans the tasks (`goal_plan` add, edit, drop), starts workers in their own worktrees and manages them to the end.
 - **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
 - **Finished goals** (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
 - **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.

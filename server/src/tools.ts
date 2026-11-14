@@ -76,9 +76,9 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     needs: z.array(z.string()).optional().describe("Keys of tasks listed before this one"), readonly: z.boolean().optional() });
 
   tool("goal_propose",
-    "Propose a goal that spans tasks, usually across repositories, with dependencies. The user sees it in Mission control and starts it; a coordinator then runs it in its own session. Don't start the work yourself.",
-    { title: z.string(), body: z.string(), tasks: z.array(planTask).min(1) },
-    (c, a) => `${Store.gid(store.proposeGoal(c, a).id)} proposed; the user will start it.`);
+    "Propose a goal: a clear outcome, often across repositories. The body should say what done looks like and which repositories are involved. Tasks are optional: the coordinator that runs the goal plans and manages them itself; list some only when you already know them. The user sees it in Mission control and starts it; a coordinator then runs it in its own session. Don't start the work yourself.",
+    { title: z.string(), body: z.string(), tasks: z.array(planTask).optional() },
+    (c, a) => `${Store.gid(store.proposeGoal(c, { ...a, tasks: a.tasks ?? [] }).id)} proposed; the user will start it.`);
 
   tool("goal_join",
     "Coordinator only: your first call. Makes you the coordinator of the goal named in your brief.",
@@ -88,15 +88,22 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
       return `You coordinate ${Store.gid(g.id)}: ${g.title}.\n` + store.listTasks({ goal: g.id }).map(line).join("\n");
     });
 
+  const editTask = z.object({ task: z.string(), title: z.string().optional(), body: z.string().optional(), repo: z.string().optional(),
+    needs: z.array(z.string()).optional().describe("Replaces what it waits for: task ids, or keys added in this call") });
+
   tool("goal_plan",
-    "Coordinator only: add tasks to your goal (needs may name existing task ids or keys added in this call), or drop tasks.",
-    { add: z.array(planTask).optional(), drop: z.array(z.string()).optional() },
+    "Coordinator only: shape your goal's plan. add tasks (needs may name existing task ids or keys added in this call), edit tasks (title and body any time; repo and needs before they start), drop tasks. Returns the plan.",
+    { add: z.array(planTask).optional(), edit: z.array(editTask).optional(), drop: z.array(z.string()).optional() },
     (c, a) => {
       const g = store.coordinatorGoalFor(c.session);
       const keys = new Map<string, number>();
       for (const t of a.add ?? []) {
         const needs = (t.needs ?? []).map((n) => keys.get(n) ?? Store.parseTask(n));
         keys.set(t.key, store.addTask(c, { title: t.title, body: t.body, repo: t.repo, goal: g.id, needs, readonly: t.readonly }).id);
+      }
+      for (const e of a.edit ?? []) {
+        store.editTask(g.id, Store.parseTask(e.task), { title: e.title, body: e.body, repo: e.repo,
+          needs: e.needs?.map((n) => keys.get(n) ?? Store.parseTask(n)) });
       }
       for (const ref of a.drop ?? []) store.dropTask(g.id, Store.parseTask(ref));
       return store.listTasks({ goal: g.id }).map(line).join("\n");
