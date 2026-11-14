@@ -1740,6 +1740,17 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
 tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
+-- Until Mission control (plan 3) shows proposals: starts the oldest proposed goal.
+tern.command({ id = "start-goal", title = "Start proposed goal", icon = "branch", run = function(cx)
+	cx:toast("info", "Starting the oldest proposed goal", "It opens in a session of its own; you stay here.")
+	mission.startOldestProposedGoal(missionHooks.repoPath, function(err, goal, doneCx)
+		local message = if err then "Couldn't start a goal: " .. err elseif not goal then "No goals are proposed. Agents propose them with goal_propose." else nil
+		if message then
+			tern.log.warn("Overseer: " .. message)
+			if doneCx then doneCx:toast(if err then "error" else "info", "Start proposed goal", message) end
+		end
+	end)
+end })
 
 -- Session ids in the order Spaces lists them: each space, then its worktrees'
 -- open sessions unless the space is collapsed. `at` gives every session's

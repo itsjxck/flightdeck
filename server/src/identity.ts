@@ -8,6 +8,9 @@ import type { Caller } from "./store";
 const SESSION_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 const TERN = process.env.TERN_EXE || "/Applications/Tern.app/Contents/MacOS/tern";
 const CACHE_MS = 30_000;
+// A fresh omp opens its session file on its first message, a moment after
+// Overseer starts asking about its pane: misses expire fast.
+const MISS_MS = 2_000;
 
 export function sessionFromArgv(argv: string[]): string | null {
   const i = argv.findIndex((a) => a === "--resume" || a === "--restore");
@@ -57,7 +60,7 @@ const cache = new Map<string, { at: number; caller: Caller | null }>();
 // The omp session in `pane`, with its folder, repository and branch; null when the pane runs no omp session.
 export function resolvePane(pane: string): Caller | null {
   const hit = cache.get(pane);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.caller;
+  if (hit && Date.now() - hit.at < (hit.caller ? CACHE_MS : MISS_MS)) return hit.caller;
   const caller = lookup(pane);
   cache.set(pane, { at: Date.now(), caller });
   return caller;

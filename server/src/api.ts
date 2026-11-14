@@ -37,7 +37,7 @@ function state(store: Store) {
   const goalIds = new Set(goals.map((g) => g.id));
   const tasks = store.listTasks({})
     .filter((t) => !FINISHED.includes(t.status) || (t.goal != null && goalIds.has(t.goal)))
-    .map((t) => ({ ...t, ref: Store.tid(t.id),
+    .map((t) => ({ ...t, ref: Store.tid(t.id), repoPath: store.repoPath(t.repo),
       lastNote: store.events(t.id).filter((e) => e.kind === "note").at(-1)?.body ?? null }));
   const waiting = store.waiting().map((w) => ({ task: Store.tid(w.task.id), title: w.task.title, repo: w.task.repo,
     goal: w.task.goal != null ? Store.gid(w.task.goal) : null, question: w.question.body,
