@@ -18,14 +18,22 @@ export function sessionFromArgv(argv: string[]): string | null {
   return m ? m[0] : null;
 }
 
-export function sessionFromLsof(output: string): string | null {
+// The omp session file open in `lsof -Fpn` output, and the pid holding it.
+export function sessionFromLsof(output: string): { session: string; pid: string } | null {
+  let pid = "";
   for (const line of output.split("\n")) {
-    if (line.startsWith("n") && line.includes("/.omp/") && line.includes("/sessions/") && line.endsWith(".jsonl")) {
+    if (line.startsWith("p")) pid = line.slice(1);
+    else if (line.startsWith("n") && line.includes("/.omp/") && line.includes("/sessions/") && line.endsWith(".jsonl")) {
       const m = SESSION_ID.exec(basename(line));
-      if (m) return m[0];
+      if (m) return { session: m[0], pid };
     }
   }
   return null;
+}
+
+function cwdOf(pid: string): string | null {
+  const line = run(["/usr/sbin/lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"]).split("\n").find((l) => l.startsWith("n"));
+  return line ? line.slice(1) : null;
 }
 
 export function repoName(commonGitDir: string): string {
@@ -41,14 +49,16 @@ function run(cmd: string[]): string {
   return r.stdout.toString();
 }
 
-interface PaneProcess { pid?: number; argv?: string[]; cwd?: string }
+interface PaneProcess { pid?: number; group?: number; argv?: string[]; cwd?: string }
 
 function paneProcess(pane: string): PaneProcess | null {
   try {
     const info: unknown = JSON.parse(run([TERN, "process", pane, "--json"]));
     if (!info || typeof info !== "object") return null;
     const proc = ("foreground" in info ? info.foreground : undefined) ?? ("child" in info ? info.child : undefined);
-    return proc && typeof proc === "object" ? proc as PaneProcess : null;
+    if (!proc || typeof proc !== "object") return null;
+    const group = "group" in info && typeof info.group === "number" ? info.group : undefined;
+    return { ...(proc as PaneProcess), group };
   } catch {
     return null;
   }
@@ -69,9 +79,13 @@ export function resolvePane(pane: string): Caller | null {
 function lookup(pane: string): Caller | null {
   const proc = paneProcess(pane);
   if (!proc?.pid) return null;
-  const session = sessionFromLsof(run(["/usr/sbin/lsof", "-a", "-p", String(proc.pid), "-Fpn"])) ?? sessionFromArgv(proc.argv ?? []);
+  // The whole process group: a worker's pane runs Worktrunk, with omp as its child.
+  const select = proc.group ? ["-g", String(proc.group)] : ["-p", String(proc.pid)];
+  const open = sessionFromLsof(run(["/usr/sbin/lsof", "-a", ...select, "-Fpn"]));
+  const session = open?.session ?? sessionFromArgv(proc.argv ?? []);
   if (!session) return null;
-  const cwd = proc.cwd ?? null;
+  // omp's own folder (a worker's worktree), not Worktrunk's.
+  const cwd = (open && open.pid !== String(proc.pid) ? cwdOf(open.pid) : null) ?? proc.cwd ?? null;
   let repo: string | null = null, branch: string | null = null, root: string | null = null;
   if (cwd) {
     const common = run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"]).trim();

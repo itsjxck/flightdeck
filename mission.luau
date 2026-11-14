@@ -6,6 +6,7 @@
 --   deliveries.luau  your answers and agents' messages, to the right pane
 --   launch.luau      opens agent panes in the background, then sends their brief
 --   goals.luau       starts goals in sessions of their own
+--   workers.luau     starts workers (own worktree, tab in the goal's session), stops them
 --
 -- Every server call is a tern.fetch with a callback of its own, so no single
 -- callback nears Tern's 50 ms budget.
@@ -14,6 +15,7 @@ local server = require("./mission/server")
 local deliveries = require("./mission/deliveries")
 local launch = require("./mission/launch")
 local goals = require("./mission/goals")
+local workers = require("./mission/workers")
 
 local M = {}
 
@@ -28,7 +30,7 @@ local polling, lastPoll = false, -POLL_MS
 
 -- Called from Overseer's tick. `panes`: every live terminal and agent pane id (strings).
 -- `hooks`: what the window knows (see missionHooks in window.luau).
-function M.tick(cx, panes, _hooks)
+function M.tick(cx, panes, hooks)
 	server.watch()
 	launch.flush(cx)
 	if not server.healthy() or polling or tern.now() - lastPoll < POLL_MS then return end
@@ -37,7 +39,9 @@ function M.tick(cx, panes, _hooks)
 	client.api("POST", "/api/panes", { panes = panes }, function(map, err)
 		if err or type(map) ~= "table" then polling = false; return end
 		M.sessionPanes = map
-		deliveries.run(map, function() polling = false end)
+		deliveries.run(map, function()
+			workers.run(hooks, function() polling = false end)
+		end)
 	end)
 end
 

@@ -3,8 +3,11 @@
 -- The brief is not passed on omp's command line: an omp started with a
 -- prompt begins its first turn before MCP discovery finishes (omp waits only
 -- 1.5 s), so it may not see the overseer tools at all. Instead the pane opens
--- with plain `omp`, and the brief is sent with cx.agents:ask BRIEF_DELAY_MS
--- later, which queues it until omp can take input.
+-- with plain `omp`, and the brief is sent with cx.agents:ask once Tern has
+-- seen an agent in the pane for BRIEF_DELAY_MS. A worker's pane runs
+-- Worktrunk first (worktree setup can take minutes), so the clock only starts
+-- when omp does. A brief whose pane never gets an agent is dropped after
+-- GIVE_UP_MS, with a warning.
 --
 -- `tern new session|tab` open without moving your focus (checked 2026-11-14).
 local client = require("./client")
@@ -12,8 +15,9 @@ local client = require("./client")
 local M = {}
 
 local BRIEF_DELAY_MS = 8000
+local GIVE_UP_MS = 15 * 60 * 1000
 
--- Briefs waiting for their pane: { pane, brief, at }.
+-- Briefs waiting for their pane: { pane, brief, at, agentSince }.
 local pending = {}
 
 -- The Tern session holding `pane`, from `tern ls --json` output; nil when absent.
@@ -50,15 +54,26 @@ function M.open(args, brief, done)
 	if not ok then done(tostring(err)) end
 end
 
--- Sends briefs whose delay has passed; call it every tick.
+-- Sends briefs whose pane has run an agent for BRIEF_DELAY_MS; call it every tick.
 function M.flush(cx)
 	local keep = {}
 	for _, item in pending do
-		if tern.now() - item.at < BRIEF_DELAY_MS then
-			table.insert(keep, item)
+		local hasAgent = pcall(function() cx.agents:get(tonumber(item.pane)) end)
+		if not hasAgent then
+			item.agentSince = nil
+			if tern.now() - item.at < GIVE_UP_MS then
+				table.insert(keep, item)
+			else
+				client.warnOnce("brief " .. item.pane, "pane " .. item.pane .. " never ran an agent; its brief was dropped")
+			end
 		else
-			local ok, err = pcall(function() cx.agents:ask(tonumber(item.pane), item.brief) end)
-			if not ok then client.warnOnce("brief " .. item.pane, "couldn't send the brief to pane " .. item.pane .. ": " .. tostring(err)) end
+			item.agentSince = item.agentSince or tern.now()
+			if tern.now() - item.agentSince < BRIEF_DELAY_MS then
+				table.insert(keep, item)
+			else
+				local ok, err = pcall(function() cx.agents:ask(tonumber(item.pane), item.brief) end)
+				if not ok then client.warnOnce("brief " .. item.pane, "couldn't send the brief to pane " .. item.pane .. ": " .. tostring(err)) end
+			end
 		end
 	end
 	pending = keep

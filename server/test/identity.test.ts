@@ -11,7 +11,7 @@ test("session from --resume and --restore", () => {
 
 test("session from the open session file", () => {
   const lsof = `p1627\nn/dev/ttys004\nn/Users/j/.omp/agent/sessions/-projects-x/2026-11-12T07-42-12-067Z_${ID}.jsonl\n`;
-  expect(sessionFromLsof(lsof)).toBe(ID);
+  expect(sessionFromLsof(lsof)).toEqual({ session: ID, pid: "1627" });
   expect(sessionFromLsof("p1\nn/tmp/other.jsonl\n")).toBeNull();
 });
 
