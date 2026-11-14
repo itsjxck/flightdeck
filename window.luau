@@ -56,6 +56,8 @@ local function repoNamed(name)
 	end
 	return nil
 end
+-- The session Mission control lives in, hidden from Spaces.
+local MISSION_SESSION = "Mission control"
 local missionHooks = {
 	repoPath = function(name) local repo = repoNamed(name); return repo and repo.path end,
 	baseFor = function(name) local repo = repoNamed(name); return if repo and repo.base ~= "" then repo.base else nil end,
@@ -305,10 +307,15 @@ local function model(cx)
 	end
 
 	-- Every session is a space, named by you or else after its folder. Goal
-	-- sessions (Mission control) are left out: they show under Goals.
-	local spaces, byId = {}, {}
+	-- sessions are left out (they show under Goals), and so is Mission
+	-- control's own session (the button at the top).
+	local spaces, byId, missionActive = {}, {}, false
 	for index, info in cx.session:sessions() do
 		if mission.state.isGoalSession(info.id) then continue end
+		if info.name == MISSION_SESSION then
+			missionActive = info.id == current.id
+			continue
+		end
 		local dir = spaceDir(cx, info, panesById)
 		local repo = if dir then dirRepo[dir] else nil
 		if dir and repo == nil then pending[dir] = true end
@@ -389,7 +396,7 @@ local function model(cx)
 		anchor.error, anchor.collapsed = entry and entry.error, collapsed[repoId] == true
 	end
 
-	local result = { spaces = {}, agents = {}, refreshing = spinning }
+	local result = { spaces = {}, agents = {}, refreshing = spinning, missionActive = missionActive }
 	for _, space in spaces do
 		if not nested[space.id] then
 			local branch = space.tree and (space.tree.branch or "detached")
@@ -1880,18 +1887,29 @@ local function showPane(cx, pane)
 	cx.layout:focus(pane)
 end
 
--- Opens Mission control in a tab of its own, or shows the one already open.
+-- Shows Mission control, in its own locked session (MISSION_SESSION) so it's
+-- always in the same place; opens the session and block when missing.
 -- `task` (T-12) selects that task.
 local function openMissionControl(cx, task)
+	if task then tern.kv.set("mission:select", task) end
 	for _, pane in cx.session:panes() do
-		if pane.block == "overseer.mission" then
-			if task then tern.kv.set("mission:select", task) end
-			showPane(cx, pane.pane)
-			return
-		end
+		if pane.block == "overseer.mission" then showPane(cx, pane.pane); return end
 	end
+	local session
+	for _, info in cx.sessions:list() do if info.name == MISSION_SESSION then session = info end end
+	if session then cx.sessions:switch(session.id)
+	else
+		session = cx.sessions:create({ name = MISSION_SESSION, cwd = tern.getenv("HOME") })
+		cx.sessions:lock(session.id)
+	end
+	-- The session's shell tab, replaced by the block.
+	local shell = cx.session:focused()
 	local ok, pane = pcall(function() return cx:new_block("overseer.mission", if task then { task } else {}, "tab") end)
-	if not ok or not pane then report(cx, "Couldn't open Mission control: " .. tostring(pane)) end
+	if not ok or not pane then report(cx, "Couldn't open Mission control: " .. tostring(pane)); return end
+	if shell and shell ~= pane then
+		local info = cx.session:pane(shell)
+		if info and info.kind == "terminal" then cx.layout:close(shell) end
+	end
 end
 
 tern.command({ id = "mission", title = "Mission control", icon = "list", keys = { "cmd+alt+shift+m" },

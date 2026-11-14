@@ -298,16 +298,21 @@ local function agentNode(agent)
 end
 
 -- "Needs you N": the sidebar's top line while questions wait; opens Mission control.
-local function needsYouNode(count)
+-- The Mission control button, always at the top: its count and dot show
+-- questions waiting for you.
+local function missionNode(count, active)
+	local children = {
+		if count > 0 then ui.el("div", { key = "status", role = "overseer.dotWaiting" })
+			else ui.el("div", { key = "status", role = "overseer.missionIcon" }),
+		text("name", "Mission control", "overseer.spaceName", { grow = 1 }),
+	}
+	if count > 0 then table.insert(children, text("count", tostring(count) .. " need you", "overseer.badgeBad")) end
 	return ui.node("row", {
-		key = "needs", role = "overseer.needsYou", title = "Open Mission control",
-		aria = tostring(count) .. (if count == 1 then " question needs you" else " questions need you"),
+		key = "mission", role = if active then "overseer.missionActive" else "overseer.mission",
+		title = "Open Mission control (⌘⌥⇧M)",
+		aria = "Mission control" .. (if count > 0 then ", " .. tostring(count) .. (if count == 1 then " question needs you" else " questions need you") else ""),
 		actions = { click = "mission" },
-	}, {
-		ui.el("div", { key = "status", role = "overseer.dotWaiting" }),
-		text("name", "Needs you", "overseer.spaceName", { grow = 1 }),
-		text("count", tostring(count), "overseer.count"),
-	})
+	}, children)
 end
 
 local TASK_STATUS = { ready = "ready", todo = "waiting on others", done = "done", failed = "failed", dropped = "dropped" }
@@ -412,7 +417,7 @@ end
 
 function View.render(model)
 	local spaces = {}
-	if (model.needsYou or 0) > 0 then table.insert(spaces, needsYouNode(model.needsYou)) end
+	table.insert(spaces, missionNode(model.needsYou or 0, model.missionActive == true))
 	table.insert(spaces, ui.node("row", { key = "header", role = "overseer.header" }, {
 		text("title", "Spaces", "overseer.heading", { grow = 1 }),
 		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {

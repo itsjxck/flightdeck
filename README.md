@@ -46,14 +46,14 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 ## Mission control
 
-**Mission control** (palette, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>, or **Needs you** at the top of the sidebar) opens a tab with:
+**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a locked session of its own, also called Mission control, left out of Spaces. It shows:
 
 - **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
 - **Proposed goals**: <kbd>Enter</kbd> (or Start) opens the goal in a session of its own, with a coordinator that starts workers in their own worktrees.
 - **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
 - **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
 
-The sidebar shows **Needs you N** while questions wait, a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.
+The sidebar button shows how many questions wait (**2 need you**); a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.
 
 ## Install
 

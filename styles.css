@@ -407,7 +407,8 @@
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
 /* Mission control in the sidebar: the Needs you line, and an agent's task. */
-[data-role='overseer.needsYou'] {
+[data-role='overseer.mission'],
+[data-role='overseer.missionActive'] {
   align-items: center;
   gap: 8px;
   margin: 4px 0 8px;
@@ -416,8 +417,18 @@
   cursor: pointer;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-[data-role='overseer.needsYou']:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+[data-role='overseer.mission']:hover,
+[data-role='overseer.missionActive'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+/* An accent ring; it fills (dotWaiting) while questions wait. */
+[data-role='overseer.missionIcon'] {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
 }
 [data-role='overseer.agentStateLine'] {
   align-items: baseline;
