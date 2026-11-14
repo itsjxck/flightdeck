@@ -97,7 +97,8 @@ Modelled on Orca's orchestration (runs, tasks, workers, inbox, `ask`,
 | Tool | Does |
 |---|---|
 | `goal_propose` | Any agent: proposes a goal (title, plan, tasks across repositories, dependencies). It shows in Needs you; Start makes it a goal with its own session and coordinator |
-| `goal_plan` | Coordinator: adds, edits or drops its goal's tasks and dependencies |
+| `goal_join` | Coordinator: first call in its session; makes the caller the goal's coordinator |
+| `goal_plan` | Coordinator: adds tasks (with dependencies) to its goal, or drops them |
 | `worker_start` | Starts an omp agent on a `ready` task: Overseer creates a worktree for it (`wt switch --create`, branch named after the task) and opens omp there, as a background tab in the goal's session (`tern new tab`), with a brief naming the task |
 | `inbox` | Waits (up to a timeout) for the goal's `done` events, questions and messages; returns them and marks them handled |
 | `worker_stop` | Stops a worker; its task goes back to `ready` |
@@ -202,8 +203,8 @@ machines, agents other than omp as workers.
 
 - **The server is a new moving part.** Overseer's health check restarts it;
   SQLite keeps data safe across crashes.
-- **`${TERN_PANE}` header expansion:** untested. Fallback: tools take an
-  optional `session` argument, read by the agent from `$PI_SESSION_ID`.
+- **`${TERN_PANE}` header expansion** (checked 2026-11-14): an omp agent calling
+  a probe MCP server sent `X-Tern-Pane` with its pane id.
 - **Session lookup relies on omp keeping its session file open** (and
   `--resume`/`--restore` as fallback), as the Huly bridge does today.
 - **Starting agents in the background** (checked 2026-11-14): `tern new
