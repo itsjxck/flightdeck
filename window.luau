@@ -3,6 +3,7 @@ local wt = require("./worktrunk")
 local view = require("./view")
 local visualize = require("./visualize")
 local oplog = require("./oplog")
+local mission = require("./mission")
 
 local cache = {}
 local inflight = {}
@@ -47,6 +48,18 @@ local function repoById(id)
 	end
 	return repo
 end
+
+-- What mission.luau needs from the window: the repositories Spaces knows.
+local function repoNamed(name)
+	for id, repo in repos do
+		if repo.name == name then return repoById(id) end
+	end
+	return nil
+end
+local missionHooks = {
+	repoPath = function(name) local repo = repoNamed(name); return repo and repo.path end,
+	baseFor = function(name) local repo = repoNamed(name); return if repo and repo.base ~= "" then repo.base else nil end,
+}
 
 local function localHost(cx)
 	return cx.hosts:current().kind == "local"
@@ -1983,6 +1996,13 @@ tick = function(generation, cx)
 	end
 	separately(recordSessions)
 	separately(syncAgents)
+	separately(function(tickCx)
+		local live = {}
+		for _, pane in tickCx.session:panes() do
+			if pane.exited == nil and (pane.kind == "terminal" or pane.kind == "agent") then table.insert(live, tostring(pane.pane)) end
+		end
+		mission.tick(tickCx, live, missionHooks)
+	end)
 	separately(follow)
 	separately(closeEmptySessions)
 	separately(closeOrphanedSessions)
