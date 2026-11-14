@@ -24,6 +24,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     server.registerTool(name, { description, inputSchema: shape }, async (args: unknown) => {
       const caller = resolve();
       if (!caller) return fail(NO_CALLER);
+      if (caller.repo && caller.root) store.learnRepo(caller.repo, caller.root);
       try { return ok(fn(caller, args as z.infer<z.ZodObject<S>>)); } catch (e) { return fail((e as Error).message); }
     });
   }

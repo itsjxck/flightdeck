@@ -25,7 +25,7 @@ export interface Worker {
   id: number; task: number; goal: number; requested_by: string;
   status: "requested" | "started" | "stopping" | "stopped" | "failed"; pane: string | null; created: number;
 }
-export interface Caller { session: string; repo: string | null; branch: string | null; cwd: string | null }
+export interface Caller { session: string; repo: string | null; branch: string | null; cwd: string | null; root?: string | null }
 
 export const MAX_WORKERS = 4;
 export const AGENT_MESSAGE_GAP = 120_000;
@@ -49,6 +49,7 @@ create table if not exists events (
 create table if not exists workers (
   id integer primary key, task integer not null references tasks(id), goal integer not null references goals(id),
   requested_by text not null, status text not null, pane text, created integer not null);
+create table if not exists repos (name text primary key, path text not null);
 `;
 
 type PlanTask = { key: string; title: string; body?: string; repo: string; needs?: string[]; readonly?: boolean };
@@ -187,6 +188,18 @@ export class Store {
     if (t.status === "doing") throw new Error(`${Store.tid(task)} has a worker; worker_stop it first`);
     this.touch(task, { status: "dropped" });
     this.finishGoalIfDone(goal);
+  }
+
+  // ── Repositories (name → folder, learned from callers) ─────────────────
+
+  learnRepo(name: string, path: string) {
+    this.db.query("insert into repos (name, path) values (?, ?) on conflict(name) do update set path = excluded.path").run(name, path);
+  }
+
+  repoPath(name: string | null): string | null {
+    if (!name) return null;
+    const r = this.db.query("select path from repos where name = ?").get(name) as { path: string } | null;
+    return r ? r.path : null;
   }
 
   // ── Goals ──────────────────────────────────────────────────────────────

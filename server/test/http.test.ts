@@ -8,7 +8,7 @@ const auth = { Authorization: `Bearer ${token}` };
 
 beforeAll(() => {
   stop = startServer({ port: 18095, dbPath: ":memory:", token,
-    resolve: (pane) => (pane === "42" ? { session: "s42", repo: "overseer", branch: "main", cwd: "/r" } : null) });
+    resolve: (pane) => (pane === "42" ? { session: "s42", repo: "overseer", branch: "main", cwd: "/r", root: "/r" } : null) });
 });
 afterAll(() => stop());
 
@@ -42,4 +42,10 @@ test("bad input is a 400 with the reason", async () => {
   const r = await fetch(`${base}/api/answer`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: "{}" });
   expect(r.status).toBe(400);
   expect((await r.json() as { error: string }).error).toContain("missing task");
+});
+
+test("pane ids map to the omp sessions running in them", async () => {
+  const r = await fetch(`${base}/api/panes`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ panes: ["42", "7"] }) });
+  expect(await r.json()).toEqual({ s42: "42" });
 });

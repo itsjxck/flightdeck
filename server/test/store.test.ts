@@ -139,6 +139,16 @@ describe("goals and conversation", () => {
   });
 });
 
+describe("repositories", () => {
+  test("callers teach the store where each repository lives", () => {
+    const store = new Store(":memory:");
+    store.learnRepo("web-app", "/Users/j/projects/web-app");
+    store.learnRepo("web-app", "/Users/j/projects/web-app");
+    expect(store.repoPath("web-app")).toBe("/Users/j/projects/web-app");
+    expect(store.repoPath("unknown")).toBeNull();
+  });
+});
+
 describe("workers, inbox, deliveries", () => {
   function goalWithCoordinator(store: Store, n = 1) {
     const tasks = Array.from({ length: n }, (_, i) => ({ key: `t${i}`, title: `t${i}`, repo: "x" }));

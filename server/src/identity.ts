@@ -29,6 +29,10 @@ export function repoName(commonGitDir: string): string {
   return basename(dirname(commonGitDir));
 }
 
+export function repoRoot(commonGitDir: string): string {
+  return dirname(commonGitDir);
+}
+
 function run(cmd: string[]): string {
   const r = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "ignore" });
   return r.stdout.toString();
@@ -47,26 +51,32 @@ function paneProcess(pane: string): PaneProcess | null {
   }
 }
 
-const cache = new Map<string, { at: number; caller: Caller }>();
+// Misses are cached too: Overseer asks about every shell pane every 2 s.
+const cache = new Map<string, { at: number; caller: Caller | null }>();
 
 // The omp session in `pane`, with its folder, repository and branch; null when the pane runs no omp session.
 export function resolvePane(pane: string): Caller | null {
   const hit = cache.get(pane);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.caller;
+  const caller = lookup(pane);
+  cache.set(pane, { at: Date.now(), caller });
+  return caller;
+}
+
+function lookup(pane: string): Caller | null {
   const proc = paneProcess(pane);
   if (!proc?.pid) return null;
   const session = sessionFromLsof(run(["/usr/sbin/lsof", "-a", "-p", String(proc.pid), "-Fpn"])) ?? sessionFromArgv(proc.argv ?? []);
   if (!session) return null;
   const cwd = proc.cwd ?? null;
-  let repo: string | null = null, branch: string | null = null;
+  let repo: string | null = null, branch: string | null = null, root: string | null = null;
   if (cwd) {
     const common = run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"]).trim();
     if (common) {
       repo = repoName(common);
+      root = repoRoot(common);
       branch = run(["git", "-C", cwd, "branch", "--show-current"]).trim() || null;
     }
   }
-  const caller = { session, repo, branch, cwd };
-  cache.set(pane, { at: Date.now(), caller });
-  return caller;
+  return { session, repo, branch, cwd, root };
 }

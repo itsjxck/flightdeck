@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { repoName, sessionFromArgv, sessionFromLsof } from "../src/identity";
+import { repoName, repoRoot, sessionFromArgv, sessionFromLsof } from "../src/identity";
 
 const ID = "01a1ceb5-0463-75df-9c37-f67a82704600";
 
@@ -18,4 +18,8 @@ test("session from the open session file", () => {
 test("repository name from the common git dir", () => {
   expect(repoName("/Users/j/projects/web-app/.git")).toBe("web-app");
   expect(repoName("/Users/j/projects/tern-plugins/overseer/.git")).toBe("overseer");
+});
+
+test("repository root from the common git dir", () => {
+  expect(repoRoot("/Users/j/projects/web-app/.git")).toBe("/Users/j/projects/web-app");
 });

@@ -26,7 +26,7 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
         await buildServer(store, () => (pane ? resolve(pane) : null)).connect(transport);
         return transport.handleRequest(req);
       }
-      if (url.pathname.startsWith("/api/")) return handleApi(store, req, url);
+      if (url.pathname.startsWith("/api/")) return handleApi(store, req, url, resolve);
       return new Response("not found", { status: 404 });
     },
   });

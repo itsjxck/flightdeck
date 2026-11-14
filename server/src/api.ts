@@ -1,6 +1,6 @@
 // JSON API for Overseer (window.luau): state for Mission control and the
 // sidebar, your answers, goal lifecycle, deliveries to agents, worker starts.
-import { Store, type TaskStatus } from "./store";
+import { Store, type Caller, type TaskStatus } from "./store";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const FINISHED: TaskStatus[] = ["done", "dropped", "failed"];
@@ -46,7 +46,7 @@ function state(store: Store) {
   return { goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id) })), tasks, waiting, workers };
 }
 
-export async function handleApi(store: Store, req: Request, url: URL): Promise<Response> {
+export async function handleApi(store: Store, req: Request, url: URL, resolve: (pane: string) => Caller | null): Promise<Response> {
   const parts = url.pathname.split("/").filter(Boolean).slice(1); // after "api"
   const parsed: unknown = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   const body = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
@@ -54,6 +54,18 @@ export async function handleApi(store: Store, req: Request, url: URL): Promise<R
     switch (`${req.method} ${parts[0]}`) {
       case "GET state":
         return json(state(store));
+      case "POST panes": {
+        // Which omp session runs in each live pane; Overseer delivers by it.
+        const panes = Array.isArray(body.panes) ? body.panes.filter((p): p is string => typeof p === "string") : [];
+        const map: Record<string, string> = {};
+        for (const pane of panes) {
+          const caller = resolve(pane);
+          if (!caller) continue;
+          map[caller.session] = pane;
+          if (caller.repo && caller.root) store.learnRepo(caller.repo, caller.root);
+        }
+        return json(map);
+      }
       case "GET thread":
         return json(store.events(Store.parseTask(parts[1] ?? "")));
       case "POST answer":
@@ -81,7 +93,7 @@ export async function handleApi(store: Store, req: Request, url: URL): Promise<R
         return json({
           starts: starts.map((w) => {
             const t = store.task(w.task);
-            return { id: w.id, task: Store.tid(t.id), title: t.title, repo: t.repo, readonly: t.readonly === 1,
+            return { id: w.id, task: Store.tid(t.id), title: t.title, repo: t.repo, repoPath: store.repoPath(t.repo), readonly: t.readonly === 1,
               goal: Store.gid(w.goal), ternSession: store.goal(w.goal).tern_session, brief: workerBrief(store, w.id) };
           }),
           stops: stops.map((w) => ({ id: w.id, pane: w.pane })),
