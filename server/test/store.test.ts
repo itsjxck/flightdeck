@@ -120,6 +120,14 @@ describe("goals and conversation", () => {
     expect(answer.to_target).toBe(Store.tid(t.id));
   });
 
+  test("a finished task's unanswered question stops waiting", () => {
+    const store = new Store(":memory:");
+    store.startTask(me, { title: "a" });
+    store.ask("s-me", { question: "Ship it?" });
+    store.doneTask("s-me", { outcome: "succeeded", summary: "shipped anyway" });
+    expect(store.waiting()).toEqual([]);
+  });
+
   test("@goal reaches every other task with an agent", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0], { key: "b", title: "b", repo: "x" }, { key: "c", title: "c", repo: "x" }] });

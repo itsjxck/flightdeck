@@ -275,9 +275,10 @@ export class Store {
     return t;
   }
 
-  // Tasks whose newest question has no answer after it, oldest question first.
+  // Open tasks whose newest question has no answer after it, oldest question first.
   waiting(): { task: Task; question: Event }[] {
-    const rows = this.db.query(`select q.* from events q where q.kind = 'question'
+    const rows = this.db.query(`select q.* from events q join tasks t on t.id = q.task
+      where q.kind = 'question' and t.status not in ('done', 'failed', 'dropped')
       and q.id = (select max(id) from events where task = q.task and kind = 'question')
       and not exists (select 1 from events a where a.task = q.task and a.kind = 'answer' and a.id > q.id)
       order by q.id`).all() as Event[];
