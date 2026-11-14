@@ -44,6 +44,17 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 | PR icon | Draft, open, merged or closed PR; click to open it in your browser |
 
 
+## Mission control
+
+**Mission control** (palette, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>, or **Needs you** at the top of the sidebar) opens a tab with:
+
+- **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
+- **Proposed goals**: <kbd>Enter</kbd> (or Start) opens the goal in a session of its own, with a coordinator that starts workers in their own worktrees.
+- **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
+- **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
+
+The sidebar shows **Needs you N** while questions wait, a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.
+
 ## Install
 
 You need macOS and:
@@ -167,6 +178,8 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `mission/deliveries.luau` | Sends queued answers and agents' messages to the pane running each session; one prompt per pane. |
 | `mission/launch.luau` | Opens agent panes in the background (`tern new session|tab … -- omp`) and sends the brief once omp is up, so the overseer tools are connected first. |
 | `mission/goals.luau` | Starts a goal: its own session `G-n · title`, the coordinator in it. |
+| `mission/state.luau` | The last server state the poll fetched, for the sidebar (Needs you, Goals, each agent's task; which sessions are goal sessions). |
+| `ui/model.luau`, `ui/render.luau`, `ui/block.luau` | The **Mission control** block (host half): server calls and grouping into sections; the pure view; the block itself (keys, reply field, 2 s refresh). Actions only the window can take go through kv `mission:requests` (`missionRequests` in `window.luau`). |
 | `mission/workers.luau` | Starts workers as tabs in their goal's session, each creating its worktree with `wt switch --create … -x omp`; stops them. |
 | `server/` | `overseer-server` (Bun, TypeScript, SQLite): `src/store.ts` data and every rule, `src/tools.ts` the agents' MCP tools, `src/api.ts` Overseer's JSON API, `src/identity.ts` pane → omp session, `src/main.ts` HTTP and auth. `bun test` in `server/` runs its tests. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |
