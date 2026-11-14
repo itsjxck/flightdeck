@@ -55,6 +55,15 @@ You need macOS and:
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Visualize PR | optional |
 | [omp](https://omp.sh) | Visualize PR | optional |
 
+**Mission control** (optional) needs [Bun](https://bun.sh). Overseer runs `server/` on `127.0.0.1:8095` and restarts it if it stops; its data and access token are in the plugin data directory. Connect omp to it once:
+
+```sh
+DATA="$HOME/Library/Application Support/Tern/plugin-data/overseer"
+jq --arg auth "!printf 'Bearer %s' \"\$(cat '$DATA/token')\"" \
+  '.mcpServers.overseer = {type: "http", url: "http://127.0.0.1:8095/mcp", headers: {"X-Tern-Pane": "${TERN_PANE}", Authorization: $auth}}' \
+  ~/.omp/agent/mcp.json > /tmp/mcp.json && mv /tmp/mcp.json ~/.omp/agent/mcp.json
+```
+
 ```sh
 git clone git@github.com:itsjxck/tern-overseer.git
 cd tern-overseer
@@ -152,6 +161,14 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `window.luau` | Spaces and repositories (`spaceDir`, `namedByYou`, `inspectDirs`, `repos`), model building (`model`), drawing (`draw`/`redraw`), the following sidebar (`slot`, `pin`, `follow`, `togglePanel`), session binding (`worktreeSession`, `ensureSession`, `createSpace`), forms swapped into the sidebar's slot, background jobs (`launchCreation`, `checkJobs`, `jobFinished`, `trackCreations`), confirmations, Visualize PR canvases, hooks, the 750 ms `tick` and its watchdog (`ensureTicking`, `processClock`). |
 | `worktrunk.luau` | Every external command: repository discovery (`inspect`), `wt list`, validation, a worktree's uncommitted changes (`local_changes`), the creation and removal command lines, `git` status, `gh pr list`/`gh pr view`/`gh pr diff`. Commands are argv arrays; `find_executable` checks Homebrew, `/usr/local/bin`, `~/.bun/bin` and `~/.local/bin`. |
 | `oplog.luau` | The operation log (`ops.log`): writing entries, reading a setup tab's progress and warnings. |
+| `mission.luau` | Mission control's Overseer side, called from `tick`: polls the server every 2 s (panes → sessions, deliveries, workers). Its parts live in `mission/`: |
+| `mission/client.luau` | Server address, the access token (plugin data `token`), `api`/`post` JSON calls, `warnOnce`. |
+| `mission/server.luau` | Keeps `server/` running: `/health` every 5 s, starts Bun when needed. |
+| `mission/deliveries.luau` | Sends queued answers and agents' messages to the pane running each session; one prompt per pane. |
+| `mission/launch.luau` | Opens agent panes in the background (`tern new session|tab … -- omp`) and sends the brief once omp is up, so the overseer tools are connected first. |
+| `mission/goals.luau` | Starts a goal: its own session `G-n · title`, the coordinator in it. |
+| `mission/workers.luau` | Starts workers as tabs in their goal's session, each creating its worktree with `wt switch --create … -x omp`; stops them. |
+| `server/` | `overseer-server` (Bun, TypeScript, SQLite): `src/store.ts` data and every rule, `src/tools.ts` the agents' MCP tools, `src/api.ts` Overseer's JSON API, `src/identity.ts` pane → omp session, `src/main.ts` HTTP and auth. `bun test` in `server/` runs its tests. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |
 | `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, creations, menus) and its dock (agents), and the confirmation popup's view. |
 | `worktree-operation.sh` | The helper that runs `wt switch --create` / `wt remove` (or `--force` for a confirmed Force delete) in a visible terminal and writes an atomic completion receipt. |
@@ -159,6 +176,7 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `styles.css`, `icons.css` | Sidebar styles. `icons.css` is **generated** by `icons/generate-css.py` (plugin stylesheets can't load files, so icons are embedded as data URIs). |
 | `skills/visual-pr/` | HumanLayer's visual-pr skill, vendored unchanged (MIT). |
 | `tests/test_worktree_operation.py` | Real Git/Worktrunk tests for the helper. |
+| `docs/specs/`, `docs/plans/` | Mission control's design and its build plans. |
 
 ### State
 
