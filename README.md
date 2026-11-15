@@ -46,7 +46,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 ## Mission control
 
-**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a locked session of its own, also called Mission control, left out of Spaces. It shows:
+**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. It shows:
 
 - **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
 - **Proposed goals**: from agents (`goal_propose`) or from you (<kbd>g</kbd>: a title, then optional details). A goal needs no tasks: <kbd>Enter</kbd> (or Start goal) opens it in a session of its own, where its coordinator reads the repositories, plans the tasks (`goal_plan` add, edit, drop), starts workers in their own worktrees and manages them to the end.

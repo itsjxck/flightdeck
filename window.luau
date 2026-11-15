@@ -1892,8 +1892,9 @@ local function showPane(cx, pane)
 	cx.layout:focus(pane)
 end
 
--- Shows Mission control, in its own locked session (MISSION_SESSION) so it's
--- always in the same place; opens the session and block when missing.
+-- Shows Mission control, in its own session (MISSION_SESSION) so it's always
+-- in the same place; opens the session and block when missing. Not locked:
+-- Tern's lock also stops you closing the session's tabs and blocks.
 -- `task` (T-12) selects that task.
 local function openMissionControl(cx, task)
 	if task then tern.kv.set("mission:select", task) end
@@ -1903,10 +1904,7 @@ local function openMissionControl(cx, task)
 	local session
 	for _, info in cx.sessions:list() do if info.name == MISSION_SESSION then session = info end end
 	if session then cx.sessions:switch(session.id)
-	else
-		session = cx.sessions:create({ name = MISSION_SESSION, cwd = tern.getenv("HOME") })
-		cx.sessions:lock(session.id)
-	end
+	else session = cx.sessions:create({ name = MISSION_SESSION, cwd = tern.getenv("HOME") }) end
 	-- The session's shell tab, replaced by the block.
 	local shell = cx.session:focused()
 	local ok, pane = pcall(function() return cx:new_block("overseer.mission", if task then { task } else {}, "tab") end)
@@ -2221,6 +2219,15 @@ local function processClock()
 	-- Can't start a process (shouldn't happen): events still check the tick.
 	if not ok then tern.log.warn("Overseer: the process clock could not start") end
 end
+
+-- Mission control's session was locked before 2026-11-15, which blocked closing
+-- its tabs; unlock it at load (window_start doesn't run on a plugin reload).
+tern.timer(0, function(cx)
+	if not cx then return end
+	for _, info in cx.sessions:list() do
+		if info.name == MISSION_SESSION and info.locked then cx.sessions:unlock(info.id) end
+	end
+end)
 
 tern.on("window_start", function(cx)
 	recordSessions(cx)
