@@ -4,11 +4,14 @@
 local M = {}
 
 local BASE = "http://127.0.0.1:" .. (tonumber(tern.getenv("FLIGHTDECK_PORT") or "") or 8095)
+M.BASE = BASE
 
 local function token()
 	local ok, t = pcall(tern.fs.read, tern.plugin.data .. "/token", 256)
 	return if ok then string.match(t, "^%s*(.-)%s*$") else nil
 end
+
+M.token = function() return token() end
 
 -- Calls the server's JSON API. fn(body, err).
 function M.api(method, path, body, fn)

@@ -7,6 +7,7 @@ Overseer is now **Flightdeck**, and adds Mission control.
 - **Mission control:** a tab for coordinating omp agents: questions waiting for you, goals run by a coordinator agent with workers in their own worktrees, tasks, a backlog, GitHub issues, spend and agent statistics, and repository discovery. Its server (`server/`, Bun and SQLite) runs locally behind a token; omp connects to it as an MCP server.
 - **New name:** the plugin id, commands (`plugin.flightdeck.*`), data folder (`plugin-data/flightdeck`), block kinds and the MCP server (`flightdeck`) all changed. Existing installs: move `plugin-data/overseer` to `plugin-data/flightdeck`, update `plugin.overseer.*` key bindings, and run **Connect omp to Flightdeck**.
 - **Connect omp to Flightdeck** (palette): one-step omp setup.
+- **Mission control updates at once** (Tern 0.9.24): the server streams changes, so answers, questions and progress show without waiting for a poll. Its tab reports a waiting question (and running work) to Tern's tab status, inbox and Agents widget. The server runs as a spawned child Tern tracks, and restarts at once if it exits.
 - **Unlock SSH key** (palette): a `git fetch` in a floating terminal so a hardware security key can prompt.
 - The sidebar gains a Mission control button, a Goals section, each agent's task, and one-line agent rows; sessions follow their space's name.
 

@@ -6,8 +6,10 @@ local Input = require("../input")
 local model = require("./model")
 local render = require("./render")
 local dialog = require("./dialog")
+local events = require("../mission/events")
 
-local POLL_MS = 2000
+-- The server's change stream refreshes at once; this is the fallback.
+local POLL_MS = 15000
 
 local ISSUES_POLL_MS = 30000
 local STATS_POLL_MS = 60000
@@ -57,10 +59,40 @@ local function replyTarget(state)
 	return nil, nil
 end
 
+-- Tells Tern what Mission control is doing, as an agent does: "blocked" on a
+-- question while one waits for you, "working" while goals or tasks run, else
+-- nothing. Tern shows it on the tab, in its inbox and Agents widget. Sent only
+-- when it changes.
+local function reportStatus(state, cx)
+	local s = state.sections
+	local stateName, opts
+	if #s.needs > 0 then
+		local q = s.needs[1]
+		stateName = "blocked"
+		opts = { kind = "question", msg = (if #s.needs == 1 then "1 question waits for you: " else tostring(#s.needs) .. " questions wait for you, first: ")
+			.. q.task .. " · " .. string.sub(render.oneLine(q.question), 1, 300) }
+	else
+		local goals, tasks = 0, 0
+		for _, g in s.working do
+			if g.goal then goals += 1 end
+			for _, t in g.tasks do if t.status == "doing" then tasks += 1 end end
+		end
+		if tasks > 0 then
+			stateName = "working"
+			opts = { msg = (if goals > 0 then tostring(goals) .. (if goals == 1 then " goal running, " else " goals running, ") else "")
+				.. tostring(tasks) .. (if tasks == 1 then " task in progress" else " tasks in progress") }
+		end
+	end
+	local sig = tostring(stateName) .. "|" .. (opts and opts.msg or "")
+	if sig == state.statusSig then return end
+	state.statusSig = sig
+	pcall(function() cx:status(stateName, opts) end)
+end
+
 local function refresh(state, cx)
 	model.api("GET", "/api/state", nil, function(s, err)
 		state.error = err
-		if s then state.sections = model.sections(s) end
+		if s then state.sections = model.sections(s); reportStatus(state, cx) end
 		-- The sidebar's Close goal asks here.
 		local closing = tern.kv.get("mission:closeGoal")
 		if type(closing) == "string" then tern.kv.set("mission:closeGoal", nil); askClose(state, cx, closing) end
@@ -340,6 +372,7 @@ local DEF = {
 		}
 		refresh(state, cx)
 		poll(state, cx)
+		events.follow(model.BASE, model.token, function() refresh(state, cx) end, function() return state.alive ~= false end)
 		return state
 	end,
 	title = function(state)

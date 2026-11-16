@@ -24,6 +24,8 @@ local function readToken()
 	return token
 end
 
+M.token = readToken
+
 -- Calls the server's JSON API. fn(body, err, cx); err is a readable reason.
 function M.api(method, path, body, fn)
 	local t = readToken()

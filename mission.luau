@@ -18,10 +18,13 @@ local launch = require("./mission/launch")
 local goals = require("./mission/goals")
 local workers = require("./mission/workers")
 local state = require("./mission/state")
+local events = require("./mission/events")
 
 local M = {}
 
-local POLL_MS = 2000
+-- The server's change stream (mission/events.luau) asks for a poll at once;
+-- this is the fallback when nothing changed (new panes, a missed stream).
+local POLL_MS = 8000
 
 M.api = client.api
 M.startOldestProposedGoal = goals.startOldestProposed
@@ -32,6 +35,11 @@ M.workers = workers
 M.sessionPanes = {}
 
 local polling, lastPoll = false, -POLL_MS
+-- A change arrived while a poll ran: poll again when it finishes.
+local again = false
+events.follow(client.BASE, client.token, function()
+	if polling then again = true else lastPoll = -POLL_MS end
+end)
 
 -- Called from Flightdeck's tick. `panes`: every live terminal and agent pane id (strings).
 -- `hooks`: what the window knows (see missionHooks in window.luau); hooks.changed(cx)
@@ -49,6 +57,7 @@ function M.tick(cx, panes, hooks)
 			workers.run(hooks, function()
 				client.api("GET", "/api/state", nil, function(fresh, _, stateCx)
 					polling = false
+					if again then again, lastPoll = false, -POLL_MS end
 					if state.set(fresh) and stateCx then hooks.changed(stateCx) end
 				end)
 			end)

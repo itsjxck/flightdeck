@@ -75,7 +75,7 @@ You need macOS and:
 
 | | Needed for | |
 |---|---|---|
-| [Tern](https://docs.stencil.so/tern/) desktop | everything | tested with 0.9.21 |
+| [Tern](https://docs.stencil.so/tern/) desktop 0.9.24 or later | everything | uses 0.9.24's spawn, streamed fetch and block status |
 | [Worktrunk](https://worktrunk.dev) (`wt`), Git | worktrees, goal workers | tested with wt 0.80 |
 | [omp](https://omp.sh) | agents, Mission control, Visualize PR | tested with 18.21 |
 | [Bun](https://bun.sh) | Mission control's server | |
@@ -186,13 +186,14 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `oplog.luau` | The operation log (`ops.log`): writing entries, reading a setup tab's progress and warnings. |
 | `mission.luau` | Mission control's window side, called from `tick`: polls the server every 2 s (panes → sessions, deliveries, workers). Its parts live in `mission/`: |
 | `mission/client.luau` | Server address, the access token (plugin data `token`), `api`/`post` JSON calls, `warnOnce`. |
-| `mission/server.luau` | Keeps `server/` running: `/health` every 5 s, starts Bun when needed. |
+| `mission/server.luau` | Keeps `server/` running as a `tern.process.spawn` child (it outlives reloads; `process_exit` reports its end to the next VM): `/health` every 5 s, starts Bun when needed. |
+| `mission/events.luau` | Follows the server's change stream (`/api/events`, streamed `tern.fetch`), so the window and Mission control fetch as soon as something changes; polling (8 s, 15 s) is only the fallback. |
 | `mission/deliveries.luau` | Sends queued answers and agents' messages to the pane running each session; one prompt per pane. |
 | `mission/launch.luau` | Opens agent panes in the background (`tern new session|tab … -- omp`) and sends the brief once omp is up, so the flightdeck tools are connected first. |
 | `mission/goals.luau` | Starts a goal: its own session `G3 · title`, the coordinator in it. |
 | `unlock.luau` | The **Unlock SSH key** terminal: finds a repository with an SSH remote and floats a `git fetch` over the current tab. |
 | `mission/state.luau` | The last server state the poll fetched, for the sidebar (Needs you, Goals, each agent's task; which sessions are goal sessions). |
-| `ui/model.luau`, `ui/render.luau`, `ui/dialog.luau`, `ui/block.luau` | The **Mission control** block (host half): server calls and grouping into sections; the pure view; the popup forms; the block itself (keys, reply field, 2 s refresh). Actions only the window can take go through kv `mission:requests` (`missionRequests` in `window.luau`). |
+| `ui/model.luau`, `ui/render.luau`, `ui/dialog.luau`, `ui/block.luau` | The **Mission control** block (host half): server calls and grouping into sections; the pure view; the popup forms; the block itself (keys, answer field, refresh on every server change, and `cx:status` so Tern shows on its tab and in its inbox when a question waits or work runs). Actions only the window can take go through kv `mission:requests` (`missionRequests` in `window.luau`). |
 | `mission/workers.luau` | Starts workers as tabs in their goal's session, each creating its worktree with `wt switch --create … -x omp`; stops them. |
 | `server/` | `flightdeck-server` (Bun, TypeScript, SQLite); see [`server/README.md`](server/README.md). `src/store.ts` data and every rule, `src/tools.ts` the agents' MCP tools, `src/api.ts` the window's and block's JSON API (and the agents' briefs), `src/identity.ts` pane → omp session, `src/repos.ts` repository discovery, `src/github.ts` issues through `gh`, `src/analytics.ts` the Stats tab, `src/main.ts` HTTP, auth and timers; `scripts/setup-omp.ts` connects omp, `scripts/demo.ts` makes demo goals. `bun test` in `server/` runs its tests. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |

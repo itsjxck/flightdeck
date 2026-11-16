@@ -19,6 +19,7 @@ bun src/main.ts <data dir>    # what Flightdeck runs; port 8095 (FLIGHTDECK_PORT
 | `src/repos.ts` | Finds Git repositories (breadth-first from `repos.json` roots, default `~`, depth 5, skipping system and build folders; worktrees and nested repositories don't count). `main.ts` scans at start, every 30 minutes and on `POST /api/repos/scan`; `store.syncScanned` records it. |
 | `src/github.ts` | GitHub through `gh`: open issues of known repositories (remote → owner/name), comments on linked issues, closing one you chose. Never closes issues on its own. |
 | `src/analytics.ts` | The Stats tab: reads new usage (cost, tokens) from omp's session files every 5 minutes by byte offset into `usage`; agent counts the window posts each minute (`agent_samples`, kept 30 days); `analytics()` builds spend, agent and goal/task series for `GET /api/analytics`. |
+| `src/events.ts` | `GET /api/events`: a stream of the change counter, a line after every agent tool call or API POST (and a heartbeat every 20 s), so clients fetch on change instead of polling. |
 | `src/main.ts` | `Bun.serve` on 127.0.0.1: `/health` (open), `/mcp` and `/api/*` (bearer token from `<data dir>/token`, created on first start). |
 
 ## Data flow

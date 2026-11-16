@@ -1,9 +1,11 @@
 -- Keeps flightdeck-server (server/, Bun) running. Every HEALTH_MS it checks
 -- /health; it starts the server when it has never seen it healthy, or after
--- two failed checks in a row. The process outlives plugin reloads (Tern
--- 0.9.16+), so a reload just finds it healthy; a second start while one runs
--- exits on the busy port, harmlessly. Output goes to server.log in the plugin
--- data directory; starts and exits go to ops.log (op "server").
+-- two failed checks in a row, and at once when the server it started exits.
+-- It runs as a `tern.process.spawn` child, which outlives plugin reloads: a
+-- reload finds it healthy, and if it ends later the new VM hears it through
+-- `process_exit` (its pid is kept in kv `server-pid`). A second start while
+-- one runs exits on the busy port, harmlessly. The server writes server.log
+-- in the plugin data directory itself; starts and exits go to ops.log.
 local client = require("./client")
 local oplog = require("../oplog")
 local wt = require("../worktrunk")
@@ -14,26 +16,55 @@ local HEALTH_MS = 5000
 
 local healthy, everHealthy, failures, starting, lastCheck = false, false, 0, false, -HEALTH_MS
 
-local function start()
+local start
+
+-- The server ended: log it and start it again on the next check.
+local function exited(status)
+	starting, healthy, everHealthy = false, false, false
+	tern.kv.set("server-pid", nil)
+	oplog.write("warn", { op = "server", event = "exited", detail = "status " .. tostring(status) })
+end
+
+local function spawnServer(bun)
+	local dir = tern.plugin.dir .. "/server"
+	local ok, child = pcall(tern.process.spawn, { bun, "src/main.ts", tern.plugin.data }, {
+		cwd = dir,
+		env = { FLIGHTDECK_LOG = tern.plugin.data .. "/server.log" },
+		-- It logs to FLIGHTDECK_LOG; anything else on stdout is dropped. stderr's tail comes with `exit`.
+		stdout = function() end,
+		exit = function(result) exited(result.status) end,
+	})
+	if not ok then
+		starting = false
+		client.warnOnce("spawn", "couldn't start the server: " .. tostring(child))
+		return
+	end
+	tern.kv.set("server-pid", child.pid)
+	oplog.write("info", { op = "server", event = "started", detail = "pid " .. tostring(child.pid) })
+end
+
+start = function()
 	-- Bun is looked up like wt is (PATH, Homebrew, ~/.bun/bin): Tern's PATH may not include it.
 	local bun = wt.find_executable("bun")
 	if not bun then client.warnOnce("bun", "Bun isn't installed; Mission control's server can't start"); return end
 	starting = true
-	-- Installs dependencies on first run, then replaces the shell with the server.
-	local script = 'cd "$1" && { [ -d node_modules ] || "$4" install --frozen-lockfile; } && exec "$4" src/main.ts "$2" >>"$3" 2>&1'
-	local argv = { "/bin/sh", "-c", script, "flightdeck-server",
-		tern.plugin.dir .. "/server", tern.plugin.data, tern.plugin.data .. "/server.log", bun }
-	local ok, err = pcall(tern.process.run, argv, {}, function(result)
-		starting = false
-		oplog.write("warn", { op = "server", event = "exited", detail = "status " .. tostring(result.status) })
+	local dir = tern.plugin.dir .. "/server"
+	if tern.fs.exists(dir .. "/node_modules") then spawnServer(bun); return end
+	-- First run: install its dependencies.
+	tern.process.run({ bun, "install", "--frozen-lockfile" }, { cwd = dir, timeout_ms = 300000 }, function(r)
+		if r.status ~= 0 then
+			starting = false
+			client.warnOnce("install", "couldn't install the server's dependencies: " .. (r.stderr or ""):sub(1, 300))
+			return
+		end
+		spawnServer(bun)
 	end)
-	if not ok then
-		starting = false
-		client.warnOnce("spawn", "couldn't start the server: " .. tostring(err))
-		return
-	end
-	oplog.write("info", { op = "server", event = "started" })
 end
+
+-- A server started before a reload ended: start a new one now.
+tern.on("process_exit", function(ev)
+	if ev.pid == tern.kv.get("server-pid") then exited(ev.status) end
+end)
 
 -- Whether the last health check passed.
 function M.healthy()

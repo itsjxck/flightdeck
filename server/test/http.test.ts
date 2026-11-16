@@ -54,3 +54,13 @@ test("state lists goal sessions", async () => {
   const state = await (await fetch(`${base}/api/state`, { headers: auth })).json() as { goalSessions: string[] };
   expect(Array.isArray(state.goalSessions)).toBe(true);
 });
+
+test("the event stream sends the change counter, then a line after each change", async () => {
+  const res = await fetch(`${base}/api/events`, { headers: auth });
+  const reader = res.body!.getReader();
+  const first = new TextDecoder().decode((await reader.read()).value);
+  await fetch(`${base}/api/tasks`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ title: "x", repo: "r" }) });
+  const next = new TextDecoder().decode((await reader.read()).value);
+  expect(Number(next)).toBeGreaterThan(Number(first));
+  await reader.cancel();
+});
