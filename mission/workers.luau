@@ -11,12 +11,14 @@ local wt = require("../worktrunk")
 
 local M = {}
 
--- Branch for a worker's task: t-12-<title words>, Git-safe, at most 48 characters.
+-- Branch for a worker's task: g3.2-<title words>, Git-safe, at most BRANCH_MAX characters.
+local BRANCH_MAX = 28
 function M.branchFor(task, title)
 	local slug = string.gsub(string.lower(title), "[^%w]+", "-")
 	slug = string.gsub(string.gsub(slug, "^%-+", ""), "%-+$", "")
 	local branch = string.lower(task) .. (if slug ~= "" then "-" .. slug else "")
-	return (string.gsub(string.sub(branch, 1, 48), "%-+$", ""))
+	-- Short: omp's footer shows the branch, and a long one pushes the rest (ponytail's status) out of view.
+	return (string.gsub(string.sub(branch, 1, BRANCH_MAX), "%-+$", ""))
 end
 
 -- `tern` arguments that open a worker's tab (see launch.open).
@@ -49,7 +51,7 @@ do
 	assert(M.isWorkerBranch("g1.3-db-secrets") and M.isWorkerBranch("t-5-db-land") and not M.isWorkerBranch("main")
 		and not M.isWorkerBranch("feat/g1.3") and not M.isWorkerBranch(nil), "workers.isWorkerBranch self-check")
 	assert(M.branchFor("T-12", "Fix the Tick: stalls!") == "t-12-fix-the-tick-stalls", "workers.branchFor self-check")
-	assert(#M.branchFor("T-1", string.rep("word ", 20)) <= 48, "workers.branchFor length self-check")
+	assert(#M.branchFor("G1.5", string.rep("word ", 20)) <= BRANCH_MAX, "workers.branchFor length self-check")
 	local s = { task = "T-3", title = "Add API", ternSession = "9", readonly = false }
 	local a = M.tabArgs(s, "/r", "/bin/wt", "main")
 	assert(a[3] == "9" and a[7] == "/bin/wt" and a[12] == "t-3-add-api" and a[14] == "main" and a[#a] == "omp", "workers.tabArgs self-check")
