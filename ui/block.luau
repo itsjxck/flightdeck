@@ -404,7 +404,9 @@ local DEF = {
 			state.selectedRef = a
 			state.open[a] = not state.open[a] or nil
 		elseif verb == "go" then model.request({ kind = "go", task = a })
-		elseif verb == "thread" then openThread(state, cx, a)
+		elseif verb == "thread" then
+			-- Toggles: the same task's Thread button closes it.
+			if state.thread and state.thread.task == a then state.thread = nil else openThread(state, cx, a) end
 		elseif verb == "review" then model.request({ kind = "review", task = a })
 		elseif verb == "issuegoal" or verb == "issuelink" or verb == "issueclose" then
 			-- The issue's detail buttons do what its keys do.

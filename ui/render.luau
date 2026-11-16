@@ -127,6 +127,7 @@ end
 
 -- Which items show their details (refs → true); set by M.view for the whole render.
 local openItems = {}
+local openThreadRef = nil
 local goalDetail
 
 -- Details under an item: Markdown, then label/value lines, then buttons ({ label, action, primary }).
@@ -165,7 +166,7 @@ local function taskDetail(t)
 		{ "PR", t.pr, t.pr and ("url=" .. t.pr) },
 	}, {
 		if t.session and t.status == "doing" then { "Go to agent", "go=" .. t.ref, true } else false,
-		{ "Thread", "thread=" .. t.ref },
+		{ if openThreadRef == t.ref then "Hide thread" else "Thread", "thread=" .. t.ref },
 		if t.worktree then { "Review changes", "review=" .. t.ref } else false,
 	})
 end
@@ -442,6 +443,7 @@ end
 -- Returns the block's main and dock nodes.
 function M.view(view)
 	openItems = view.open or {}
+	openThreadRef = view.thread and view.thread.task
 	local s = view.sections
 	local agentOf = view.agentOf or function() return nil end
 	local waitingTasks = {}
