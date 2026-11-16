@@ -135,7 +135,7 @@ function M.backlog(data)
 	for _, t in data.tasks do
 		local entry = t.goal and byGoal[t.goal]
 		if entry then
-			if t.session == nil or t.session ~= entry.goal.coordinator then table.insert(entry.tasks, t) end
+			if t.session == nil or t.session ~= entry.goal.coordinator then table.insert(entry.tasks, t) else entry.coordinator = t end
 		else
 			table.insert(loose, t)
 		end

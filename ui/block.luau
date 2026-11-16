@@ -262,7 +262,7 @@ local DEF = {
 		local state = {
 			sections = EMPTY, selectedRef = args[1], thread = nil,
 			repoFilter = if type(saved) == "table" and type(saved.repoFilter) == "string" then saved.repoFilter else nil,
-			tab = "now", backlog = nil, expanded = {}, marked = {},
+			tab = "now", backlog = nil, expanded = {}, marked = {}, open = {},
 			reply = Input.new(""), newTask = false, error = nil, alive = true,
 		}
 		refresh(state, cx)
@@ -280,7 +280,7 @@ local DEF = {
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos,
+			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open,
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
@@ -333,6 +333,13 @@ local DEF = {
 			model.request({ kind = "review", task = row.item.ref })
 		elseif not typing and key.name == "f" and state.tab ~= "repos" then
 			openFilter(state)
+		elseif not typing and key.name == "e" then
+			-- Details of the selected item (a Backlog goal opens to its tasks too).
+			local row = list[index]
+			if not row then return false end
+			local ref = row.item.ref or row.item.task
+			if row.kind == "goal" then state.expanded[ref] = not state.expanded[ref] or nil
+			else state.open[ref] = not state.open[ref] or nil end
 		elseif not typing and key.name == "s" and state.tab == "backlog" then
 			local row = list[index]
 			if not (row and row.kind == "goal" and row.item.status == "proposed") then return false end
@@ -393,6 +400,21 @@ local DEF = {
 		elseif verb == "repoissues" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepoIssues(state, cx, r.item) end end
+		elseif verb == "toggle" then
+			state.selectedRef = a
+			state.open[a] = not state.open[a] or nil
+		elseif verb == "go" then model.request({ kind = "go", task = a })
+		elseif verb == "thread" then openThread(state, cx, a)
+		elseif verb == "review" then model.request({ kind = "review", task = a })
+		elseif verb == "issuegoal" or verb == "issuelink" or verb == "issueclose" then
+			-- The issue's detail buttons do what its keys do.
+			for _, r in model.issueRows(state.issues, nil) do
+				if r.item.ref == a then
+					state.selectedRef = a
+					if verb == "issueclose" and state.confirmClose ~= a then state.confirmClose = nil end
+					issueKey(state, cx, if verb == "issuegoal" then "enter" elseif verb == "issuelink" then "l" else "x", r)
+				end
+			end
 		elseif verb == "mark" then state.marked[a] = not state.marked[a] or nil
 		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil

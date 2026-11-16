@@ -612,6 +612,30 @@
 }
 [data-role='mission.issueLink']:hover { text-decoration: underline; }
 
+/* Items that open to their details (tasks, issues; goals in Backlog and Now). */
+[data-role='mission.item'] + [data-role='mission.item'] { border-top: 1px solid var(--l1); }
+[data-role='mission.goalHead'] { cursor: pointer; }
+[data-role='mission.detail'] {
+  gap: 12px;
+  padding: 12px 18px 14px 58px;
+  background: var(--raise);
+  border-top: 1px solid var(--l1);
+}
+[data-role='mission.detailMd'] {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--t2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+[data-role='mission.facts'] { gap: 4px; }
+[data-role='mission.fact'] { gap: 12px; align-items: baseline; }
+[data-role='mission.factKey'] { font: 12px/1.4 var(--sans); color: var(--t3); flex: 0 0 7.5em; }
+[data-role='mission.factValue'] { font: 12px/1.4 var(--mono); color: var(--t2); min-width: 0; overflow-wrap: anywhere; }
+[data-role='mission.factLink'] { font: 12px/1.4 var(--mono); color: var(--accent); cursor: pointer; overflow-wrap: anywhere; }
+[data-role='mission.factLink']:hover { text-decoration: underline; }
+[data-role='mission.detailButtons'] { gap: 8px; flex-wrap: wrap; }
+
 /* Repos tab */
 [data-role='mission.repo'],
 [data-role='mission.repoIgnored'] {

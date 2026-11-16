@@ -125,13 +125,58 @@ local function questionNode(q, picked, now)
 		{ actions = { click = "select=" .. q.task }, mark = if picked then "pick" else nil })
 end
 
--- A task as a strip: state edge, ref, title and latest note, where, state.
+-- Which items show their details (refs → true); set by M.view for the whole render.
+local openItems = {}
+local goalDetail
+
+-- Details under an item: Markdown, then label/value lines, then buttons ({ label, action, primary }).
+local function detail(key, markdown, facts, buttons)
+	local children = {}
+	if markdown and string.find(markdown, "%S") then table.insert(children, col("md", "mission.detailMd", { ui.md(markdown) })) end
+	local lines = {}
+	for n, f in facts do
+		if f[2] and f[2] ~= "" then
+			table.insert(lines, row("f" .. tostring(n), "mission.fact", {
+				text("k", f[1], "mission.factKey"),
+				text("v", f[2], if f[3] then "mission.factLink" else "mission.factValue", if f[3] then { actions = { click = f[3] } } else nil),
+			}))
+		end
+	end
+	if #lines > 0 then table.insert(children, col("facts", "mission.facts", lines)) end
+	local bs = {}
+	for n, b in buttons do
+		if b then table.insert(bs, ui.button(b[1], { key = "b" .. tostring(n), variant = if b[3] then "primary" else "default", actions = { click = b[2] } })) end
+	end
+	if #bs > 0 then table.insert(children, row("buttons", "mission.detailButtons", bs)) end
+	return col(key, "mission.detail", children)
+end
+
+local TASK_STATUS = { todo = "Waiting on other tasks", ready = "Ready to start", doing = "In progress", done = "Done", failed = "Failed", dropped = "Dropped" }
+
+local function taskDetail(t)
+	-- The latest note in full, under the task's description.
+	local md = t.body or ""
+	if t.lastNote then md = md .. (if md ~= "" then "\n\n" else "") .. "**Latest note:** " .. t.lastNote end
+	return detail("detail", md, {
+		{ "Status", TASK_STATUS[t.status] or t.status },
+		{ "Repository", t.repo },
+		{ "Branch", t.branch },
+		{ "Worktree", t.worktree and (string.gsub(t.worktree, "^/Users/[^/]+", "~")) },
+		{ "PR", t.pr, t.pr and ("url=" .. t.pr) },
+	}, {
+		if t.session and t.status == "doing" then { "Go to agent", "go=" .. t.ref, true } else false,
+		{ "Thread", "thread=" .. t.ref },
+		if t.worktree then { "Review changes", "review=" .. t.ref } else false,
+	})
+end
+
+-- A task as a strip: state edge, ref, title and latest note, where, state. Click shows its details.
 local function strip(t, picked, agentOf, waitingTasks)
 	local key, label = M.taskState(t, agentOf(t.session), waitingTasks[t.ref])
 	local where = t.repo or ""
 	if t.branch then where = where .. (if where ~= "" then " · " else "") .. t.branch end
 	local note = oneLine(t.lastNote)
-	return row("t" .. t.ref, "mission.strip-" .. key, {
+	local line = row("line", "mission.strip-" .. key, {
 		text("ref", t.ref, "mission.ref"),
 		col("main", "mission.stripMain", {
 			text("title", t.title, "mission.stripTitle"),
@@ -142,7 +187,8 @@ local function strip(t, picked, agentOf, waitingTasks)
 			ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
 			text("label", label, "mission.stateLabel"),
 		}),
-	}, { actions = { click = "select=" .. t.ref }, title = t.title, mark = if picked then "pick" else nil })
+	}, { actions = { click = "toggle=" .. t.ref }, title = t.title, mark = if picked then "pick" else nil })
+	return col("t" .. t.ref, "mission.item", { line, if openItems[t.ref] then taskDetail(t) else nil })
 end
 
 -- The rail: one segment per task, in order, coloured by state.
@@ -270,7 +316,7 @@ local function issueNodes(view)
 		local marked = view.marked[i.ref] == true
 		local labels = {}
 		for n, l in i.labels do if n <= 3 then table.insert(labels, text("l" .. tostring(n), l, "mission.label")) end end
-		table.insert(rows, row("i" .. i.ref, "mission.issue", {
+		local line = row("line", "mission.issue", {
 			text("mark", if marked then "■" else "□", if marked then "mission.markOn" else "mission.mark",
 				{ actions = { click = "mark=" .. i.ref }, title = "Mark (space) to make one goal from several issues" }),
 			text("ref", i.repo .. "#" .. tostring(i.number), "mission.issueRef"),
@@ -278,7 +324,18 @@ local function issueNodes(view)
 			row("labels", "mission.labels", labels),
 			if #i.goals > 0 then text("goals", table.concat(i.goals, " "), "mission.statusChip-active") else nil,
 			text("age", M.ago(data.now, M.isoMs(i.updatedAt)) or "", "mission.goalProgress"),
-		}, { actions = { click = "select=" .. i.ref }, mark = if i.ref == view.selectedRef then "pick" else nil, title = i.url }))
+		}, { actions = { click = "toggle=" .. i.ref }, mark = if i.ref == view.selectedRef then "pick" else nil, title = i.url })
+		table.insert(rows, col("i" .. i.ref, "mission.item", { line, if openItems[i.ref] then detail("detail", i.body, {
+			{ "Issue", i.url, "url=" .. i.url },
+			{ "Labels", table.concat(i.labels, ", ") },
+			{ "Updated", M.ago(data.now, M.isoMs(i.updatedAt)) },
+			{ "Goals", table.concat(i.goals, ", ") },
+		}, {
+			{ "Make a goal", "issuegoal=" .. i.ref, true },
+			{ "Link to a goal", "issuelink=" .. i.ref },
+			{ "Open on GitHub", "url=" .. i.url },
+			{ "Close as not planned", "issueclose=" .. i.ref },
+		}) else nil }))
 	end
 	local out = {}
 	for n, e in (data.errors or {}) do
@@ -293,6 +350,18 @@ local function issueNodes(view)
 			else text("none", "No open issues" .. (if view.repoFilter then " in " .. view.repoFilter else "") .. ".", "mission.empty"),
 	}))
 	return out
+end
+
+-- A goal's details: what done looks like, its issues, and buttons to reach it.
+goalDetail = function(g, coordinator)
+	local facts = { { "Coordinator", coordinator and (coordinator.ref .. (if coordinator.lastNote then " · " .. oneLine(coordinator.lastNote) else "")) } }
+	for n, i in (g.issues or {}) do table.insert(facts, { if n == 1 then "Issues" else "", i.repo .. "#" .. tostring(i.number) .. " " .. i.title, "url=" .. i.url }) end
+	return detail("detail", g.body, facts, {
+		if g.status == "proposed" then { "Start goal", "start=" .. g.ref, true } else false,
+		if coordinator and coordinator.status == "doing" then { "Go to coordinator", "go=" .. coordinator.ref, g.status ~= "proposed" } else false,
+		if g.tern_session and (g.status == "active" or g.status == "finished") then { "Open session", "session=" .. g.ref } else false,
+		if g.status == "finished" then { "Close goal", "close=" .. g.ref } else false,
+	})
 end
 
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
@@ -324,6 +393,7 @@ local function backlogNodes(view)
 				if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
 					title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
 			}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
+			if open then goalDetail(g, entry.coordinator) else nil,
 			if open then col("tasks", "mission.backlogTasks", strips) else nil,
 		}))
 	end
@@ -367,10 +437,11 @@ local function repoNodes(view)
 	}) }
 end
 
--- The whole block. `view`: { tab, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
+-- The whole block. `view`: { tab, open (refs showing details), sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
 -- reply, replyTo, replyHint, error, agentOf }. Sections and backlog arrive already filtered.
 -- Returns the block's main and dock nodes.
 function M.view(view)
+	openItems = view.open or {}
 	local s = view.sections
 	local agentOf = view.agentOf or function() return nil end
 	local waitingTasks = {}
@@ -390,7 +461,7 @@ function M.view(view)
 	if view.tab == "issues" then
 		for _, node in issueNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter goal from issue   space mark   l link to goal   o open   x close   r refresh")
+			dockNode(view, "[ ] tabs   f repo   ↑↓ move   e details   Enter goal from issue   space mark   l link to goal   o open   x close   r refresh")
 	end
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
@@ -402,7 +473,7 @@ function M.view(view)
 		for _, node in backlogNodes(view) do table.insert(main, node) end
 		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter show tasks / go to agent   s start goal   o thread   n new task   g new goal")
+			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter / e details   s start goal   o thread   n new task   g new goal")
 	end
 
 	-- Your turn
@@ -430,6 +501,7 @@ function M.view(view)
 			local finished = g.status == "finished"
 			local progress = if finished then "Finished · review, then close"
 				elseif g.progress then tostring(g.progress.done) .. " of " .. tostring(g.progress.total) .. " done" else ""
+			if openItems[g.ref] then table.insert(strips, 1, goalDetail(g, group.coordinator)) end
 			table.insert(goalPanels, panel("g" .. g.ref, col("head", "mission.goalHead", {
 				row("line", "mission.goalLine", {
 					text("ref", g.ref, "mission.ref"),
@@ -449,7 +521,7 @@ function M.view(view)
 				}),
 				rail(group.tasks, agentOf, waitingTasks),
 				issueLinks(g.issues),
-			}), strips))
+			}, { actions = { click = "toggle=" .. g.ref }, title = "Show the goal's details" }), strips))
 		else
 			loose = strips
 		end
@@ -472,7 +544,7 @@ function M.view(view)
 	if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 
 	return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-		dockNode(view, "[ ] tabs   f repo   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   n new task   g new goal")
+		dockNode(view, "[ ] tabs   f repo   ↑↓ move   e details   1–9 answer   Enter go to agent   o thread   r review   n new task   g new goal")
 end
 
 do
