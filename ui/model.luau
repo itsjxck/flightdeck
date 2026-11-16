@@ -100,62 +100,9 @@ function M.filterSections(sections, repo)
 	return { needs = needs, working = working, proposed = sections.proposed, todo = sections.todo, now = sections.now }
 end
 
--- The Backlog narrowed to one repository (nil: everything). Pure.
-function M.filterBacklog(backlog, repo)
-	if not repo or not backlog then return backlog end
-	local goals, loose = {}, {}
-	for _, entry in backlog.goals do if touches(entry.tasks, repo) then table.insert(goals, entry) end end
-	for _, t in backlog.loose do if t.repo == repo then table.insert(loose, t) end end
-	return { goals = goals, loose = loose, now = backlog.now }
-end
 
--- The repositories goals, tasks and open issues are in, by name, for the filter. Pure.
-function M.repoChoices(backlog, issues)
-	local seen, names = {}, {}
-	local function add(name) if name and not seen[name] then seen[name] = true; table.insert(names, name) end end
-	if backlog then
-		for _, entry in backlog.goals do for _, t in entry.tasks do add(t.repo) end end
-		for _, t in backlog.loose do add(t.repo) end
-	end
-	for _, i in (issues or {}) do add(i["local"]) end
-	table.sort(names)
-	return names
-end
 
--- The Backlog tab's groups, from /api/backlog. Pure.
--- goals: newest first, each { goal, tasks } (its coordinator's task left out);
--- loose: tasks outside goals, newest first.
-function M.backlog(data)
-	local byGoal, goals, loose = {}, {}, {}
-	for _, g in data.goals do
-		local entry = { goal = g, tasks = {} }
-		byGoal[g.id] = entry
-		table.insert(goals, entry)
-	end
-	for _, t in data.tasks do
-		local entry = t.goal and byGoal[t.goal]
-		if entry then
-			if t.session == nil or t.session ~= entry.goal.coordinator then table.insert(entry.tasks, t) else entry.coordinator = t end
-		else
-			table.insert(loose, t)
-		end
-	end
-	return { goals = goals, loose = loose, now = data.now }
-end
 
--- What the cursor moves over in the Backlog tab: goals, the tasks of expanded
--- goals under them, then tasks outside goals. Pure.
-function M.backlogRows(backlog, expanded)
-	local rows = {}
-	for _, entry in backlog.goals do
-		table.insert(rows, { kind = "goal", item = entry.goal })
-		if expanded[entry.goal.ref] then
-			for _, t in entry.tasks do table.insert(rows, { kind = "task", item = t }) end
-		end
-	end
-	for _, t in backlog.loose do table.insert(rows, { kind = "task", item = t }) end
-	return rows
-end
 
 -- The Repos tab's rows, from /api/repos: each { kind = "repo", item } with item.ref = its name. Pure.
 function M.repoRows(data)
@@ -165,6 +112,88 @@ function M.repoRows(data)
 			ignored = r.ignored == 1, issuesIgnored = r.issues_ignored == 1 } })
 	end
 	return rows
+end
+
+-- Goals and tasks stop being "open" once closed (goals: done, dropped) or
+-- finished (tasks outside goals: done, failed, dropped). The Backlog shows
+-- those finished today in their own section and hides older ones unless asked.
+local CLOSED_GOAL = { done = true, dropped = true }
+local FINISHED_TASK = { done = true, failed = true, dropped = true }
+
+-- The Backlog tab's groups, from /api/backlog. Pure. Each list is newest first:
+-- goals (open, each { goal, tasks, coordinator }), loose (open tasks outside goals),
+-- todayGoals / todayTasks (closed since local midnight), earlierGoals / earlierTasks.
+function M.backlog(data)
+	local byGoal = {}
+	local b = { goals = {}, loose = {}, todayGoals = {}, todayTasks = {}, earlierGoals = {}, earlierTasks = {},
+		now = data.now, todayStart = data.todayStart or 0 }
+	for _, g in data.goals do
+		local entry = { goal = g, tasks = {} }
+		byGoal[g.id] = entry
+		local list = if not CLOSED_GOAL[g.status] then b.goals
+			elseif (g.closed or g.created or 0) >= b.todayStart then b.todayGoals else b.earlierGoals
+		table.insert(list, entry)
+	end
+	for _, t in data.tasks do
+		local entry = t.goal and byGoal[t.goal]
+		if entry then
+			if t.session == nil or t.session ~= entry.goal.coordinator then table.insert(entry.tasks, t) else entry.coordinator = t end
+		else
+			local list = if not FINISHED_TASK[t.status] then b.loose
+				elseif (t.updated or 0) >= b.todayStart then b.todayTasks else b.earlierTasks
+			table.insert(list, t)
+		end
+	end
+	return b
+end
+
+-- What the cursor moves over in the Backlog tab, in screen order: open goals (with
+-- the tasks of expanded ones), open tasks, then today's and (showDone) earlier finished ones. Pure.
+function M.backlogRows(backlog, expanded, showDone)
+	local rows = {}
+	local function goals(list)
+		for _, entry in list do
+			table.insert(rows, { kind = "goal", item = entry.goal })
+			if expanded[entry.goal.ref] then
+				for _, t in entry.tasks do table.insert(rows, { kind = "task", item = t }) end
+			end
+		end
+	end
+	local function tasks(list) for _, t in list do table.insert(rows, { kind = "task", item = t }) end end
+	goals(backlog.goals); tasks(backlog.loose)
+	goals(backlog.todayGoals); tasks(backlog.todayTasks)
+	if showDone then goals(backlog.earlierGoals); tasks(backlog.earlierTasks) end
+	return rows
+end
+
+-- The Backlog narrowed to one repository (nil: everything). Pure.
+function M.filterBacklog(backlog, repo)
+	if not repo or not backlog then return backlog end
+	local out = { now = backlog.now, todayStart = backlog.todayStart }
+	for _, key in { "goals", "todayGoals", "earlierGoals" } do
+		out[key] = {}
+		for _, entry in backlog[key] do if touches(entry.tasks, repo) then table.insert(out[key], entry) end end
+	end
+	for _, key in { "loose", "todayTasks", "earlierTasks" } do
+		out[key] = {}
+		for _, t in backlog[key] do if t.repo == repo then table.insert(out[key], t) end end
+	end
+	return out
+end
+
+-- The repositories goals, tasks and open issues are in, by name, for the filter. Pure.
+function M.repoChoices(backlog, issues)
+	local seen, names = {}, {}
+	local function add(name) if name and not seen[name] then seen[name] = true; table.insert(names, name) end end
+	if backlog then
+		for _, key in { "goals", "todayGoals", "earlierGoals" } do
+			for _, entry in backlog[key] do for _, t in entry.tasks do add(t.repo) end end
+		end
+		for _, key in { "loose", "todayTasks", "earlierTasks" } do for _, t in backlog[key] do add(t.repo) end end
+	end
+	for _, i in (issues or {}) do add(i["local"]) end
+	table.sort(names)
+	return names
 end
 
 -- The Issues tab's rows from /api/issues, narrowed to the repository filter:
@@ -195,6 +224,10 @@ do
 		goals = { { id = 2, ref = "G-2", coordinator = "c" }, { id = 1, ref = "G-1" } },
 		tasks = { { ref = "T-3", goal = 2, session = "c" }, { ref = "T-2", goal = 2 }, { ref = "T-1" } } })
 	assert(#b.goals == 2 and #b.goals[1].tasks == 1 and #b.loose == 1, "ui.model.backlog self-check")
+	local d = M.backlog({ now = 0, todayStart = 100, goals = { { id = 1, ref = "G-1", status = "done", closed = 150 }, { id = 2, ref = "G-2", status = "dropped", closed = 50 } },
+		tasks = { { ref = "T-1", status = "done", updated = 120 }, { ref = "T-2", status = "failed", updated = 10 }, { ref = "T-3", status = "ready", updated = 10 } } })
+	assert(#d.todayGoals == 1 and #d.earlierGoals == 1 and #d.todayTasks == 1 and #d.earlierTasks == 1 and #d.loose == 1
+		and #M.backlogRows(d, {}, false) == 3 and #M.backlogRows(d, {}, true) == 5, "ui.model.backlog done-aging self-check")
 	assert(#M.backlogRows(b, {}) == 3 and #M.backlogRows(b, { ["G-2"] = true }) == 4, "ui.model.backlogRows self-check")
 	b.goals[1].tasks[1].repo, b.loose[1].repo = "web", "api"
 	assert(table.concat(M.repoChoices(b), ",") == "api,web" and #M.filterBacklog(b, "web").goals == 1

@@ -21,7 +21,7 @@ end
 -- The selectable rows of the shown tab and the index of the selected one (by ref, so a refresh keeps it).
 local function rows(state)
 	local sections, backlog = shown(state)
-	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded) else {})
+	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded, state.showDone) else {})
 		elseif state.tab == "issues" then model.issueRows(state.issues, state.repoFilter)
 		elseif state.tab == "repos" then (state.repos or {})
 		else model.selectable(sections)
@@ -280,7 +280,7 @@ local DEF = {
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open,
+			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
@@ -333,6 +333,8 @@ local DEF = {
 			model.request({ kind = "review", task = row.item.ref })
 		elseif not typing and key.name == "f" and state.tab ~= "repos" then
 			openFilter(state)
+		elseif not typing and key.name == "d" and state.tab == "backlog" then
+			state.showDone = not state.showDone
 		elseif not typing and key.name == "e" then
 			-- Details of the selected item (a Backlog goal opens to its tasks too).
 			local row = list[index]
@@ -370,6 +372,7 @@ local DEF = {
 	end,
 	event = function(state, ev, cx)
 		-- Table rows: a click selects, a double click goes to the agent (or starts the goal).
+		if ev.ev == "action" and ev.act == "showdone" then state.showDone = true; return end
 		if ev.ev == "action" and ev.act == "filtermenu" then
 			if state.filterOpen then state.filterOpen = false else openFilter(state) end
 			return

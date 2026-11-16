@@ -159,7 +159,10 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         // Every goal and task, newest first, for Mission control's Backlog tab.
         const goals = store.listGoals().reverse().map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id) }));
         const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: Store.tid(t.id) }));
-        return json({ goals, tasks, now: Date.now() });
+        // Local midnight: the Backlog's "Done today" starts here.
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return json({ goals, tasks, now: Date.now(), todayStart: today.getTime() });
       }
       case "GET thread":
         return json(store.events(Store.parseTask(parts[1] ?? "")));

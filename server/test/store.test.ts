@@ -148,8 +148,25 @@ describe("goals and conversation", () => {
     const again = store.syncScanned([{ name: "a", path: "/p/a" }, { name: "a", path: "/q/a" }]);
     expect(again).toMatchObject({ added: 0, removed: 1, duplicates: [{ name: "a", path: "/q/a" }] });
     expect(store.repos({ ignored: true })).toMatchObject([{ name: "a", ignored: 1 }]);
-    store.setRepoIssuesIgnored("b", true);
-    expect(store.repos()).toMatchObject([{ name: "b", ignored: 0, issues_ignored: 1 }]);
+    store.setRepoIssuesIgnored("a", true);
+    expect(store.repos({ ignored: true })).toMatchObject([{ name: "a", ignored: 1, issues_ignored: 1 }]);
+  });
+
+  test("cleanup deletes closed goals with their tasks and old finished loose tasks, nothing else", () => {
+    let clock = 1000;
+    const store = new Store(":memory:", () => clock);
+    const old = store.proposeGoal(me, { title: "old", body: "", tasks: [{ key: "a", title: "a", repo: "x" }] });
+    store.closeGoal(old.id, "done");
+    const open = store.proposeGoal(me, { title: "open", body: "", tasks: [{ key: "b", title: "b", repo: "x" }] });
+    const loose = store.startTask(me, { title: "loose" });
+    store.doneTask("s-me", { outcome: "succeeded", summary: "ok" });
+    clock = 5000;
+    const recent = store.addTask(me, { title: "recent", repo: "x" });
+    expect(store.cleanup(2000)).toEqual({ goals: 1, tasks: 2 });
+    expect(store.listGoals().map((g) => g.id)).toEqual([open.id]);
+    expect(store.listTasks({}).map((t) => t.title).sort()).toEqual(["b", "recent"]);
+    expect(() => store.task(loose.id)).toThrow();
+    expect(recent.id).toBeGreaterThan(0);
   });
 
   test("issues link to a goal once each, and unlink", () => {

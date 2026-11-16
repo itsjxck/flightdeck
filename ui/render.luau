@@ -368,40 +368,58 @@ end
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
 
 -- The Backlog tab: every goal (newest first, click to show its tasks) and every task outside goals.
+-- A goal in the Backlog: its line (click opens its details and tasks), then those when open.
+local function backlogGoal(view, entry, now)
+	local g = entry.goal
+	local open = view.expanded[g.ref] == true
+	local progress = if g.progress and g.progress.total > 0 then tostring(g.progress.done) .. "/" .. tostring(g.progress.total) else ""
+	local strips = {}
+	if open then
+		for _, t in entry.tasks do table.insert(strips, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
+		if #strips == 0 then table.insert(strips, text("none", "No tasks.", "mission.empty")) end
+	end
+	return col("g" .. g.ref, "mission.backlogGoal", {
+		row("line", "mission.backlogLine-" .. g.status, {
+			text("chev", if open then "▾" else "▸", "mission.chev"),
+			text("ref", g.ref, "mission.ref"),
+			text("title", g.title, "mission.stripTitle", { grow = 1 }),
+			text("progress", progress, "mission.goalProgress"),
+			text("age", M.ago(now, g.closed or g.created) or "", "mission.goalProgress"),
+			issueLinks(g.issues),
+			text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
+			if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
+				title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
+		}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
+		if open then goalDetail(g, entry.coordinator) else nil,
+		if open then col("tasks", "mission.backlogTasks", strips) else nil,
+	})
+end
+
+-- Finished goals and tasks of one period, goals first, as a section; nil when empty.
+local function doneSection(view, key, title, goals, tasks, note)
+	local items = {}
+	for _, entry in goals do table.insert(items, backlogGoal(view, entry, view.backlog.now)) end
+	for _, t in tasks do table.insert(items, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
+	if #items == 0 then return nil end
+	return col(key, "mission.section", {
+		sectionHead("head", title, plural(#goals, "goal", "goals") .. " · " .. plural(#tasks, "task", "tasks") .. (if note then " · " .. note else "")),
+		col("list", "mission.strips", items),
+	})
+end
+
+-- The Backlog tab: open goals (newest first, click to show its tasks), open
+-- tasks outside goals, what finished today, and (d) what finished before.
+-- Finished goals and tasks are deleted after 30 days.
 local function backlogNodes(view)
 	local b = view.backlog
 	local out = {}
 	if not b then return { text("loading", "Loading…", "mission.empty") } end
 	local goals = {}
-	for _, entry in b.goals do
-		local g = entry.goal
-		local open = view.expanded[g.ref] == true
-		local progress = if g.progress and g.progress.total > 0 then tostring(g.progress.done) .. "/" .. tostring(g.progress.total) else ""
-		local strips = {}
-		if open then
-			for _, t in entry.tasks do table.insert(strips, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
-			if #strips == 0 then table.insert(strips, text("none", "No tasks.", "mission.empty")) end
-		end
-		table.insert(goals, col("g" .. g.ref, "mission.backlogGoal", {
-			row("line", "mission.backlogLine-" .. g.status, {
-				text("chev", if open then "▾" else "▸", "mission.chev"),
-				text("ref", g.ref, "mission.ref"),
-				text("title", g.title, "mission.stripTitle", { grow = 1 }),
-				text("progress", progress, "mission.goalProgress"),
-				text("age", M.ago(b.now, g.created) or "", "mission.goalProgress"),
-				issueLinks(g.issues),
-				text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
-				if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
-					title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
-			}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
-			if open then goalDetail(g, entry.coordinator) else nil,
-			if open then col("tasks", "mission.backlogTasks", strips) else nil,
-		}))
-	end
+	for _, entry in b.goals do table.insert(goals, backlogGoal(view, entry, b.now)) end
 	table.insert(out, col("goals", "mission.section", {
 		sectionHead("head", "Goals", plural(#b.goals, "goal", "goals") .. " · Enter shows tasks · s starts a proposed one"),
 		if #goals > 0 then col("list", "mission.strips", goals)
-			else text("none", if view.repoFilter then "No goals touch " .. view.repoFilter .. "." else "No goals yet. Press g to propose one.", "mission.empty"),
+			else text("none", if view.repoFilter then "No open goals touch " .. view.repoFilter .. "." else "No open goals. Press g to propose one.", "mission.empty"),
 	}))
 	local loose = {}
 	for _, t in b.loose do table.insert(loose, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
@@ -409,6 +427,18 @@ local function backlogNodes(view)
 		sectionHead("head", "Tasks outside goals", plural(#b.loose, "task", "tasks")),
 		if #loose > 0 then col("list", "mission.strips", loose) else text("none", "None.", "mission.empty"),
 	}))
+	local today = doneSection(view, "today", "Done today", b.todayGoals, b.todayTasks)
+	if today then table.insert(out, today) end
+	local earlier = #b.earlierGoals + #b.earlierTasks
+	if view.showDone then
+		local section = doneSection(view, "earlier", "Done before today", b.earlierGoals, b.earlierTasks, "d hides · deleted after 30 days")
+		if section then table.insert(out, section) end
+	elseif earlier > 0 then
+		table.insert(out, row("earlier", "mission.showDone", {
+			text("text", plural(earlier, "goal or task", "goals and tasks") .. " finished before today · press d (or click) to show",
+				"mission.sectionNote"),
+		}, { actions = { click = "showdone" } }))
+	end
 	return out
 end
 
@@ -438,7 +468,7 @@ local function repoNodes(view)
 	}) }
 end
 
--- The whole block. `view`: { tab, open (refs showing details), sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
+-- The whole block. `view`: { tab, open (refs showing details), showDone, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
 -- reply, replyTo, replyHint, error, agentOf }. Sections and backlog arrive already filtered.
 -- Returns the block's main and dock nodes.
 function M.view(view)
@@ -475,7 +505,7 @@ function M.view(view)
 		for _, node in backlogNodes(view) do table.insert(main, node) end
 		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter / e details   s start goal   o thread   n new task   g new goal")
+			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter / e details   d done   s start goal   o thread   n new task   g new goal")
 	end
 
 	-- Your turn
@@ -563,8 +593,9 @@ do
 	local main, dock = M.view({ sections = sections, selectedRef = "T-1", reply = Input.new(""), replyTo = "T-1",
 		repoChoices = { "a" }, repoFilter = "a", agentOf = function() return "working" end })
 	assert(main ~= nil and dock ~= nil, "ui.render.view self-check")
-	local backlog = { now = 0, goals = { { goal = { ref = "G-1", title = "g", status = "done", created = 0 }, tasks = { { ref = "T-2", title = "x", status = "done" } } } }, loose = {} }
-	local bm = M.view({ tab = "backlog", sections = sections, backlog = backlog, expanded = { ["G-1"] = true }, reply = Input.new("") })
+	local backlog = { now = 0, goals = { { goal = { ref = "G-1", title = "g", status = "active", created = 0 }, tasks = { { ref = "T-2", title = "x", status = "done" } } } }, loose = {},
+		todayGoals = {}, todayTasks = { { ref = "T-3", title = "y", status = "done" } }, earlierGoals = {}, earlierTasks = { { ref = "T-4", title = "z", status = "done" } } }
+	local bm = M.view({ tab = "backlog", sections = sections, backlog = backlog, expanded = { ["G-1"] = true }, showDone = true, reply = Input.new("") })
 	assert(bm ~= nil, "ui.render.view backlog self-check")
 end
 

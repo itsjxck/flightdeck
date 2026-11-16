@@ -636,6 +636,9 @@
 [data-role='mission.factLink']:hover { text-decoration: underline; }
 [data-role='mission.detailButtons'] { gap: 8px; flex-wrap: wrap; }
 
+[data-role='mission.showDone'] { padding: 2px 0; cursor: pointer; }
+[data-role='mission.showDone']:hover [data-role='mission.sectionNote'] { color: var(--t1); }
+
 /* Repos tab */
 [data-role='mission.repo'],
 [data-role='mission.repoIgnored'] {

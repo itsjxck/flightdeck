@@ -10,6 +10,8 @@ import { resolveCaller, resolvePane } from "./identity";
 import { loadConfig, scanRepos, type ScanConfig } from "./repos";
 
 const RESCAN_MS = 30 * 60_000;
+// Finished goals and tasks older than this are deleted (checked at start and with each rescan).
+const KEEP_FINISHED_MS = 30 * 24 * 60 * 60_000;
 
 export function startServer(opts: { port: number; dbPath: string; token: string; resolve?: (pane: string) => Caller | null; scan?: ScanConfig }) {
   const store = new Store(opts.dbPath);
@@ -22,8 +24,13 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
     console.log(`repos: ${result.added} added, ${result.removed} removed, ${result.duplicates.length} name clashes`);
     return result;
   };
+  const tidy = () => {
+    const r = store.cleanup(Date.now() - KEEP_FINISHED_MS);
+    if (r.goals || r.tasks) console.log(`cleanup: ${r.goals} goals, ${r.tasks} tasks finished 30+ days ago deleted`);
+  };
+  tidy();
   scan().catch((e) => console.error("repo scan failed:", e));
-  const rescan = setInterval(() => scan().catch((e) => console.error("repo scan failed:", e)), RESCAN_MS);
+  const rescan = setInterval(() => { tidy(); scan().catch((e) => console.error("repo scan failed:", e)); }, RESCAN_MS);
   const resolve = opts.resolve ?? resolvePane;
   const resolveTool = opts.resolve ?? resolveCaller;
   const server = Bun.serve({

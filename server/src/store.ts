@@ -17,6 +17,8 @@ export interface Task {
 export interface Goal {
   id: number; title: string; body: string; coordinator: string | null;
   tern_session: string | null; status: GoalStatus; created: number;
+  // When it was closed (done or dropped); null while open.
+  closed: number | null;
 }
 export interface Event {
   id: number; task: number | null; goal: number | null; author: string; kind: EventKind;
@@ -37,7 +39,7 @@ export const AGENT_MESSAGE_GAP = 120_000;
 const SCHEMA = `
 create table if not exists goals (
   id integer primary key, title text not null, body text not null default '',
-  coordinator text, tern_session text, status text not null, created integer not null);
+  coordinator text, tern_session text, status text not null, created integer not null, closed integer);
 create table if not exists tasks (
   id integer primary key, goal integer references goals(id), title text not null,
   body text not null default '', repo text, branch text, worktree text, pr text,
@@ -78,6 +80,8 @@ export class Store {
       this.db.exec("alter table repos add column source text not null default 'learned'");
       this.db.exec("alter table repos add column ignored integer not null default 0");
     }
+    const goalCols = this.db.query("select name from pragma_table_info('goals')").all() as { name: string }[];
+    if (!goalCols.some((c) => c.name === "closed")) this.db.exec("alter table goals add column closed integer");
     if (!repoCols.some((c) => c.name === "issues_ignored")) this.db.exec("alter table repos add column issues_ignored integer not null default 0");
   }
 
@@ -388,7 +392,26 @@ export class Store {
 
   closeGoal(id: number, status: "done" | "dropped") {
     this.goal(id);
-    this.db.query("update goals set status = ? where id = ?").run(status, id);
+    this.db.query("update goals set status = ?, closed = ? where id = ?").run(status, this.now(), id);
+  }
+
+  // Deletes goals closed before `before` (ms) with their tasks, and finished tasks
+  // outside goals last changed before it, with everything that refers to them.
+  cleanup(before: number): { goals: number; tasks: number } {
+    return this.db.transaction(() => {
+      const goals = (this.db.query("select id from goals where status in ('done', 'dropped') and coalesce(closed, created) < ?")
+        .all(before) as { id: number }[]).map((g) => g.id);
+      const tasks = (this.db.query(`select id from tasks where (goal in (select value from json_each(?)))
+        or (goal is null and status in ('done', 'dropped', 'failed') and updated < ?)`).all(JSON.stringify(goals), before) as { id: number }[]).map((t) => t.id);
+      const t = JSON.stringify(tasks), g = JSON.stringify(goals);
+      this.db.query("delete from deps where task in (select value from json_each(?)) or needs in (select value from json_each(?))").run(t, t);
+      this.db.query("delete from events where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
+      this.db.query("delete from workers where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
+      this.db.query("delete from tasks where id in (select value from json_each(?))").run(t);
+      this.db.query("delete from goal_issues where goal in (select value from json_each(?))").run(g);
+      this.db.query("delete from goals where id in (select value from json_each(?))").run(g);
+      return { goals: goals.length, tasks: tasks.length };
+    })();
   }
 
   private finishGoalIfDone(goal: number | null) {
