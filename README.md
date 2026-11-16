@@ -57,7 +57,7 @@ You need macOS and:
 
 1. Get the code and link it into Tern (it reloads when the files change):
    ```sh
-   git clone <this repository> flightdeck
+   git clone https://github.com/itsjxck/flightdeck.git
    /Applications/Tern.app/Contents/MacOS/tern plugin link "$PWD/flightdeck"
    ```
 2. In Tern's command palette, run **Connect omp to Flightdeck**. It adds a `flightdeck` MCP server to `~/.omp/agent/mcp.json` and a short work-tracking note to `~/.omp/agent/AGENTS.md` (between `<!-- flightdeck -->` markers; rerunning replaces it). Flightdeck reminds you once per launch until it's done.
