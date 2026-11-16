@@ -10,6 +10,7 @@ local dialog = require("./dialog")
 local POLL_MS = 2000
 
 local ISSUES_POLL_MS = 30000
+local STATS_POLL_MS = 60000
 local issueKey
 local publishLinkBase
 
@@ -76,6 +77,14 @@ local function refresh(state, cx)
 				pcall(function() cx:render() end)
 			end)
 			state.issuesRefresh = false
+		end
+		if state.tab == "stats" and (not state.statsAt or tern.now() - state.statsAt > STATS_POLL_MS) then
+			state.statsAt = tern.now()
+			model.api("GET", "/api/analytics", nil, function(data, statsErr)
+				if data then state.stats = data end
+				if statsErr then state.error = statsErr end
+				pcall(function() cx:render() end)
+			end)
 		end
 		-- Every tab: the backlog also gives the repository filter its choices.
 		do
@@ -322,7 +331,7 @@ local DEF = {
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
+			tab = state.tab, stats = state.stats, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
@@ -375,6 +384,9 @@ local DEF = {
 			local row = list[index]
 			if not row or row.kind == "proposal" or row.kind == "goal" then return false end
 			openThread(state, cx, row.item.task or row.item.ref)
+		elseif not typing and key.name == "r" and state.tab == "stats" then
+			state.statsAt = nil
+			refresh(state, cx)
 		elseif not typing and key.name == "r" then
 			local row = list[index]
 			if not row or row.kind ~= "task" then return false end
@@ -422,6 +434,7 @@ local DEF = {
 			if ev.act == "newtask" then openDialog(state, "task"); return end
 			if ev.act == "scanrepos" then scanRepos(state, cx); return end
 			if ev.act == "refreshissues" then issueKey(state, cx, "r", nil); return end
+			if ev.act == "refreshstats" then state.statsAt = nil; refresh(state, cx); return end
 			if ev.act == "dialog" and state.dialog then
 				if ev.value == "cancel" then state.dialog = nil else submitDialog(state, cx) end
 				return

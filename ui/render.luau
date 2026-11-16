@@ -248,7 +248,8 @@ local function dockNode(view, keys)
 end
 
 -- Mission control's tabs, in order: id and label.
-M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "issues", label = "Issues" }, { id = "repos", label = "Repos" } }
+M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "issues", label = "Issues" },
+	{ id = "stats", label = "Stats" }, { id = "repos", label = "Repos" } }
 
 local function tabStrip(current, needs)
 	local tabs = {}
@@ -472,6 +473,100 @@ local function repoNodes(view)
 	}) }
 end
 
+-- Gives a builder's node a key (ui builders take none).
+local function keyed(node, key)
+	node.p = node.p or {}
+	node.p.key = key
+	return node
+end
+
+local function keyedStats(items)
+	return keyed(ui.stats(items), "tiles")
+end
+
+-- "$12.34", or "$0.04" for small amounts. Pure.
+function M.money(usd)
+	return string.format("$%.2f", usd or 0)
+end
+
+-- "1.2M", "34k", "512". Pure.
+function M.count(n)
+	if n >= 1e9 then return string.format("%.1fB", n / 1e9) end
+	if n >= 1e6 then return string.format("%.1fM", n / 1e6) end
+	if n >= 1e3 then return string.format("%.0fk", n / 1e3) end
+	return tostring(math.floor(n))
+end
+
+local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+-- "2026-11-16" → "16 Nov". Pure.
+function M.shortDay(day)
+	local _, m, d = string.match(day, "^(%d+)-(%d+)-(%d+)$")
+	return if m then tostring(tonumber(d)) .. " " .. MONTHS[tonumber(m)] else day
+end
+
+-- A bar chart with its first and last labels under it (the bars show the rest on hover).
+local function chart(bars)
+	local range = if #bars > 0 then bars[1][1] .. "  …  " .. bars[#bars][1] else ""
+	return col("chart", "mission.chart", { ui.bars(bars), text("range", range, "mission.chartRange") })
+end
+
+-- The Stats tab: spend from omp's session files, agents over the day, how goals and tasks ended.
+local function statsNodes(view)
+	local a = view.stats
+	if not a then return { text("loading", "Adding up omp's sessions…", "mission.empty") } end
+	local t = a.totals
+	local out = {}
+	local now = a.agentsNow
+	table.insert(out, keyedStats({
+		{ label = "Spent today", value = M.money(a.spend.today) },
+		{ label = "Last 7 days", value = M.money(a.spend.week) },
+		{ label = "Last 30 days", value = M.money(a.spend.month), sub = M.count(a.spend.monthTokens) .. " tokens" },
+		{ label = "Agents working", value = if now then tostring(now.working) else "–", sub = if now then "of " .. tostring(now.total) .. " running" else "no sample yet",
+			tone = if now and now.working > 0 then "success" else nil },
+		{ label = "Tasks done", value = tostring(t.tasksDone), sub = tostring(t.tasksFailed) .. " failed · " .. tostring(t.tasksOpen) .. " open",
+			tone = if t.tasksFailed > 0 then nil else nil },
+		{ label = "Goals done", value = tostring(t.goalsDone), sub = tostring(t.goalsActive) .. " running · " .. tostring(t.goalsDropped) .. " dropped" },
+	}))
+
+	local spendBars = {}
+	for _, d in a.spendByDay do table.insert(spendBars, { M.shortDay(d.day), math.floor(d.cost * 100 + 0.5) / 100 }) end
+	table.insert(out, col("spend", "mission.section", { sectionHead("head", "Spend per day", "USD, last 14 days"), chart(spendBars) }))
+
+	local agentBars = {}
+	for _, h in a.agentsByHour do table.insert(agentBars, { h.hour, h.working }) end
+	table.insert(out, col("agents", "mission.section", { sectionHead("head", "Agents working", "busiest minute of each hour, last 24 hours"),
+		chart(agentBars) }))
+
+	local taskBars, failed = {}, 0
+	for _, d in a.tasksByDay do table.insert(taskBars, { M.shortDay(d.day), d.done }); failed += d.failed end
+	table.insert(out, col("tasks", "mission.section", { sectionHead("head", "Tasks done per day", tostring(failed) .. " failed in the same 14 days"),
+		chart(taskBars) }))
+
+	local total = math.max(a.spend.month, 0.0001)
+	local projectRows = {}
+	for n, p in a.byProject do
+		if n <= 10 then table.insert(projectRows, { id = p.project, cells = { p.project, ui.meter_cell(p.cost / total), M.money(p.cost) } }) end
+	end
+	table.insert(out, col("projects", "mission.section", { sectionHead("head", "Spend by project", "last 30 days"),
+		keyed(ui.table({ { id = "p", head = "Project", grow = 1, mono = true }, { id = "share", head = "Share", grow = 1 }, { id = "cost", head = "Cost", align = "end" } },
+			projectRows, { empty = "No spend recorded yet." }), "projectTable") }))
+
+	local modelRows = {}
+	for _, m in a.byModel do table.insert(modelRows, { id = m.model, cells = { m.model, M.count(m.tokens), M.money(m.cost) } }) end
+	table.insert(out, col("models", "mission.section", { sectionHead("head", "Spend by model", "last 30 days"),
+		keyed(ui.table({ { id = "m", head = "Model", grow = 1, mono = true }, { id = "tok", head = "Tokens", align = "end" }, { id = "cost", head = "Cost", align = "end" } },
+			modelRows, { empty = "No spend recorded yet." }), "modelTable") }))
+
+	local goalRows = {}
+	for _, g in a.byGoal do
+		table.insert(goalRows, { id = g.ref, cells = { g.ref, g.title, GOAL_STATUS[g.status] or g.status, tostring(g.tasks), M.money(g.cost) } })
+	end
+	table.insert(out, col("goals", "mission.section", { sectionHead("head", "Goals", "coordinator and workers, with their subagents"),
+		keyed(ui.table({ { id = "ref", head = "Goal", mono = true }, { id = "title", head = "Title", grow = 1 }, { id = "status", head = "Status" },
+			{ id = "tasks", head = "Tasks", align = "end" }, { id = "cost", head = "Cost", align = "end" } }, goalRows, { empty = "No goals yet." }), "goalTable") }))
+	return out
+end
+
 -- The whole block. `view`: { tab, open (refs showing details), showDone, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
 -- reply, replyTo, replyHint, error, agentOf }. Sections and backlog arrive already filtered.
 -- Returns the block's main and dock nodes.
@@ -491,7 +586,7 @@ function M.view(view)
 	table.insert(main, tabStrip(view.tab or "now", #s.needs))
 	-- The toolbar: the repository filter on the left, the tab's actions on the right.
 	local tools = {}
-	if view.tab ~= "repos" then
+	if view.tab ~= "repos" and view.tab ~= "stats" then
 		local bar = filterBar(view.repoChoices or {}, view.repoFilter, view.filterOpen, view.filterHover)
 		if bar then table.insert(tools, bar) end
 	end
@@ -505,11 +600,17 @@ function M.view(view)
 		button("goal", "New goal", "newgoal", true, "plus")
 	elseif view.tab == "issues" then
 		button("refresh", "Refresh issues", "refreshissues", false, "refresh")
+	elseif view.tab == "stats" then
+		button("refresh", "Refresh", "refreshstats", false, "refresh")
 	elseif view.tab == "repos" then
 		button("scan", "Scan for repositories", "scanrepos", false, "refresh")
 	end
 	table.insert(main, row("toolbar", "mission.toolbar", tools))
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
+	if view.tab == "stats" then
+		for _, node in statsNodes(view) do table.insert(main, node) end
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main), dockNode(view, "[ ] tabs   r refresh")
+	end
 	if view.tab == "issues" then
 		for _, node in issueNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
@@ -612,6 +713,8 @@ end
 do
 	assert(M.isoMs("1970-01-02T00:00:01Z") == 86401000 and M.isoMs("2026-11-16T10:00:00Z") - M.isoMs("2026-11-15T10:00:00Z") == 86400000,
 		"ui.render.isoMs self-check")
+	assert(M.money(1.234) == "$1.23" and M.count(1234567) == "1.2M" and M.count(8.07e9) == "8.1B" and M.count(34000) == "34k" and M.shortDay("2026-11-06") == "6 Nov",
+		"ui.render money/count/shortDay self-check")
 	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b", "ui.render.oneLine self-check")
 	assert(M.ago(120000, 0) == "2 min ago" and M.ago(1000, 0) == "just now" and M.ago(nil, 0) == nil, "ui.render.ago self-check")
 	assert(M.taskState({ status = "doing" }, nil) == "lost" and M.taskState({ status = "doing" }, "working") == "working"

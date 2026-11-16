@@ -2,6 +2,7 @@
 // sidebar, your answers, goal lifecycle, deliveries to agents, worker starts.
 import { Store, type Caller, type TaskStatus } from "./store";
 import { closeIssue, commentAll, listIssues, parseIssueRef, type Issue } from "./github";
+import { analytics, recordSample } from "./analytics";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const FINISHED: TaskStatus[] = ["done", "dropped", "failed"];
@@ -138,6 +139,11 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         } else break;
         return json({ ok: true });
       }
+      case "GET analytics":
+        return json(analytics(store));
+      case "POST samples":
+        recordSample(store, { total: Number(body.total) || 0, working: Number(body.working) || 0, waiting: Number(body.waiting) || 0 });
+        return json({ ok: true });
       case "GET issues": {
         // Open issues of known repositories, each with the goals it's linked to.
         const r = await issues(store, url.searchParams.has("refresh"));

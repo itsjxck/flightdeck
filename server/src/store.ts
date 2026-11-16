@@ -2,6 +2,7 @@
 // questions, messages, workers and deliveries. SQLite only, no other I/O,
 // so the MCP tools and Overseer's HTTP API share the same behaviour.
 import { Database } from "bun:sqlite";
+import { ANALYTICS_SCHEMA } from "./analytics";
 
 export type TaskStatus = "todo" | "ready" | "doing" | "done" | "failed" | "dropped";
 // finished: the coordinator has reported (its own task is done); the goal stays on
@@ -73,6 +74,7 @@ export class Store {
     this.db = new Database(path, { create: true, strict: true });
     this.db.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
     this.db.exec(SCHEMA);
+    this.db.exec(ANALYTICS_SCHEMA);
     // Added after the first release: databases created before it lack the column.
     const cols = this.db.query("select name from pragma_table_info('workers')").all() as { name: string }[];
     if (!cols.some((c) => c.name === "context")) this.db.exec("alter table workers add column context text");

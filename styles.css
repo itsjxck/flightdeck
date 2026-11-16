@@ -637,6 +637,10 @@
 [data-role='mission.formNote'] { font-size: 12px; line-height: 1.45; color: var(--t3); }
 [data-role='mission.formButtons'] { gap: 8px; justify-content: flex-end; }
 
+/* Stats tab */
+[data-role='mission.chartRange'] { font: 11px/1 var(--mono); color: var(--t3); margin-top: 6px; }
+[data-role='mission.chart'] { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--l2); background: var(--card); }
+
 /* Repos tab */
 [data-role='mission.repo'],
 [data-role='mission.repoIgnored'] {

@@ -2006,6 +2006,22 @@ local function publishAgents()
 	if encoded ~= publishedAgents then publishedAgents = encoded; tern.kv.set("mission:agents", states) end
 end
 
+-- A minute's agent counts for Mission control's Stats tab (POST /api/samples).
+local SAMPLE_MS = 60000
+local lastSample = -SAMPLE_MS
+local function sampleAgents(cx)
+	if tern.now() - lastSample < SAMPLE_MS then return end
+	lastSample = tern.now()
+	local counts = { total = 0, working = 0, waiting = 0 }
+	for _, agent in cx.agents:list() do
+		if agent.state ~= "exited" then
+			counts.total += 1
+			if agent.state == "working" then counts.working += 1 elseif agent.state == "waiting_input" then counts.waiting += 1 end
+		end
+	end
+	mission.api("POST", "/api/samples", counts, function() end)
+end
+
 local function missionRequests(cx)
 	publishAgents()
 	local requests = tern.kv.get("mission:requests")
@@ -2239,6 +2255,7 @@ tick = function(generation, cx)
 		mission.tick(tickCx, live, missionHooks)
 	end)
 	separately(missionRequests)
+	separately(sampleAgents)
 	separately(follow)
 	separately(closeEmptySessions)
 	separately(closeOrphanedSessions)

@@ -8,8 +8,10 @@ import { buildServer } from "./tools";
 import { handleApi } from "./api";
 import { resolveCaller, resolvePane } from "./identity";
 import { loadConfig, scanRepos, type ScanConfig } from "./repos";
+import { scanUsage } from "./analytics";
 
 const RESCAN_MS = 30 * 60_000;
+const USAGE_MS = 5 * 60_000;
 // Finished goals and tasks older than this are deleted (checked at start and with each rescan).
 const KEEP_FINISHED_MS = 30 * 24 * 60 * 60_000;
 
@@ -30,6 +32,10 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
   };
   tidy();
   scan().catch((e) => console.error("repo scan failed:", e));
+  // omp's spend: read new usage from its session files now and every USAGE_MS.
+  const usage = () => scanUsage(store).catch((e) => console.error("usage scan failed:", e));
+  if (opts.scan) { usage(); }
+  const usageTimer = setInterval(() => { if (opts.scan) usage(); }, USAGE_MS);
   const rescan = setInterval(() => { tidy(); scan().catch((e) => console.error("repo scan failed:", e)); }, RESCAN_MS);
   const resolve = opts.resolve ?? resolvePane;
   const resolveTool = opts.resolve ?? resolveCaller;
@@ -53,7 +59,7 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
       return new Response("not found", { status: 404 });
     },
   });
-  return () => { clearInterval(rescan); server.stop(true); };
+  return () => { clearInterval(rescan); clearInterval(usageTimer); server.stop(true); };
 }
 
 // `bun src/main.ts <data dir>`: Overseer passes its plugin data directory.
