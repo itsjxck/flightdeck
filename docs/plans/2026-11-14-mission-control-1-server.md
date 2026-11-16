@@ -397,8 +397,8 @@ describe("goals and conversation", () => {
   const plan = {
     title: "Cross-repo auth", body: "Swap token format",
     tasks: [
-      { key: "api", title: "Issue new tokens", repo: "web-app" },
-      { key: "web", title: "Read new tokens", repo: "dashboard", needs: ["api"] },
+      { key: "api", title: "Issue new tokens", repo: "api" },
+      { key: "web", title: "Read new tokens", repo: "web", needs: ["api"] },
     ],
   };
 
@@ -805,7 +805,7 @@ test("session from the open session file", () => {
 });
 
 test("repository name from the common git dir", () => {
-  expect(repoName("/Users/j/projects/web-app/.git")).toBe("web-app");
+  expect(repoName("/Users/j/projects/api/.git")).toBe("api");
   expect(repoName("/Users/j/projects/tern-plugins/overseer/.git")).toBe("overseer");
 });
 ```

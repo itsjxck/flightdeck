@@ -28,7 +28,7 @@ local watchForms
 local function records(key)
 	local value = tern.kv.get(key)
 	if value == nil then return {} end
-	assert(type(value) == "table", "Overseer storage is invalid: " .. key)
+	assert(type(value) == "table", "Flightdeck storage is invalid: " .. key)
 	return value
 end
 
@@ -227,7 +227,7 @@ local function spaceDir(cx, info, panesById)
 	return found
 end
 
--- Whether you named the session: Overseer remembers each session's name when
+-- Whether you named the session: Flightdeck remembers each session's name when
 -- it first sees it (`auto-names`), and a space is named after its folder
 -- until its session's name differs from that. Tern names new sessions with
 -- random words, so there's no telling a default name from a chosen one.
@@ -492,10 +492,10 @@ local NAVIGATOR = {
 	title = "Spaces", about = "Your Tern sessions as spaces, their Git worktrees, and every running agent.",
 }
 
--- Overseer also owns PR outline canvases; only navigators show Spaces. Before
+-- Flightdeck also owns PR outline canvases; only navigators show Spaces. Before
 -- 3.0 the navigator was titled Projects; a reload adopts one left open.
 local function isNavigator(canvas)
-	return canvas.owner == "overseer" and (canvas.title == NAVIGATOR.title or canvas.title == "Projects")
+	return canvas.owner == "flightdeck" and (canvas.title == NAVIGATOR.title or canvas.title == "Projects")
 end
 
 -- The window's one Spaces slot: the navigator canvas, or a form shown in its
@@ -506,7 +506,7 @@ local function slot(cx)
 	if slotPane and not cx.session:pane(slotPane) then slotPane = nil end
 	local found = {}
 	for _, pane in cx.session:panes() do
-		if pane.block == "overseer.form" then table.insert(found, pane.pane) end
+		if pane.block == "flightdeck.form" then table.insert(found, pane.pane) end
 	end
 	for _, canvas in cx.canvas:list() do
 		if isNavigator(canvas) and cx.session:pane(canvas.pane) then table.insert(found, canvas.pane) end
@@ -520,7 +520,7 @@ local function slot(cx)
 	end
 	if not slotPane then return nil end
 	local info = cx.session:pane(slotPane)
-	return slotPane, if info and info.block == "overseer.form" then "form" else "canvas"
+	return slotPane, if info and info.block == "flightdeck.form" then "form" else "canvas"
 end
 
 -- Defined after refresh: looks up the repositories of newly seen folders.
@@ -541,7 +541,7 @@ local function nameWorktreeSessions(renames)
 					autoNames[tostring(id)] = name
 				else
 					renameRefused[id] = true
-					tern.log.warn("Overseer: couldn't rename session " .. tostring(id) .. ": " .. tostring(why))
+					tern.log.warn("Flightdeck: couldn't rename session " .. tostring(id) .. ": " .. tostring(why))
 				end
 			end
 		end
@@ -665,7 +665,7 @@ inspectDirs = function(dirs)
 					end
 				else
 					dirRepo[dir] = false
-					if not notRepo then tern.log.warn("Overseer: no repository for " .. dir .. ": " .. tostring(err)) end
+					if not notRepo then tern.log.warn("Flightdeck: no repository for " .. dir .. ": " .. tostring(err)) end
 				end
 				if cx then redraw(cx) end
 			end)
@@ -1094,7 +1094,7 @@ local function showConfirmation(cx, request)
 	local words = view.confirmationWords(request)
 	local pane, err = cx.canvas:open({
 		title = words.title,
-		about = "Overseer asks before it runs " .. words.confirm .. " on " .. request.label .. ". Cancel or a click outside keeps it.",
+		about = "Flightdeck asks before it runs " .. words.confirm .. " on " .. request.label .. ". Cancel or a click outside keeps it.",
 		view = view.confirmation(request), how = "glimpse",
 	})
 	if not pane then report(cx, err or "Could not open the confirmation."); return end
@@ -1110,7 +1110,7 @@ local function updateConfirmation(cx)
 	local ok, err = pcall(function()
 		cx.canvas:set(request.pane, { title = view.confirmationWords(request).title, view = view.confirmation(request) })
 	end)
-	if not ok then tern.log.warn("Overseer: confirmation not updated: " .. tostring(err)) end
+	if not ok then tern.log.warn("Flightdeck: confirmation not updated: " .. tostring(err)) end
 end
 
 local function requestWorktreeAction(cx, kind, path)
@@ -1147,7 +1147,7 @@ local function spaceInfo(cx, id)
 	return nil
 end
 
--- Drops what Overseer remembers about a session that has ended.
+-- Drops what Flightdeck remembers about a session that has ended.
 local function forgetSession(id)
 	local autoNames = records("auto-names")
 	if autoNames[tostring(id)] ~= nil then
@@ -1350,9 +1350,9 @@ local function openForm(cx, mode, project, worktree, space)
 			if worktree then names and names[worktree.path] or "" else project and project.base or "",
 		}
 	local pane = swapSlot(cx, current, function()
-		return cx:new_block("overseer.form", args, "beside")
+		return cx:new_block("flightdeck.form", args, "beside")
 	end)
-	if not pane then report(cx, "Reload the Overseer plugin.", "Form unavailable"); return end
+	if not pane then report(cx, "Reload the Flightdeck plugin.", "Form unavailable"); return end
 	tern.kv.set("pending-form:" .. tostring(pane), {
 		token = id, mode = mode, project = project and project.id, path = worktree and worktree.path,
 		space = space and space.id,
@@ -1518,7 +1518,7 @@ local function renameWorktree(cx, pane, request, response)
 end
 
 -- A space's name is its Tern session's name, shown once it differs from the
--- name Overseer first saw (see namedByYou). Clearing it names the space after
+-- name Flightdeck first saw (see namedByYou). Clearing it names the space after
 -- its folder again: the session keeps its name (Tern refuses a blank one),
 -- remembered as one you didn't choose.
 local function renameSpace(cx, pane, request, response)
@@ -1590,7 +1590,7 @@ end
 
 local function forms(cx)
 	for _, pane in cx.session:panes() do
-		if pane.block == "overseer.form" and not inflight[pane.pane] then
+		if pane.block == "flightdeck.form" and not inflight[pane.pane] then
 			local request = tern.kv.get("pending-form:" .. tostring(pane.pane))
 			if request then
 				local response = request.response or tern.kv.get("form:" .. request.token)
@@ -1631,11 +1631,11 @@ watchForms = function()
 		if not cx then watching = false; return end
 		local open = false
 		for _, pane in cx.session:panes() do
-			if pane.block == "overseer.form" then open = true; break end
+			if pane.block == "flightdeck.form" then open = true; break end
 		end
 		if not open then watching = false; return end
 		local ok, err = pcall(forms, cx)
-		if not ok then tern.log.warn("Overseer form check failed: " .. tostring(err)) end
+		if not ok then tern.log.warn("Flightdeck form check failed: " .. tostring(err)) end
 		tern.timer(100, step)
 	end
 	tern.timer(100, step)
@@ -1741,7 +1741,7 @@ local function checkJobs(cx, inline)
 		end
 		local function finish(finishCx)
 			local ok, err = pcall(jobFinished, finishCx, done.job, done.status)
-			if not ok then tern.log.warn("Overseer: finishing a job failed: " .. tostring(err)) end
+			if not ok then tern.log.warn("Flightdeck: finishing a job failed: " .. tostring(err)) end
 		end
 		if inline then finish(cx) else tern.timer(0, function(nextCx) if nextCx then finish(nextCx) end end) end
 	end
@@ -1798,11 +1798,11 @@ end
 -- your shell; single quotes keep the path one word in bash, zsh, fish and nu.
 local function openLog(cx)
 	local file = oplog.path()
-	if not tern.fs.exists(file) then cx:toast("info", "Nothing logged yet", "Overseer hasn't run an operation yet."); return end
+	if not tern.fs.exists(file) then cx:toast("info", "Nothing logged yet", "Flightdeck hasn't run an operation yet."); return end
 	if string.find(file, "'", 1, true) then report(cx, "Can't open " .. file .. " through a shell."); return end
 	local pane = cx.layout:new_tab({ command = "less -R +G '" .. file .. "'" })
 	local tab = pane and cx.session:tab_of(pane)
-	if tab then cx.layout:name_tab(tab, "Overseer log") end
+	if tab then cx.layout:name_tab(tab, "Flightdeck log") end
 end
 
 -- The repository of the space shown now, if it's in one.
@@ -1817,14 +1817,14 @@ tern.command({ id = "create", title = "Create worktree", icon = "branch", run = 
 	local project = currentRepo(cx) or activeWorktree(cx)
 	if project then openForm(cx, "create", project) else navigator(cx); cx:toast("info", "Not in a Git repository", "Click + beside a space in one.") end
 end })
-tern.command({ id = "ops-log", title = "Show Overseer's operation log", icon = "list", run = openLog })
+tern.command({ id = "ops-log", title = "Show Flightdeck's operation log", icon = "list", run = openLog })
 -- Until Mission control (plan 3) shows proposals: starts the oldest proposed goal.
 tern.command({ id = "start-goal", title = "Start proposed goal", icon = "branch", run = function(cx)
 	cx:toast("info", "Starting the oldest proposed goal", "It opens in a session of its own; you stay here.")
 	mission.startOldestProposedGoal(missionHooks.repoPath, function(err, goal, doneCx)
 		local message = if err then "Couldn't start a goal: " .. err elseif not goal then "No goals are proposed. Agents propose them with goal_propose." else nil
 		if message then
-			tern.log.warn("Overseer: " .. message)
+			tern.log.warn("Flightdeck: " .. message)
 			if doneCx then doneCx:toast(if err then "error" else "info", "Start proposed goal", message) end
 		end
 	end)
@@ -1914,7 +1914,7 @@ end
 local function openMissionControl(cx, task)
 	if task then tern.kv.set("mission:select", task) end
 	for _, pane in cx.session:panes() do
-		if pane.block == "overseer.mission" then showPane(cx, pane.pane); return end
+		if pane.block == "flightdeck.mission" then showPane(cx, pane.pane); return end
 	end
 	local session
 	for _, info in cx.sessions:list() do if info.name == MISSION_SESSION then session = info end end
@@ -1922,7 +1922,7 @@ local function openMissionControl(cx, task)
 	else session = cx.sessions:create({ name = MISSION_SESSION, cwd = tern.getenv("HOME") }) end
 	-- The session's shell tab, replaced by the block.
 	local shell = cx.session:focused()
-	local ok, pane = pcall(function() return cx:new_block("overseer.mission", if task then { task } else {}, "tab") end)
+	local ok, pane = pcall(function() return cx:new_block("flightdeck.mission", if task then { task } else {}, "tab") end)
 	if not ok or not pane then report(cx, "Couldn't open Mission control: " .. tostring(pane)); return end
 	if shell and shell ~= pane then
 		local info = cx.session:pane(shell)
@@ -1953,7 +1953,7 @@ tern.command({ id = "unlock-key", title = "Unlock SSH key (git fetch)", icon = "
 -- first task folder where the file exists.
 tern.route.link(function(link, cx)
 	local info = cx.session:pane(link.pane)
-	if not (info and info.block == "overseer.mission") then return nil end
+	if not (info and info.block == "flightdeck.mission") then return nil end
 	local url = link.url
 	if string.match(url, "^%a[%w+.-]*:") or string.sub(url, 1, 1) == "/" then return nil end
 	if string.sub(url, 1, 2) == "~/" then return { path = expandHome(url) } end
@@ -1971,6 +1971,28 @@ tern.route.link(function(link, cx)
 		if ok and exists then return { path = path } end
 	end
 	return nil
+end)
+
+-- Connects omp to Mission control's server, once per machine (server/scripts/setup-omp.ts):
+-- an MCP server entry in ~/.omp/agent/mcp.json and a note in ~/.omp/agent/AGENTS.md.
+local function connectOmp(cx)
+	local bun = wt.find_executable("bun")
+	if not bun then cx:toast("error", "Bun isn't installed", "Mission control needs Bun: https://bun.sh"); return end
+	tern.process.run({ bun, tern.plugin.dir .. "/server/scripts/setup-omp.ts", tern.plugin.data }, { timeout_ms = 30000 }, function(r, nextCx)
+		if not nextCx then return end
+		if r.status == 0 then nextCx:toast("info", "omp is connected to Flightdeck", "Agents you start from now on have its tools.")
+		else nextCx:toast("error", "Couldn't connect omp", (r.stderr or ""):sub(1, 200)) end
+	end)
+end
+tern.command({ id = "connect-omp", title = "Connect omp to Flightdeck", icon = "plug", run = connectOmp })
+
+-- Once per load: suggest connecting omp when its config lacks the server.
+tern.timer(3000, function(cx)
+	if not cx then return end
+	local ok, text = pcall(tern.fs.read, (tern.getenv("HOME") or "") .. "/.omp/agent/mcp.json", 1000000)
+	if not ok or not string.find(text, '"flightdeck"', 1, true) then
+		cx:toast("info", "Connect omp to Flightdeck", "Run \"Connect omp to Flightdeck\" from the palette so agents get Mission control's tools.")
+	end
 end)
 
 tern.command({ id = "mission", title = "Mission control", icon = "list", keys = { "cmd+alt+shift+m" },
@@ -2035,7 +2057,7 @@ local function missionRequests(cx)
 					local dir
 					for _, t in ms.tasks do if t.goal == g.id then dir = t.repoPath or missionHooks.repoPath(t.repo); break end end
 					mission.startGoal(g, dir or tern.getenv("HOME") or "/", function(err)
-						if err then tern.log.warn("Overseer: couldn't start " .. g.ref .. ": " .. err) end
+						if err then tern.log.warn("Flightdeck: couldn't start " .. g.ref .. ": " .. err) end
 					end)
 				end
 			end
@@ -2133,7 +2155,7 @@ tern.override("new_tab", function(cx)
 end)
 
 tern.chrome.status(function()
-	return { { text = "Spaces", icon = "branch", command = "plugin.overseer.projects" } }
+	return { { text = "Spaces", icon = "branch", command = "plugin.flightdeck.projects" } }
 end)
 
 -- Runs fn in a timer callback of its own, reporting (not raising) errors.
@@ -2176,9 +2198,9 @@ local function closeEmptySessions(cx)
 	end
 end
 
--- A worktree removed outside Overseer (`wt merge`, `wt remove`, an agent)
+-- A worktree removed outside Flightdeck (`wt merge`, `wt remove`, an agent)
 -- leaves its session behind, cut off from its repository in Spaces. Close it
--- once the folder is gone, unless an agent still runs in it or Overseer's own
+-- once the folder is gone, unless an agent still runs in it or Flightdeck's own
 -- deletion is handling it. A repository's primary checkout is never closed.
 local orphanWarned = {}
 local function closeOrphanedSessions(cx)
@@ -2199,7 +2221,7 @@ local function closeOrphanedSessions(cx)
 					oplog.write("info", { op = "close", event = "worktree gone", path = path })
 				elseif not orphanWarned[path] then
 					orphanWarned[path] = true
-					tern.log.warn("Overseer: left the session of deleted worktree " .. path .. " open: " .. tostring(err))
+					tern.log.warn("Flightdeck: left the session of deleted worktree " .. path .. " open: " .. tostring(err))
 				end
 			end
 		end
@@ -2210,7 +2232,7 @@ end
 -- push the whole tick past its budget. The next tick is queued first, so a
 -- tick Tern cuts short can't end the chain.
 --
--- Upstream Overseer saw the tick stop for long stretches without Tern pausing
+-- Upstream Flightdeck saw the tick stop for long stretches without Tern pausing
 -- or logging anything, leaving creations and deletions unfinished. Still seen
 -- on Tern 0.9.18 (ops.log: restarts with no budget pause before them), so
 -- keep this even though 0.9.16 stopped slow timers dropping others. Its
@@ -2288,13 +2310,13 @@ local function processClock()
 		local restarted = ensureTicking("the process clock")
 		if restarted or tern.now() < timerPausedUntil then
 			local done, err = pcall(checkJobs, cx, true)
-			if not done then tern.log.warn("Overseer: job check failed: " .. tostring(err)) end
+			if not done then tern.log.warn("Flightdeck: job check failed: " .. tostring(err)) end
 			local followed, followErr = pcall(follow, cx)
 			if not followed then tern.log.warn("Spaces panel: " .. tostring(followErr)) end
 		end
 	end)
 	-- Can't start a process (shouldn't happen): events still check the tick.
-	if not ok then tern.log.warn("Overseer: the process clock could not start") end
+	if not ok then tern.log.warn("Flightdeck: the process clock could not start") end
 end
 
 -- Mission control's session was locked before 2026-11-15, which blocked closing
@@ -2333,7 +2355,7 @@ tern.on("budget", function(ev)
 		oplog.write("warn", { op = "budget", event = "paused", detail = string.format("%s paused for %d ms after running over %d ms",
 			ev.hook, ev.paused_ms or 0, ev.ms or 0) })
 	else
-		tern.log.warn("Overseer: " .. ev.hook .. " resumed")
+		tern.log.warn("Flightdeck: " .. ev.hook .. " resumed")
 	end
 end)
 -- Every tab, pane and focus change moves the panel into the shown tab and

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "overseer-server",
+      "name": "flightdeck-server",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.2",
         "zod": "4.6.7",

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.0: Flightdeck (unreleased)
+
+Overseer is now **Flightdeck**, and adds Mission control.
+
+- **Mission control:** a tab for coordinating omp agents: questions waiting for you, goals run by a coordinator agent with workers in their own worktrees, tasks, a backlog, GitHub issues, spend and agent statistics, and repository discovery. Its server (`server/`, Bun and SQLite) runs locally behind a token; omp connects to it as an MCP server.
+- **New name:** the plugin id, commands (`plugin.flightdeck.*`), data folder (`plugin-data/flightdeck`), block kinds and the MCP server (`flightdeck`) all changed. Existing installs: move `plugin-data/overseer` to `plugin-data/flightdeck`, update `plugin.overseer.*` key bindings, and run **Connect omp to Flightdeck**.
+- **Connect omp to Flightdeck** (palette): one-step omp setup.
+- **Unlock SSH key** (palette): a `git fetch` in a floating terminal so a hardware security key can prompt.
+- The sidebar gains a Mission control button, a Goals section, each agent's task, and one-line agent rows; sessions follow their space's name.
+
 ## 3.0.0 (unreleased)
 
 The Projects panel is now a Spaces sidebar, laid out like herdr's: every Tern session is a space, Git worktrees nest under the space open in their repository, and every running agent is listed at the bottom.
@@ -20,7 +30,6 @@ The Projects panel is now a Spaces sidebar, laid out like herdr's: every Tern se
 - **Creations show progress** (from upstream 2.3.1). A new worktree's row appears as soon as setup starts, with elapsed time and Worktrunk's current step; a hook approval prompt or a minute without output marks it "needs you?" with one notification, and the row opens the setup tab.
 - **Operation log** (from upstream 2.3.1). `ops.log` in the plugin data directory records every creation and deletion (duration, outcome, the first warning setup printed), hook-approval waits, budget pauses, tick restarts and plugin reloads. **Show Overseer's operation log** opens it.
 - **Keyboard navigation.** <kbd>⌃</kbd><kbd>⌘</kbd><kbd>]</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>[</kbd> (**Next space** / **Previous space**) step through spaces and their open worktree sessions in the sidebar's order. <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd> (**Move space up** / **Move space down**) swap the current space with its neighbour in the sidebar, skipping the worktree sessions Tern lists between them. All four are in the palette and rebindable in Tern's keybinds; the README shows how to put Next/Previous on <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd>/<kbd>↓</kbd>, which Tern uses for resizing splits by default.
-- **Mission control.** A tab (⌘⌥⇧M) with every question agents need you to answer (number keys pick an option), proposed goals to start, tasks in progress by goal, their threads, and todo tasks. Overseer runs `server/` (Bun) on `127.0.0.1:8095` and restarts it if it stops; omp agents connected to it track tasks, ask you questions, message each other and run goals: a coordinator in the goal's own background session starts workers, each in its own worktree. The sidebar gains **Needs you**, a **Goals** section, and each agent's task.
 - **Agents restarted with omp's `/restart` stay listed.** Tern reports their pane as a shell with no command line; Overseer now also trusts Tern's agent list.
 - **Reloading closes an open folder picker.** Since Tern 0.9.16 processes outlive a plugin reload, so New space's picker would have stayed up with nowhere to send the folder.
 - **Requires Tern 0.9.16 or later** (the `unload` event; tested with 0.9.18). Overseer also uses the `agent_state`, `budget`, `cwd` and `session_ended` events, and relies on Tern's time budgets: only a plugin's own Lua counts toward the 50 ms, and a hook that runs over is paused for a few seconds rather than switched off until a reload.

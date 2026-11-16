@@ -1,6 +1,6 @@
-// overseer-server's data and every rule: tasks, goals, dependencies,
+// flightdeck-server's data and every rule: tasks, goals, dependencies,
 // questions, messages, workers and deliveries. SQLite only, no other I/O,
-// so the MCP tools and Overseer's HTTP API share the same behaviour.
+// so the MCP tools and Flightdeck's HTTP API share the same behaviour.
 import { Database } from "bun:sqlite";
 import { ANALYTICS_SCHEMA } from "./analytics";
 
@@ -477,7 +477,7 @@ export class Store {
       where t.goal = ? and t.status not in ('done', 'dropped', 'failed') and t.session is not g.coordinator`)
       .get(goal) as { n: number };
     if (open.n > 0) return;
-    this.addEvent({ task: null, goal, author: "overseer", kind: "status",
+    this.addEvent({ task: null, goal, author: "flightdeck", kind: "status",
       body: "Every task is finished. Summarise the outcome for the user with ask_user (what to review, merge order, follow-ups).",
       options: null, recommended: null, to_target: "coordinator" });
   }
@@ -573,7 +573,7 @@ export class Store {
   workerFailed(id: number, error: string) {
     const w = this.worker(id);
     this.db.query("update workers set status = 'failed' where id = ?").run(id);
-    this.addEvent({ task: w.task, goal: w.goal, author: "overseer", kind: "status",
+    this.addEvent({ task: w.task, goal: w.goal, author: "flightdeck", kind: "status",
       body: `Couldn't start a worker on ${this.tref(w.task)}: ${error}`, options: null, recommended: null, to_target: "coordinator" });
   }
 
@@ -605,7 +605,7 @@ export class Store {
 
   // What the coordinator hasn't seen: workers' dones, messages to @coordinator,
   // goal status, and answers or messages to its own task not yet handed to its
-  // pane (a coordinator looping on inbox is mid-turn, so Overseer holds pane
+  // pane (a coordinator looping on inbox is mid-turn, so Flightdeck holds pane
   // deliveries; inbox takes them instead, and they count as delivered).
   inbox(session: string): Event[] {
     const g = this.coordinatorGoalFor(session);

@@ -1,13 +1,13 @@
 // GitHub issues, through the `gh` CLI (already signed in; no token of ours).
 // Lists open issues of every known, non-ignored repository with a GitHub
 // remote, comments on issues linked to goals, and closes one when you ask.
-// Overseer never closes issues on its own: PRs close them with GitHub's
+// Flightdeck never closes issues on its own: PRs close them with GitHub's
 // closing keywords ("Fixes owner/repo#12").
 import { existsSync } from "node:fs";
 
 export interface Issue {
   repo: string;       // owner/name
-  local: string;      // the repository's name in Overseer (its folder)
+  local: string;      // the repository's name in Flightdeck (its folder)
   number: number;
   title: string;
   body: string;
@@ -37,7 +37,7 @@ export function parseIssueRef(ref: string): { repo: string; number: number } | n
   return m ? { repo: m[1], number: Number(m[2]) } : null;
 }
 
-// The open issues of `repos` (Overseer name → folder), newest activity first.
+// The open issues of `repos` (Flightdeck name → folder), newest activity first.
 export async function listIssues(repos: { name: string; path: string }[]): Promise<{ issues: Issue[]; errors: string[] }> {
   const errors: string[] = [];
   const lists = await Promise.all(repos.map(async (r) => {

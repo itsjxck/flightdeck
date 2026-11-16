@@ -8,7 +8,7 @@ const auth = { Authorization: `Bearer ${token}` };
 
 beforeAll(() => {
   stop = startServer({ port: 18095, dbPath: ":memory:", token,
-    resolve: (pane) => (pane === "42" ? { session: "s42", repo: "overseer", branch: "main", cwd: "/r", root: "/r" } : null) });
+    resolve: (pane) => (pane === "42" ? { session: "s42", repo: "flightdeck", branch: "main", cwd: "/r", root: "/r" } : null) });
 });
 afterAll(() => stop());
 

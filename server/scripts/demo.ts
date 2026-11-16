@@ -13,8 +13,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Store, type Caller } from "../src/store.ts";
 
-const DATA = join(homedir(), "Library/Application Support/Tern/plugin-data/overseer");
-const ROOT = join(homedir(), "projects/overseer-demo");
+const DATA = join(homedir(), "Library/Application Support/Tern/plugin-data/flightdeck");
+const ROOT = join(homedir(), "projects/flightdeck-demo");
 const REPOS: Record<string, Record<string, string>> = {
   "demo-payments": {
     "README.md": "# demo-payments\n\nPayments API for the demo shop. Bun, no dependencies.\n\nRun: `bun src/server.ts`. Test: `bun test`.\n",
@@ -149,7 +149,7 @@ function sh(cmd: string[], cwd: string) {
   if (r.exitCode !== 0) throw new Error(`${cmd.join(" ")} failed in ${cwd}: ${r.stderr.toString()}`);
 }
 
-const store = new Store(join(DATA, "overseer.db"));
+const store = new Store(join(DATA, "flightdeck.db"));
 const names = Object.keys(REPOS);
 
 if (process.argv.includes("--reset")) {

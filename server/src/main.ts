@@ -1,5 +1,5 @@
-// overseer-server: one process on 127.0.0.1 serving MCP (/mcp) to omp agents
-// and a JSON API (/api) to Overseer, all behind a bearer token.
+// flightdeck-server: one process on 127.0.0.1 serving MCP (/mcp) to omp agents
+// and a JSON API (/api) to Flightdeck, all behind a bearer token.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,14 +62,14 @@ export function startServer(opts: { port: number; dbPath: string; token: string;
   return () => { clearInterval(rescan); clearInterval(usageTimer); server.stop(true); };
 }
 
-// `bun src/main.ts <data dir>`: Overseer passes its plugin data directory.
+// `bun src/main.ts <data dir>`: Flightdeck passes its plugin data directory.
 if (import.meta.main) {
-  const dir = process.argv[2] ?? join(process.env.HOME ?? ".", ".local/share/overseer");
+  const dir = process.argv[2] ?? join(process.env.HOME ?? ".", ".local/share/flightdeck");
   mkdirSync(dir, { recursive: true });
   const tokenPath = join(dir, "token");
   if (!existsSync(tokenPath)) writeFileSync(tokenPath, crypto.randomUUID().replaceAll("-", ""), { mode: 0o600 });
   const token = readFileSync(tokenPath, "utf8").trim();
-  const port = Number(process.env.OVERSEER_PORT ?? 8095);
-  startServer({ port, dbPath: join(dir, "overseer.db"), token, scan: loadConfig(dir) });
-  console.log(`overseer-server on 127.0.0.1:${port}, data in ${dir}`);
+  const port = Number(process.env.FLIGHTDECK_PORT ?? 8095);
+  startServer({ port, dbPath: join(dir, "flightdeck.db"), token, scan: loadConfig(dir) });
+  console.log(`flightdeck-server on 127.0.0.1:${port}, data in ${dir}`);
 }

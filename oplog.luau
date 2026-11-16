@@ -1,4 +1,4 @@
--- What Overseer did, when, and how it ended, so a creation that looked stuck
+-- What Flightdeck did, when, and how it ended, so a creation that looked stuck
 -- or a relay that never arrived can be traced afterwards.
 --
 -- ops.log (plugin data dir): one JSON object per line, newest last, capped at
@@ -34,7 +34,7 @@ function M.write(level, entry)
 		existing = if cut then string.sub(existing, cut + 1) else ""
 	end
 	pcall(tern.fs.write, path, existing .. line .. "\n")
-	local parts = { "Overseer:", entry.op, entry.event }
+	local parts = { "Flightdeck:", entry.op, entry.event }
 	for _, key in { "project", "branch", "path" } do
 		if entry[key] then table.insert(parts, tostring(entry[key])) end
 	end

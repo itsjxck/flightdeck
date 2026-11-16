@@ -1,4 +1,4 @@
--- Keeps overseer-server (server/, Bun) running. Every HEALTH_MS it checks
+-- Keeps flightdeck-server (server/, Bun) running. Every HEALTH_MS it checks
 -- /health; it starts the server when it has never seen it healthy, or after
 -- two failed checks in a row. The process outlives plugin reloads (Tern
 -- 0.9.16+), so a reload just finds it healthy; a second start while one runs
@@ -21,7 +21,7 @@ local function start()
 	starting = true
 	-- Installs dependencies on first run, then replaces the shell with the server.
 	local script = 'cd "$1" && { [ -d node_modules ] || "$4" install --frozen-lockfile; } && exec "$4" src/main.ts "$2" >>"$3" 2>&1'
-	local argv = { "/bin/sh", "-c", script, "overseer-server",
+	local argv = { "/bin/sh", "-c", script, "flightdeck-server",
 		tern.plugin.dir .. "/server", tern.plugin.data, tern.plugin.data .. "/server.log", bun }
 	local ok, err = pcall(tern.process.run, argv, {}, function(result)
 		starting = false

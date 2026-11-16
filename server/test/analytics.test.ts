@@ -13,10 +13,10 @@ test("usage is read once, incrementally, and credited to the task's goal", async
   const root = mkdtempSync(join(tmpdir(), "usage-"));
   mkdirSync(join(root, "-p"), { recursive: true });
   const file = join(root, "-p", `t_${ID}.jsonl`);
-  writeFileSync(file, JSON.stringify({ type: "session", id: ID, cwd: "/w/web-app" }) + "\n" + reply(0.5));
+  writeFileSync(file, JSON.stringify({ type: "session", id: ID, cwd: "/w/api" }) + "\n" + reply(0.5));
   const store = new Store(":memory:");
   const g = store.proposeGoal({ session: ID, repo: null, branch: null, cwd: null }, { title: "g", body: "", tasks: [] });
-  store.startTask({ session: ID, repo: "web-app", branch: null, cwd: "/w/web-app" }, { title: "t" });
+  store.startTask({ session: ID, repo: "api", branch: null, cwd: "/w/api" }, { title: "t" });
   store.db.query("update tasks set goal = ?").run(g.id);
   await scanUsage(store, root);
   appendFileSync(file, reply(0.25, "m2") + '{"partial":');
@@ -26,7 +26,7 @@ test("usage is read once, incrementally, and credited to the task's goal", async
   expect(a.spend.today).toBeCloseTo(0.75);
   expect(a.byModel.map((m) => m.model)).toEqual(["m1", "m2"]);
   expect(a.byGoal[0].cost).toBeCloseTo(0.75);
-  expect(a.spendByDay.at(-1)).toMatchObject({ day: localDay(Date.now()), cost: 0.75, projects: [{ project: "web-app" }] });
+  expect(a.spendByDay.at(-1)).toMatchObject({ day: localDay(Date.now()), cost: 0.75, projects: [{ project: "api" }] });
 });
 
 test("agent samples feed the last 24 hours, busiest per hour", () => {

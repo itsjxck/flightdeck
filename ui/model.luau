@@ -1,4 +1,4 @@
--- Mission control's model (host half): talks to overseer-server, groups its
+-- Mission control's model (host half): talks to flightdeck-server, groups its
 -- state into the block's sections, and lists what the cursor moves over.
 -- No drawing (ui/render.luau) and no block wiring (ui/block.luau).
 local M = {}

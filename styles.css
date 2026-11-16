@@ -1,39 +1,39 @@
 /* Panel and forms run a touch smaller than Tern's base; every other size is relative to it. */
-[data-role='overseer.navigator'] {
+[data-role='flightdeck.navigator'] {
   gap: 0;
   color: var(--t1);
   font-size: 0.93em;
 }
 /* Spaces fill the panel; Agents sit at the bottom, below a divider. */
-[data-role='overseer.spaces'] {
+[data-role='flightdeck.spaces'] {
   gap: 2px;
   padding-bottom: 12px;
 }
-[data-role='overseer.agents'] {
+[data-role='flightdeck.agents'] {
   gap: 2px;
   padding-top: 10px;
   border-top: 1px solid color-mix(in srgb, var(--t4) 30%, transparent);
 }
-[data-role='overseer.header'] {
+[data-role='flightdeck.header'] {
   align-items: center;
   gap: 8px;
   padding: 0 4px 6px;
 }
-[data-role='overseer.heading'],
-[data-role='overseer.formHeading'] {
+[data-role='flightdeck.heading'],
+[data-role='flightdeck.formHeading'] {
   font-weight: 650;
   color: var(--t1);
 }
-[data-role='overseer.heading'] {
+[data-role='flightdeck.heading'] {
   font-size: 0.9em;
   color: var(--t3);
   text-transform: lowercase;
   letter-spacing: 0.02em;
 }
-[data-role='overseer.formHeading'] {
+[data-role='flightdeck.formHeading'] {
   font-size: 1.15em;
 }
-[data-role='overseer.count'] {
+[data-role='flightdeck.count'] {
   color: var(--t3);
   font-size: 0.8em;
   padding: 1px 7px;
@@ -42,63 +42,63 @@
 }
 
 /* A space: its row, then any worktrees nested under it. */
-[data-role='overseer.space'] {
+[data-role='flightdeck.space'] {
   gap: 0;
   border-radius: 6px;
 }
-[data-role='overseer.space'][data-mark='pick'],
-[data-role='overseer.worktree'][data-mark='pick'],
-[data-role='overseer.agentRow'][data-mark='pick'] {
+[data-role='flightdeck.space'][data-mark='pick'],
+[data-role='flightdeck.worktree'][data-mark='pick'],
+[data-role='flightdeck.agentRow'][data-mark='pick'] {
   background: color-mix(in srgb, var(--t4) 14%, transparent);
 }
-[data-role='overseer.spaceLine'] {
+[data-role='flightdeck.spaceLine'] {
   align-items: center;
   gap: 2px;
   padding-right: 4px;
 }
-[data-role='overseer.spaceRow'] {
+[data-role='flightdeck.spaceRow'] {
   gap: 1px;
   min-width: 0;
 }
-[data-role='overseer.spaceRow'] {
+[data-role='flightdeck.spaceRow'] {
   padding: 5px 8px;
   border-radius: 6px;
   cursor: pointer;
 }
-[data-role='overseer.spaceHead'],
-[data-role='overseer.worktreeRow'] {
+[data-role='flightdeck.spaceHead'],
+[data-role='flightdeck.worktreeRow'] {
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
-[data-role='overseer.spaceName'],
-[data-role='overseer.worktreeName'] {
+[data-role='flightdeck.spaceName'],
+[data-role='flightdeck.worktreeName'] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-[data-role='overseer.spaceName'] {
+[data-role='flightdeck.spaceName'] {
   font-weight: 600;
 }
-[data-role='overseer.spaceSubtitle'] {
+[data-role='flightdeck.spaceSubtitle'] {
   font-size: 0.82em;
   padding-left: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-[data-role='overseer.spaceSubtitle'] {
+[data-role='flightdeck.spaceSubtitle'] {
   color: var(--t3);
 }
 /* Every Spaces control (header +/↻, a space's +/chevron): a 20px square
    button holding one 12px icon (icons.css), 4px apart. */
-[data-role='overseer.buttons'] {
+[data-role='flightdeck.buttons'] {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
-[data-role='overseer.iconButton'] {
+[data-role='flightdeck.iconButton'] {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -112,11 +112,11 @@
   box-shadow: none;
   cursor: pointer;
 }
-[data-role='overseer.iconPlus'],
-[data-role='overseer.iconSync'],
-[data-role='overseer.iconSyncSpin'],
-[data-role='overseer.iconExpanded'],
-[data-role='overseer.iconCollapsed'] {
+[data-role='flightdeck.iconPlus'],
+[data-role='flightdeck.iconSync'],
+[data-role='flightdeck.iconSyncSpin'],
+[data-role='flightdeck.iconExpanded'],
+[data-role='flightdeck.iconCollapsed'] {
   width: 12px;
   height: 12px;
   min-width: 12px;
@@ -125,17 +125,17 @@
   background-position: center;
   transform-origin: 50% 50%;
 }
-[data-role='overseer.worktrees'] {
+[data-role='flightdeck.worktrees'] {
   gap: 0;
   margin: 0 0 4px 16px;
   padding-left: 6px;
   border-left: 1px solid color-mix(in srgb, var(--t4) 25%, transparent);
 }
-[data-role='overseer.worktree'] {
+[data-role='flightdeck.worktree'] {
   border-radius: 6px;
   font-size: 0.92em;
 }
-[data-role='overseer.worktreeRow'] {
+[data-role='flightdeck.worktreeRow'] {
   /* 4px on the right, as on a space's line, so the PR icon sits in the same
      column as the buttons above it. */
   padding: 2px 4px 2px 8px;
@@ -147,7 +147,7 @@
 }
 /* A worktree being created: two lines (its progress under the name); the
    row opens its setup tab. */
-[data-role='overseer.creatingRow'] {
+[data-role='flightdeck.creatingRow'] {
   gap: 1px;
   min-width: 0;
   padding: 3px 4px 3px 8px;
@@ -155,7 +155,7 @@
   cursor: pointer;
 }
 /* What a Force delete would lose, in the confirmation. */
-[data-role='overseer.changes'] {
+[data-role='flightdeck.changes'] {
   gap: 4px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -163,7 +163,7 @@
   font-size: 0.9em;
 }
 /* One line per agent: dot, name, task ref. */
-[data-role='overseer.agentRow'] {
+[data-role='flightdeck.agentRow'] {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -171,74 +171,74 @@
   cursor: pointer;
   min-width: 0;
 }
-[data-role='overseer.agentRow'] [data-role='overseer.spaceName'] { white-space: nowrap; flex-shrink: 0; max-width: 55%; }
-[data-role='overseer.spaceRow']:hover,
-[data-role='overseer.worktreeRow']:hover,
-[data-role='overseer.creatingRow']:hover,
-[data-role='overseer.agentRow']:hover {
+[data-role='flightdeck.agentRow'] [data-role='flightdeck.spaceName'] { white-space: nowrap; flex-shrink: 0; max-width: 55%; }
+[data-role='flightdeck.spaceRow']:hover,
+[data-role='flightdeck.worktreeRow']:hover,
+[data-role='flightdeck.creatingRow']:hover,
+[data-role='flightdeck.agentRow']:hover {
   background: color-mix(in srgb, var(--t4) 9%, transparent);
 }
 
 /* Status dots: hollow without a session, grey when open and quiet, pulsing
    green while an agent works, haloed accent while one waits for you. */
-[data-role='overseer.dotOpen'],
-[data-role='overseer.dotIdle'],
-[data-role='overseer.dotBusy'],
-[data-role='overseer.dotAgent'],
-[data-role='overseer.dotDone'],
-[data-role='overseer.dotWaiting'] {
+[data-role='flightdeck.dotOpen'],
+[data-role='flightdeck.dotIdle'],
+[data-role='flightdeck.dotBusy'],
+[data-role='flightdeck.dotAgent'],
+[data-role='flightdeck.dotDone'],
+[data-role='flightdeck.dotWaiting'] {
   width: 8px;
   height: 8px;
   min-width: 8px;
   border-radius: 50%;
 }
-[data-role='overseer.dotOpen'] {
+[data-role='flightdeck.dotOpen'] {
   background: var(--t3);
 }
-[data-role='overseer.dotIdle'] {
+[data-role='flightdeck.dotIdle'] {
   border: 1.5px solid var(--t4);
 }
-[data-role='overseer.dotBusy'] {
+[data-role='flightdeck.dotBusy'] {
   background: var(--warn);
 }
-[data-role='overseer.dotDone'] {
+[data-role='flightdeck.dotDone'] {
   background: var(--ok);
 }
-[data-role='overseer.dotAgent'] {
+[data-role='flightdeck.dotAgent'] {
   background: var(--ok);
-  animation: overseer-agent-pulse 1.6s ease-out infinite;
+  animation: flightdeck-agent-pulse 1.6s ease-out infinite;
 }
-@keyframes overseer-agent-pulse {
+@keyframes flightdeck-agent-pulse {
   from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent); }
   to { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 0%, transparent); }
 }
-[data-role='overseer.dotWaiting'] {
+[data-role='flightdeck.dotWaiting'] {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-role='overseer.dotAgent'] {
+  [data-role='flightdeck.dotAgent'] {
     animation: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 35%, transparent);
   }
 }
-[data-role='overseer.badgeWarn'],
-[data-role='overseer.badgeBad'] {
+[data-role='flightdeck.badgeWarn'],
+[data-role='flightdeck.badgeBad'] {
   flex-shrink: 0;
   font-size: 0.75em;
   padding: 1px 6px;
   border-radius: 999px;
 }
-[data-role='overseer.badgeWarn'] {
+[data-role='flightdeck.badgeWarn'] {
   color: var(--warn);
   background: color-mix(in srgb, var(--warn) 14%, transparent);
 }
-[data-role='overseer.badgeBad'] {
+[data-role='flightdeck.badgeBad'] {
   color: var(--bad);
   background: color-mix(in srgb, var(--bad) 14%, transparent);
 }
 /* Uncommitted changes: a quiet mark hugging the name; hover the row for details. */
-[data-role='overseer.dirtyMark'] {
+[data-role='flightdeck.dirtyMark'] {
   flex-shrink: 0;
   margin-left: -4px;
   color: var(--warn);
@@ -246,10 +246,10 @@
 }
 /* GitHub pull request link at the row's right end, sized like the Spaces
    buttons: a 20px square with a 12px icon (icons.css, generated). */
-[data-role='overseer.prDraft'],
-[data-role='overseer.prOpen'],
-[data-role='overseer.prMerged'],
-[data-role='overseer.prClosed'] {
+[data-role='flightdeck.prDraft'],
+[data-role='flightdeck.prOpen'],
+[data-role='flightdeck.prMerged'],
+[data-role='flightdeck.prClosed'] {
   width: 20px;
   height: 20px;
   min-width: 20px;
@@ -263,35 +263,35 @@
   background-repeat: no-repeat;
   background-position: center;
 }
-[data-role='overseer.prDraft']:hover,
-[data-role='overseer.prOpen']:hover,
-[data-role='overseer.prMerged']:hover,
-[data-role='overseer.prClosed']:hover {
+[data-role='flightdeck.prDraft']:hover,
+[data-role='flightdeck.prOpen']:hover,
+[data-role='flightdeck.prMerged']:hover,
+[data-role='flightdeck.prClosed']:hover {
   background-color: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 /* ↻ turns while an explicit refresh runs. */
-[data-role='overseer.iconSyncSpin'] {
-  animation: overseer-spin 0.8s linear infinite;
+[data-role='flightdeck.iconSyncSpin'] {
+  animation: flightdeck-spin 0.8s linear infinite;
 }
-@keyframes overseer-spin {
+@keyframes flightdeck-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-role='overseer.iconSyncSpin'] {
+  [data-role='flightdeck.iconSyncSpin'] {
     animation: none;
     opacity: 0.5;
   }
 }
-[data-role='overseer.hint'] {
+[data-role='flightdeck.hint'] {
   color: var(--t3);
   font-size: 0.9em;
 }
-[data-role='overseer.agents'] > [data-role='overseer.hint'] {
+[data-role='flightdeck.agents'] > [data-role='flightdeck.hint'] {
   padding: 2px 8px;
 }
-[data-role='overseer.button'],
-[data-role='overseer.primaryButton'] {
+[data-role='flightdeck.button'],
+[data-role='flightdeck.primaryButton'] {
   color: var(--t2);
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--t4) 30%, transparent);
@@ -301,21 +301,21 @@
   font: inherit;
   font-size: 0.9em;
 }
-[data-role='overseer.primaryButton'] {
+[data-role='flightdeck.primaryButton'] {
   color: var(--accent);
   border-color: var(--accent);
 }
-[data-role='overseer.button']:hover,
-[data-role='overseer.primaryButton']:hover,
-[data-role='overseer.iconButton']:hover {
+[data-role='flightdeck.button']:hover,
+[data-role='flightdeck.primaryButton']:hover,
+[data-role='flightdeck.iconButton']:hover {
   color: var(--t1);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
-[data-role^='overseer.']:focus-visible {
+[data-role^='flightdeck.']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-[data-role='overseer.error'] {
+[data-role='flightdeck.error'] {
   color: var(--bad);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -324,19 +324,19 @@
   border-radius: 6px;
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
-[data-role='overseer.message'] {
+[data-role='flightdeck.message'] {
   color: var(--t2);
   white-space: pre-wrap;
   padding: 8px 10px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--t4) 12%, transparent);
 }
-[data-role='overseer.form'] {
+[data-role='flightdeck.form'] {
   color: var(--t1);
   padding: 16px;
   font-size: 0.93em;
 }
-[data-role='overseer.backLink'] {
+[data-role='flightdeck.backLink'] {
   margin: -4px 0 10px -6px;
   padding: 3px 6px;
   border: 0;
@@ -347,34 +347,34 @@
   font-size: 0.9em;
   cursor: pointer;
 }
-[data-role='overseer.backLink']:hover,
-[data-role='overseer.backLink']:focus-visible {
+[data-role='flightdeck.backLink']:hover,
+[data-role='flightdeck.backLink']:focus-visible {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
-[data-role='overseer.formHeading'] {
+[data-role='flightdeck.formHeading'] {
   margin-bottom: 12px;
 }
-[data-role='overseer.fieldLabel'] {
+[data-role='flightdeck.fieldLabel'] {
   color: var(--t2);
   margin: 14px 0 5px;
   font-weight: 600;
 }
-[data-role='overseer.field'] {
+[data-role='flightdeck.field'] {
   border: 1px solid color-mix(in srgb, var(--t4) 40%, transparent);
   border-radius: 4px;
 }
-[data-role='overseer.field'].focused {
+[data-role='flightdeck.field'].focused {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-[data-role='overseer.formButtons'] {
+[data-role='flightdeck.formButtons'] {
   gap: 8px;
   margin: 18px 0 10px;
 }
 /* A confirmation opens over the tab in a canvas of its own, which can't be
    sized: the dialog is a card centred in it. */
-[data-role='overseer.confirmation'] {
+[data-role='flightdeck.confirmation'] {
   gap: 8px;
   width: min(460px, 100%);
   margin: 12vh auto 0;
@@ -383,7 +383,7 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--t4) 6%, transparent);
 }
-[data-role='overseer.dangerButton'] {
+[data-role='flightdeck.dangerButton'] {
   color: var(--bad);
   background: transparent;
   border: 1px solid var(--bad);
@@ -392,12 +392,12 @@
   cursor: pointer;
   font: inherit;
 }
-[data-role='overseer.dangerButton']:hover {
+[data-role='flightdeck.dangerButton']:hover {
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
 /* Mission control in the sidebar: the Needs you line, and an agent's task. */
-[data-role='overseer.mission'],
-[data-role='overseer.missionActive'] {
+[data-role='flightdeck.mission'],
+[data-role='flightdeck.missionActive'] {
   align-items: center;
   gap: 8px;
   margin: 4px 0 8px;
@@ -406,12 +406,12 @@
   cursor: pointer;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-[data-role='overseer.mission']:hover,
-[data-role='overseer.missionActive'] {
+[data-role='flightdeck.mission']:hover,
+[data-role='flightdeck.missionActive'] {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 /* An accent ring; it fills (dotWaiting) while questions wait. */
-[data-role='overseer.missionIcon'] {
+[data-role='flightdeck.missionIcon'] {
   width: 8px;
   height: 8px;
   min-width: 8px;
@@ -420,7 +420,7 @@
   border: 1.5px solid var(--accent);
 }
 /* An agent's task, after its name, cut to fit. */
-[data-role='overseer.taskLink'] {
+[data-role='flightdeck.taskLink'] {
   font: inherit;
   font-size: 0.82em;
   flex: 1 1 auto;
@@ -431,7 +431,7 @@
   text-overflow: ellipsis;
   cursor: pointer;
 }
-[data-role='overseer.taskLink']:hover {
+[data-role='flightdeck.taskLink']:hover {
   color: var(--accent);
   text-decoration: underline;
 }
@@ -940,14 +940,14 @@
   [data-role^='mission.option'] { transition: none; }
 }
 /* Separates Goals from Spaces in the sidebar. */
-[data-role='overseer.rule'] {
+[data-role='flightdeck.rule'] {
   height: 1px;
   min-height: 1px;
   margin: 10px 4px 12px;
   background: color-mix(in srgb, var(--t4) 25%, transparent);
 }
 /* A goal task's state at the end of its row: one line, never squeezed; the title gives way. */
-[data-role='overseer.taskState'] {
+[data-role='flightdeck.taskState'] {
   flex-shrink: 0;
   white-space: nowrap;
   font-size: 0.82em;

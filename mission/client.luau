@@ -1,5 +1,5 @@
--- Talking to overseer-server: its address, the access token it writes into
--- Overseer's plugin data directory, and one JSON call helper. Also where the
+-- Talking to flightdeck-server: its address, the access token it writes into
+-- Flightdeck's plugin data directory, and one JSON call helper. Also where the
 -- `tern` CLI lives and a warn-once logger, shared by the mission modules.
 local M = {}
 
@@ -12,7 +12,7 @@ local warned = {}
 function M.warnOnce(key, message)
 	if warned[key] then return end
 	warned[key] = true
-	tern.log.warn("Overseer Mission control: " .. message)
+	tern.log.warn("Flightdeck Mission control: " .. message)
 end
 
 local token

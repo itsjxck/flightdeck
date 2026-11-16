@@ -221,7 +221,7 @@ end
 local function threadSection(thread, now)
 	local events = {}
 	for _, e in thread.events do
-		local who = if e.author == "you" then "You" elseif e.author == "overseer" then "Overseer" else "Agent"
+		local who = if e.author == "you" then "You" elseif e.author == "flightdeck" then "Flightdeck" else "Agent"
 		table.insert(events, col("e" .. tostring(e.id), "mission.event-" .. (if e.author == "you" then "you" else "agent"), {
 			text("who", who .. " · " .. e.kind .. (if M.ago(now, e.created) then " · " .. M.ago(now, e.created) else ""), "mission.eyebrow"),
 			ui.md(e.body),
@@ -447,7 +447,7 @@ local function backlogNodes(view)
 	return out
 end
 
--- The Repos tab: every repository Overseer knows (found by scanning, or
+-- The Repos tab: every repository Flightdeck knows (found by scanning, or
 -- learned from agents), and whether agents may use it.
 local function repoNodes(view)
 	if not view.repos then return { text("loading", "Loading…", "mission.empty") } end

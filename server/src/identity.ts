@@ -9,7 +9,7 @@ const SESSION_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const TERN = process.env.TERN_EXE || "/Applications/Tern.app/Contents/MacOS/tern";
 const CACHE_MS = 30_000;
 // A fresh omp opens its session file on its first message, a moment after
-// Overseer starts asking about its pane: misses expire fast.
+// Flightdeck starts asking about its pane: misses expire fast.
 const MISS_MS = 2_000;
 
 export function sessionFromArgv(argv: string[]): string | null {
@@ -64,7 +64,7 @@ function paneProcess(pane: string): PaneProcess | null {
   }
 }
 
-// Misses are cached too: Overseer asks about every shell pane every 2 s.
+// Misses are cached too: Flightdeck asks about every shell pane every 2 s.
 const cache = new Map<string, { at: number; caller: Caller | null }>();
 
 // The omp session in `pane`, with its folder, repository and branch; null when the pane runs no omp session.

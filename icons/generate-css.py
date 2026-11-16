@@ -17,16 +17,16 @@ HERE = Path(__file__).resolve().parent
 # (selector, icon, light colour, dark colour).
 ICONS = [
     # Pull request states, in GitHub Primer colours.
-    ("[data-role='overseer.prDraft']", "git-pull-request-draft-16.svg", "#59636e", "#9198a1"),
-    ("[data-role='overseer.prOpen']", "git-pull-request-16.svg", "#1a7f37", "#3fb950"),
-    ("[data-role='overseer.prMerged']", "git-merge-16.svg", "#8250df", "#ab7df8"),
-    ("[data-role='overseer.prClosed']", "git-pull-request-closed-16.svg", "#d1242f", "#f85149"),
+    ("[data-role='flightdeck.prDraft']", "git-pull-request-draft-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='flightdeck.prOpen']", "git-pull-request-16.svg", "#1a7f37", "#3fb950"),
+    ("[data-role='flightdeck.prMerged']", "git-merge-16.svg", "#8250df", "#ab7df8"),
+    ("[data-role='flightdeck.prClosed']", "git-pull-request-closed-16.svg", "#d1242f", "#f85149"),
     # Spaces button icons, muted like the text around them. Each button holds
     # one 16px icon element; square, so ↻ turns about its centre.
-    ("[data-role='overseer.iconPlus']", "plus-16.svg", "#59636e", "#9198a1"),
-    ("[data-role='overseer.iconSync'],\n[data-role='overseer.iconSyncSpin']", "sync-16.svg", "#59636e", "#9198a1"),
-    ("[data-role='overseer.iconExpanded']", "chevron-down-16.svg", "#59636e", "#9198a1"),
-    ("[data-role='overseer.iconCollapsed']", "chevron-right-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='flightdeck.iconPlus']", "plus-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='flightdeck.iconSync'],\n[data-role='flightdeck.iconSyncSpin']", "sync-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='flightdeck.iconExpanded']", "chevron-down-16.svg", "#59636e", "#9198a1"),
+    ("[data-role='flightdeck.iconCollapsed']", "chevron-right-16.svg", "#59636e", "#9198a1"),
 ]
 
 

@@ -43,9 +43,9 @@ Overseer must turn a session into a pane (deliveries) and a repository name into
 describe("repositories", () => {
   test("callers teach the store where each repository lives", () => {
     const store = new Store(":memory:");
-    store.learnRepo("web-app", "/Users/j/projects/web-app");
-    store.learnRepo("web-app", "/Users/j/projects/web-app");
-    expect(store.repoPath("web-app")).toBe("/Users/j/projects/web-app");
+    store.learnRepo("api", "/Users/j/projects/api");
+    store.learnRepo("api", "/Users/j/projects/api");
+    expect(store.repoPath("api")).toBe("/Users/j/projects/api");
     expect(store.repoPath("unknown")).toBeNull();
   });
 });
@@ -64,7 +64,7 @@ test("pane ids map to the omp sessions running in them", async () => {
 // append to server/test/identity.test.ts
 import { repoRoot } from "../src/identity";
 test("repository root from the common git dir", () => {
-  expect(repoRoot("/Users/j/projects/web-app/.git")).toBe("/Users/j/projects/web-app");
+  expect(repoRoot("/Users/j/projects/api/.git")).toBe("/Users/j/projects/api");
 });
 ```
 

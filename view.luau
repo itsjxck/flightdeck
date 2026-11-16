@@ -32,7 +32,7 @@ end
 
 local function button(key, label, action, title, role)
 	return ui.el("button", {
-		key = key, text = label, role = role or "overseer.button",
+		key = key, text = label, role = role or "flightdeck.button",
 		title = title, actions = { click = action },
 	})
 end
@@ -41,15 +41,15 @@ end
 -- The icon is its own element, so a spinning ↻ turns without its frame.
 local function iconButton(key, icon, action, title)
 	return ui.el("button", {
-		key = key, role = "overseer.iconButton", title = title, aria = title, actions = { click = action },
-	}, { ui.el("div", { key = "icon", role = "overseer." .. icon }) })
+		key = key, role = "flightdeck.iconButton", title = title, aria = title, actions = { click = action },
+	}, { ui.el("div", { key = "icon", role = "flightdeck." .. icon }) })
 end
 
 local PR_STATES = {
-	draft = { role = "overseer.prDraft", label = "Draft" },
-	open = { role = "overseer.prOpen", label = "Open" },
-	merged = { role = "overseer.prMerged", label = "Merged" },
-	closed = { role = "overseer.prClosed", label = "Closed" },
+	draft = { role = "flightdeck.prDraft", label = "Draft" },
+	open = { role = "flightdeck.prOpen", label = "Open" },
+	merged = { role = "flightdeck.prMerged", label = "Merged" },
+	closed = { role = "flightdeck.prClosed", label = "Closed" },
 }
 
 local function divergence(value)
@@ -102,23 +102,23 @@ end
 -- Status dot: hollow without a session, grey when open and quiet, pulsing
 -- green while an agent works, haloed blue while one waits for you.
 local function statusDot(item)
-	local role, title = "overseer.dotIdle", "No session"
+	local role, title = "flightdeck.dotIdle", "No session"
 	if item.deleting then
-		role, title = "overseer.dotBusy", "Deleting"
+		role, title = "flightdeck.dotBusy", "Deleting"
 	elseif item.creating then
-		role, title = "overseer.dotBusy", "Creating"
+		role, title = "flightdeck.dotBusy", "Creating"
 	elseif item.agent == "waiting" then
-		role, title = "overseer.dotWaiting", "Agent waiting for you"
+		role, title = "flightdeck.dotWaiting", "Agent waiting for you"
 	elseif item.agent == "working" then
-		role, title = "overseer.dotAgent", "Agent working"
+		role, title = "flightdeck.dotAgent", "Agent working"
 	elseif item.session then
-		role, title = "overseer.dotOpen", "Session open"
+		role, title = "flightdeck.dotOpen", "Session open"
 	end
 	return ui.el("div", { key = "status", role = role, title = title })
 end
 
 -- Opens the pull request on GitHub; its icon shows the PR's state. Sized like
--- the icon buttons. Nil for a state Overseer has no icon for.
+-- the icon buttons. Nil for a state Flightdeck has no icon for.
 local function prButton(pr)
 	local state = pr and PR_STATES[pr.state]
 	if not state then return nil end
@@ -167,19 +167,19 @@ end
 -- along it is or that it may need you (a hook approval, say).
 local function creatingNode(worktree)
 	local state = worktree.creating
-	return ui.node("col", { key = "w" .. safeKey(worktree.path), role = "overseer.worktree" }, {
+	return ui.node("col", { key = "w" .. safeKey(worktree.path), role = "flightdeck.worktree" }, {
 		ui.node("col", {
-			key = "row", role = "overseer.creatingRow", title = creatingTitle(state),
+			key = "row", role = "flightdeck.creatingRow", title = creatingTitle(state),
 			aria = state.label .. (if state.needsYou then ", creating, may need you" else ", creating"),
 			actions = { click = if state.pane then "pane=" .. tostring(state.pane) else nil },
 		}, {
-			ui.node("row", { key = "head", role = "overseer.spaceHead" }, {
+			ui.node("row", { key = "head", role = "flightdeck.spaceHead" }, {
 				statusDot(worktree),
-				text("name", state.label, "overseer.worktreeName"),
+				text("name", state.label, "flightdeck.worktreeName"),
 				ui.el("div", { key = "spacer", grow = 1 }),
-				if state.needsYou then text("badge", "needs you?", "overseer.badgeBad") else text("badge", "creating", "overseer.badgeWarn"),
+				if state.needsYou then text("badge", "needs you?", "flightdeck.badgeBad") else text("badge", "creating", "flightdeck.badgeWarn"),
 			}),
-			text("subtitle", creatingSubtitle(state), "overseer.spaceSubtitle"),
+			text("subtitle", creatingSubtitle(state), "flightdeck.spaceSubtitle"),
 		}),
 	})
 end
@@ -197,23 +197,23 @@ local function worktreeNode(worktree)
 	end
 	local head = {
 		statusDot(worktree),
-		text("name", worktree.label, "overseer.worktreeName"),
+		text("name", worktree.label, "flightdeck.worktreeName"),
 	}
 	-- The conflicts badge already says the worktree has unfinished changes.
 	if worktree.dirty and not worktree.conflicts then
-		table.insert(head, text("dirty", "✱", "overseer.dirtyMark", { title = "Uncommitted changes" }))
+		table.insert(head, text("dirty", "✱", "flightdeck.dirtyMark", { title = "Uncommitted changes" }))
 	end
 	table.insert(head, ui.el("div", { key = "spacer", grow = 1 }))
-	if worktree.conflicts then table.insert(head, text("conflicts", "conflicts", "overseer.badgeBad")) end
-	if worktree.deleting then table.insert(head, text("deleting", "deleting", "overseer.badgeWarn")) end
+	if worktree.conflicts then table.insert(head, text("conflicts", "conflicts", "flightdeck.badgeBad")) end
+	if worktree.deleting then table.insert(head, text("deleting", "deleting", "flightdeck.badgeWarn")) end
 	local pr = prButton(worktree.pr)
 	if pr then table.insert(head, pr) end
 	return ui.node("col", {
-		key = "w" .. safeKey(worktree.path), role = "overseer.worktree",
+		key = "w" .. safeKey(worktree.path), role = "flightdeck.worktree",
 		mark = if worktree.active then "pick" else nil,
 	}, {
 		ui.node("row", {
-			key = "row", role = "overseer.worktreeRow", title = details(worktree, branch),
+			key = "row", role = "flightdeck.worktreeRow", title = details(worktree, branch),
 			aria = worktree.label .. ", " .. (AGENT_TEXT[worktree.agent] or (if worktree.session then "session open" else "open session"))
 				.. (if worktree.conflicts then ", merge conflicts" elseif worktree.dirty then ", uncommitted changes" else ""),
 			actions = { click = if worktree.deleting then nil else "open=" .. worktree.path, menu = menu },
@@ -228,19 +228,19 @@ local function spaceNode(space)
 		table.insert(menu, "Change base branch")
 	end
 	table.insert(menu, "Close space")
-	local nameRow = { statusDot(space), text("name", space.name, "overseer.spaceName") }
+	local nameRow = { statusDot(space), text("name", space.name, "flightdeck.spaceName") }
 	if space.dirty then
-		table.insert(nameRow, text("dirty", "✱", "overseer.dirtyMark", { title = "Uncommitted changes" }))
+		table.insert(nameRow, text("dirty", "✱", "flightdeck.dirtyMark", { title = "Uncommitted changes" }))
 	end
 	local head = {
 		ui.node("col", {
-			key = "row", role = "overseer.spaceRow", grow = 1,
+			key = "row", role = "flightdeck.spaceRow", grow = 1,
 			title = space.title,
 			aria = space.name .. (if AGENT_TEXT[space.agent] then ", " .. AGENT_TEXT[space.agent] else ""),
 			actions = { click = "space=" .. tostring(space.id), menu = menu },
 		}, {
-			ui.node("row", { key = "head", role = "overseer.spaceHead" }, nameRow),
-			text("subtitle", space.subtitle or "", "overseer.spaceSubtitle"),
+			ui.node("row", { key = "head", role = "flightdeck.spaceHead" }, nameRow),
+			text("subtitle", space.subtitle or "", "flightdeck.spaceSubtitle"),
 		}),
 	}
 	local buttons = {}
@@ -253,24 +253,24 @@ local function spaceNode(space)
 		table.insert(buttons, iconButton("collapse", if space.collapsed then "iconCollapsed" else "iconExpanded", "collapse=" .. space.repo,
 			(if space.collapsed then "Show " else "Hide ") .. tostring(#space.worktrees) .. " worktrees"))
 	end
-	if #buttons > 0 then table.insert(head, ui.node("row", { key = "buttons", role = "overseer.buttons" }, buttons)) end
-	local children = { ui.node("row", { key = "line", role = "overseer.spaceLine" }, head) }
-	if space.error then table.insert(children, text("error", space.error, "overseer.error")) end
+	if #buttons > 0 then table.insert(head, ui.node("row", { key = "buttons", role = "flightdeck.buttons" }, buttons)) end
+	local children = { ui.node("row", { key = "line", role = "flightdeck.spaceLine" }, head) }
+	if space.error then table.insert(children, text("error", space.error, "flightdeck.error")) end
 	if not space.collapsed and #space.worktrees > 0 then
 		local trees = {}
 		for _, worktree in space.worktrees do table.insert(trees, worktreeNode(worktree)) end
-		table.insert(children, ui.node("col", { key = "trees", role = "overseer.worktrees" }, trees))
+		table.insert(children, ui.node("col", { key = "trees", role = "flightdeck.worktrees" }, trees))
 	end
 	return ui.node("col", {
-		key = "s" .. tostring(space.id), role = "overseer.space",
+		key = "s" .. tostring(space.id), role = "flightdeck.space",
 		mark = if space.active then "pick" else nil,
 	}, children)
 end
 
 local AGENT_STATES = {
-	waiting = { dot = "overseer.dotWaiting", label = "waiting" },
-	working = { dot = "overseer.dotAgent", label = "working" },
-	idle = { dot = "overseer.dotIdle", label = "idle" },
+	waiting = { dot = "flightdeck.dotWaiting", label = "waiting" },
+	working = { dot = "flightdeck.dotAgent", label = "working" },
+	idle = { dot = "flightdeck.dotIdle", label = "idle" },
 }
 
 -- One line per agent: its dot (the state), its name, then its Mission control
@@ -279,16 +279,16 @@ local function agentNode(agent)
 	local state = AGENT_STATES[agent.state] or AGENT_STATES.idle
 	local children = {
 		ui.el("div", { key = "status", role = state.dot }),
-		text("name", agent.name, "overseer.spaceName", { grow = if agent.task then nil else 1 }),
+		text("name", agent.name, "flightdeck.spaceName", { grow = if agent.task then nil else 1 }),
 	}
 	if agent.task then
-		table.insert(children, text("task", "· " .. agent.task.ref .. " · " .. agent.task.title, "overseer.taskLink", {
+		table.insert(children, text("task", "· " .. agent.task.ref .. " · " .. agent.task.title, "flightdeck.taskLink", {
 			title = agent.task.ref .. " · " .. agent.task.title .. "\nOpen it in Mission control",
 			actions = { click = "mission=" .. agent.task.ref },
 		}))
 	end
 	return ui.node("row", {
-		key = "a" .. tostring(agent.pane), role = "overseer.agentRow",
+		key = "a" .. tostring(agent.pane), role = "flightdeck.agentRow",
 		mark = if agent.active then "pick" else nil,
 		title = agent.title .. "\n" .. state.label,
 		aria = agent.name .. ", " .. state.label .. (if agent.task then ", " .. agent.task.ref else ""),
@@ -301,13 +301,13 @@ end
 -- questions waiting for you.
 local function missionNode(count, active)
 	local children = {
-		if count > 0 then ui.el("div", { key = "status", role = "overseer.dotWaiting" })
-			else ui.el("div", { key = "status", role = "overseer.missionIcon" }),
-		text("name", "Mission control", "overseer.spaceName", { grow = 1 }),
+		if count > 0 then ui.el("div", { key = "status", role = "flightdeck.dotWaiting" })
+			else ui.el("div", { key = "status", role = "flightdeck.missionIcon" }),
+		text("name", "Mission control", "flightdeck.spaceName", { grow = 1 }),
 	}
-	if count > 0 then table.insert(children, text("count", tostring(count) .. (if count == 1 then " needs you" else " need you"), "overseer.badgeBad")) end
+	if count > 0 then table.insert(children, text("count", tostring(count) .. (if count == 1 then " needs you" else " need you"), "flightdeck.badgeBad")) end
 	return ui.node("row", {
-		key = "mission", role = if active then "overseer.missionActive" else "overseer.mission",
+		key = "mission", role = if active then "flightdeck.missionActive" else "flightdeck.mission",
 		title = "Open Mission control (⌘⌥⇧M)",
 		aria = "Mission control" .. (if count > 0 then ", " .. tostring(count) .. (if count == 1 then " question needs you" else " questions need you") else ""),
 		actions = { click = "mission" },
@@ -320,24 +320,24 @@ local TASK_STATUS = { ready = "ready", todo = "waiting on others", done = "done"
 local function goalNode(goal)
 	-- Finished (the coordinator reported): green until you close it, unless a question waits.
 	local dot = if goal.dot == "waiting" then AGENT_STATES.waiting.dot
-		elseif goal.finished then "overseer.dotDone"
-		elseif goal.dot then AGENT_STATES[goal.dot].dot else "overseer.dotOpen"
+		elseif goal.finished then "flightdeck.dotDone"
+		elseif goal.dot then AGENT_STATES[goal.dot].dot else "flightdeck.dotOpen"
 	local head = {
 		ui.el("div", { key = "status", role = dot }),
-		text("name", goal.ref .. " · " .. goal.title, "overseer.spaceName", { grow = 1 }),
+		text("name", goal.ref .. " · " .. goal.title, "flightdeck.spaceName", { grow = 1 }),
 	}
-	if goal.needsYou > 0 then table.insert(head, text("needs", tostring(goal.needsYou), "overseer.badgeBad", { title = "Questions waiting for you" })) end
+	if goal.needsYou > 0 then table.insert(head, text("needs", tostring(goal.needsYou), "flightdeck.badgeBad", { title = "Questions waiting for you" })) end
 	table.insert(head, if goal.finished
-		then text("progress", "finished", "overseer.count", { title = "Finished: review its worktrees, then Close goal (right-click)" })
-		else text("progress", tostring(goal.progress.done) .. "/" .. tostring(goal.progress.total), "overseer.count", { title = "Tasks done" }))
-	local line = ui.node("row", { key = "line", role = "overseer.spaceLine" }, {
+		then text("progress", "finished", "flightdeck.count", { title = "Finished: review its worktrees, then Close goal (right-click)" })
+		else text("progress", tostring(goal.progress.done) .. "/" .. tostring(goal.progress.total), "flightdeck.count", { title = "Tasks done" }))
+	local line = ui.node("row", { key = "line", role = "flightdeck.spaceLine" }, {
 		ui.node("row", {
-			key = "row", role = "overseer.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",
+			key = "row", role = "flightdeck.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",
 			-- The coordinator's pane, else the goal's session, else Mission control.
 			actions = { click = if goal.coordinatorPane then "pane=" .. goal.coordinatorPane
 				elseif goal.session then "goal=" .. goal.session else "mission", menu = { "Open Mission control", "Close goal" } },
-		}, { ui.node("row", { key = "head", role = "overseer.spaceHead", grow = 1 }, head) }),
-		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
+		}, { ui.node("row", { key = "head", role = "flightdeck.spaceHead", grow = 1 }, head) }),
+		ui.node("row", { key = "buttons", role = "flightdeck.buttons" }, {
 			iconButton("collapse", if goal.collapsed then "iconCollapsed" else "iconExpanded", "collapse=goal:" .. goal.ref,
 				(if goal.collapsed then "Show " else "Hide ") .. tostring(#goal.tasks) .. " tasks"),
 		}),
@@ -348,18 +348,18 @@ local function goalNode(goal)
 		for _, t in goal.tasks do
 			local state = t.state and AGENT_STATES[t.state]
 			table.insert(rows, ui.node("row", {
-				key = "t" .. t.ref, role = "overseer.worktreeRow",
+				key = "t" .. t.ref, role = "flightdeck.worktreeRow",
 				title = t.ref .. " · " .. t.title .. "\n" .. (if state then "Agent " .. state.label else TASK_STATUS[t.status] or t.status),
 				actions = { click = if t.pane then "pane=" .. t.pane else "mission=" .. t.ref },
 			}, {
-				ui.el("div", { key = "status", role = if state then state.dot else "overseer.dotIdle" }),
-				text("name", t.ref .. " · " .. t.title, "overseer.worktreeName", { grow = 1 }),
-				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.taskState"),
+				ui.el("div", { key = "status", role = if state then state.dot else "flightdeck.dotIdle" }),
+				text("name", t.ref .. " · " .. t.title, "flightdeck.worktreeName", { grow = 1 }),
+				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "flightdeck.taskState"),
 			}))
 		end
-		table.insert(children, ui.node("col", { key = "tasks", role = "overseer.worktrees" }, rows))
+		table.insert(children, ui.node("col", { key = "tasks", role = "flightdeck.worktrees" }, rows))
 	end
-	return ui.node("col", { key = "g" .. goal.ref, role = "overseer.space" }, children)
+	return ui.node("col", { key = "g" .. goal.ref, role = "flightdeck.space" }, children)
 end
 
 -- The goal whose sidebar row `node` (an action's node id) belongs to, e.g. "G-3".
@@ -397,7 +397,7 @@ local function changeList(changes)
 		table.insert(rows, ui.node("text", { key = "more", spans = { ui.span("… and " .. tostring(hidden) .. " more", "muted") } }))
 	end
 	local summary = tostring(changes.total) .. " uncommitted change" .. (if changes.total == 1 then "" else "s")
-	return ui.node("col", { key = "changes", role = "overseer.changes" }, {
+	return ui.node("col", { key = "changes", role = "flightdeck.changes" }, {
 		ui.node("text", { key = "summary", spans = { ui.span(summary, "strong") } }),
 		ui.node("scroll", { key = "list", max = { h = "12lines" } }, rows),
 	})
@@ -407,25 +407,25 @@ function View.confirmation(request)
 	local words = View.confirmationWords(request)
 	local buttons = { button("cancel", "Cancel", "cancel=" .. request.id, "Keep it open") }
 	if not request.checking then
-		table.insert(buttons, button("confirm", words.confirm, "confirm=" .. request.id, "Confirm " .. request.label, "overseer.dangerButton"))
+		table.insert(buttons, button("confirm", words.confirm, "confirm=" .. request.id, "Confirm " .. request.label, "flightdeck.dangerButton"))
 	end
 	local body = {
-		text("name", request.label, "overseer.spaceName"),
-		text("path", request.path or "", "overseer.hint"),
+		text("name", request.label, "flightdeck.spaceName"),
+		text("path", request.path or "", "flightdeck.hint"),
 	}
 	if request.changes then table.insert(body, changeList(request.changes)) end
-	table.insert(body, text("detail", words.detail, "overseer.hint"))
-	table.insert(body, text("status", if request.checking then "Checking worktree…" else "", "overseer.hint"))
-	table.insert(body, ui.node("row", { key = "buttons", role = "overseer.formButtons" }, buttons))
-	return ui.node("col", { key = "confirmation", role = "overseer.confirmation" }, body)
+	table.insert(body, text("detail", words.detail, "flightdeck.hint"))
+	table.insert(body, text("status", if request.checking then "Checking worktree…" else "", "flightdeck.hint"))
+	table.insert(body, ui.node("row", { key = "buttons", role = "flightdeck.formButtons" }, buttons))
+	return ui.node("col", { key = "confirmation", role = "flightdeck.confirmation" }, body)
 end
 
 function View.render(model)
 	local spaces = {}
 	table.insert(spaces, missionNode(model.needsYou or 0, model.missionActive == true))
-	table.insert(spaces, ui.node("row", { key = "header", role = "overseer.header" }, {
-		text("title", "Spaces", "overseer.heading", { grow = 1 }),
-		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
+	table.insert(spaces, ui.node("row", { key = "header", role = "flightdeck.header" }, {
+		text("title", "Spaces", "flightdeck.heading", { grow = 1 }),
+		ui.node("row", { key = "buttons", role = "flightdeck.buttons" }, {
 			iconButton("add", "iconPlus", "add", "New space in a folder"),
 			iconButton("refresh", if model.refreshing then "iconSyncSpin" else "iconSync", "refresh",
 				if model.refreshing then "Refreshing…" else "Refresh worktrees"),
@@ -433,27 +433,27 @@ function View.render(model)
 	}))
 	for _, space in model.spaces do table.insert(spaces, spaceNode(space)) end
 	if model.goals and #model.goals > 0 then
-		table.insert(spaces, ui.el("div", { key = "goals-rule", role = "overseer.rule" }))
-		table.insert(spaces, ui.node("row", { key = "goals-header", role = "overseer.header" }, {
-			text("title", "Goals", "overseer.heading", { grow = 1 }),
-			text("count", tostring(#model.goals), "overseer.count"),
+		table.insert(spaces, ui.el("div", { key = "goals-rule", role = "flightdeck.rule" }))
+		table.insert(spaces, ui.node("row", { key = "goals-header", role = "flightdeck.header" }, {
+			text("title", "Goals", "flightdeck.heading", { grow = 1 }),
+			text("count", tostring(#model.goals), "flightdeck.count"),
 		}))
 		for _, goal in model.goals do table.insert(spaces, goalNode(goal)) end
 	end
 
 	local agents = {
-		ui.node("row", { key = "header", role = "overseer.header" }, {
-			text("title", "Agents", "overseer.heading", { grow = 1 }),
-			text("count", tostring(#model.agents), "overseer.count"),
+		ui.node("row", { key = "header", role = "flightdeck.header" }, {
+			text("title", "Agents", "flightdeck.heading", { grow = 1 }),
+			text("count", tostring(#model.agents), "flightdeck.count"),
 		}),
 	}
 	for _, agent in model.agents do table.insert(agents, agentNode(agent)) end
 	if #model.agents == 0 then
-		table.insert(agents, text("empty", "No agents running", "overseer.hint"))
+		table.insert(agents, text("empty", "No agents running", "flightdeck.hint"))
 	end
 	-- Agents go in the canvas's dock, so they stay at the bottom while spaces scroll.
-	return ui.node("col", { key = "overseer", role = "overseer.navigator" }, spaces),
-		ui.node("col", { key = "agents", role = "overseer.agents" }, agents)
+	return ui.node("col", { key = "flightdeck", role = "flightdeck.navigator" }, spaces),
+		ui.node("col", { key = "agents", role = "flightdeck.agents" }, agents)
 end
 
 return View

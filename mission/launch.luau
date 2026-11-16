@@ -2,7 +2,7 @@
 --
 -- The brief is not passed on omp's command line: an omp started with a
 -- prompt begins its first turn before MCP discovery finishes (omp waits only
--- 1.5 s), so it may not see the overseer tools at all. Instead the pane opens
+-- 1.5 s), so it may not see the flightdeck tools at all. Instead the pane opens
 -- with plain `omp`, and the brief is sent with cx.agents:ask once Tern has
 -- seen an agent in the pane for BRIEF_DELAY_MS. A worker's pane runs
 -- Worktrunk first (worktree setup can take minutes), so the clock only starts

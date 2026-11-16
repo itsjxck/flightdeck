@@ -5,7 +5,7 @@ import { Store } from "../src/store";
 import { buildServer } from "../src/tools";
 
 async function connect(store: Store, session: string) {
-  const caller = { session, repo: "overseer", branch: "main", cwd: "/r" };
+  const caller = { session, repo: "flightdeck", branch: "main", cwd: "/r" };
   const server = buildServer(store, () => caller);
   const [a, b] = InMemoryTransport.createLinkedPair();
   await server.connect(a);

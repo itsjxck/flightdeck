@@ -16,10 +16,10 @@ test("session from the open session file", () => {
 });
 
 test("repository name from the common git dir", () => {
-  expect(repoName("/Users/j/projects/web-app/.git")).toBe("web-app");
-  expect(repoName("/Users/j/projects/tern-plugins/overseer/.git")).toBe("overseer");
+  expect(repoName("/Users/j/projects/api/.git")).toBe("api");
+  expect(repoName("/Users/j/projects/tern-plugins/flightdeck/.git")).toBe("flightdeck");
 });
 
 test("repository root from the common git dir", () => {
-  expect(repoRoot("/Users/j/projects/web-app/.git")).toBe("/Users/j/projects/web-app");
+  expect(repoRoot("/Users/j/projects/api/.git")).toBe("/Users/j/projects/api");
 });

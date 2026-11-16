@@ -1,124 +1,100 @@
-<div align="center">
+# Flightdeck
 
-<h1><img src="docs/images/logo-640.png" alt="Overseer" width="320"></h1>
+> **Flightdeck is a fork of [Overseer](https://github.com/mmnavarr/overseer) by Malcolm Navarro**, and heavily inspired by it. The sidebar, worktree handling and Visualize PR started as Overseer's; Flightdeck adds Mission control for coordinating agents. Thanks, Malcolm.
 
-**Mission control for parallel agent work.**
+Flightdeck is a [Tern](https://docs.stencil.so/tern/) plugin for running many [omp](https://omp.sh) coding agents at once, across many repositories, without losing track of them.
 
-A sidebar of your spaces, the worktrees under them, and every agent you have running.<br>
-Click a row and you're there.
+It does two jobs:
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/spaces-dark.png">
-  <img src="docs/images/spaces-light.png" alt="Overseer's sidebar: a webapp space with three worktrees (two with PRs, one with uncommitted changes), an api space on a feature branch with a PR, a notes folder, and two agents at the bottom" width="380">
-</picture>
+1. **A sidebar that keeps you oriented.** Every Tern session is a *space*, named after its folder. Git worktrees nest under their repository, each with its own session. Every running agent is listed with a dot for its state (working, waiting for you, idle) and the task it's on. Click anything to go there.
+2. **Mission control, a place to run and steer agents' work.** A tab that shows every question agents are waiting on you for, every task in progress, and *goals*: outcomes you (or an agent) describe, which a *coordinator* agent breaks into tasks and hands to *worker* agents, each in its own Git worktree, until the goal is done. It also lists your repositories' GitHub issues (turn one into a goal in a click) and what your agents spend.
 
-</div>
+Everything runs on your Mac: a small local server (Bun, SQLite) behind a random token, talking to Tern and to omp. Nothing is sent anywhere except the GitHub calls you'd make with `gh`.
 
----
+## What you can do
 
-Running five agents on five branches means five checkouts, a pile of terminals, and losing track of which agent is stuck waiting for you. Overseer is a [Tern](https://docs.stencil.so/tern/) plugin that fixes that:
+**In the sidebar**
 
-- **Every Tern session is a space.** It's named after the folder it's open in, and doesn't have to be a Git repository.
-- **Worktrees nest under their repository.** A space open in a Git repository lists its other worktrees; each gets a session of its own on first click.
-- **You can see what every agent is doing.** The Agents section lists them all, across spaces: working, waiting for you, or idle.
-- **PRs sit on the row.** Any space or worktree on a branch with a GitHub PR gets a button showing its state (draft, open, merged, closed); click it to open the PR in your browser.
-- **Worktrees come and go safely.** Creation and deletion run through [Worktrunk](https://worktrunk.dev) in the background, with your hooks and approvals intact.
-- **PRs can be understood at a glance.** **Visualize PR** turns a pull request into a diagram-first outline, without touching GitHub.
+- Open folders as spaces (**+**), switch between spaces, worktrees and agents with a click or <kbd>⌃</kbd><kbd>⌘</kbd><kbd>[</kbd> / <kbd>]</kbd>.
+- Create and delete worktrees through [Worktrunk](https://worktrunk.dev) (your hooks and approvals run in a visible tab), see their PRs, uncommitted changes and conflicts at a glance.
+- Right-click a worktree for **Visualize PR**: a read-only, diagram-first outline of its pull request.
+- See each running goal, its progress and its tasks, under **Goals**.
 
-## The sidebar
+**In Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>)
 
-The sidebar stays with you: it sits on the left of whichever tab you're looking at, across every session, and keeps the width you give it.
-
-**Spaces** lists every session in the window, in Tern's order. A space is named after the folder of the first terminal in its first tab, following you as you `cd`, until you rename it; the line under the name is its branch, or its folder outside Git. When a space is open in a Git repository, the repository's other worktrees are nested under it. If several spaces are open in one repository, the one in its primary checkout holds the worktrees (else the first), and spaces open in those worktrees appear as their rows. Hover a worktree for its path, line counts, ahead/behind and PR.
-
-**Agents** sits at the bottom: every agent block and agent CLI in the window, named after its space (or its tab, if you named the tab), with its state. Click one to jump to it.
-
-| You see | It means |
+| Tab | What it's for |
 |---|---|
-| ● grey | A session is open |
-| ○ hollow | A worktree with no session yet; click to open one |
-| ● green, pulsing | An agent is working |
-| ● blue, haloed | An agent is waiting for your answer |
-| **✱** amber | Uncommitted changes |
-| **conflicts** | A merge or rebase is stuck |
-| PR icon | Draft, open, merged or closed PR; click to open it in your browser |
+| **Now** | What's happening: questions waiting for you (answer with a click, a number key, or your own words), running goals with a progress rail per task, and work in progress outside goals. Click any item for its details, its agent, its thread or its changes. |
+| **Backlog** | Every goal and task: proposed goals to start, what finished today, and (on request) older work. **New goal** and **New task** open a short form. |
+| **Issues** | Open GitHub issues across your repositories. Make one (or several) into a goal, link one to a goal, open it, or close it as not planned. |
+| **Stats** | Spend per day, project, model and goal (read from omp's own usage records), agents working per hour, tasks finished per day. Hover a bar for details. |
+| **Repos** | Every Git repository Flightdeck found on your Mac. Hide one from agents, or hide just its issues. |
 
+**How a goal runs**
 
-## Unlock your SSH key
+1. You (or an agent, with `goal_propose`) write what should be true when it's done. Tasks are optional.
+2. **Start goal** opens a background session with a *coordinator* agent. It reads the repositories, plans tasks (`goal_plan`), and starts *workers* (`worker_start`), each in a fresh worktree on its own branch.
+3. Workers report progress, ask you questions (they appear under **Now**; answer from there or in the agent's pane), and finish their task. The coordinator closes finished workers, starts follow-ups, and asks you when it needs a decision.
+4. When it's done, the goal shows **Finished**: review the worktrees and PRs, then **Close goal**.
 
-<kbd>⌘</kbd><kbd>⇧</kbd><kbd>S</kbd> (**Unlock SSH key** in the palette) floats a small terminal in the corner of the current tab and runs `git fetch` in a repository with an SSH remote (the focused pane's folder, else the current space's, else any known one), so your security key asks for its touch or PIN. It closes itself once the fetch succeeds; on failure it waits for <kbd>Enter</kbd>. The key is bound in Tern's settings (`keybinds`), replacing Tern's own ⌘⇧S.
+References: goals are `G3`, a goal's tasks `G3.1`, `G3.2` (its coordinator is `G3.0`), tasks outside goals `T7`. Linked GitHub issues get a comment when the goal starts and finishes; PRs close them with `Fixes owner/repo#12`, never Flightdeck itself.
 
-## Mission control
+**Also**
 
-**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. Goals are `G3`; a goal's tasks are numbered within it, `G3.1`, `G3.2` (`G3.0` is its coordinator); tasks outside goals are `T7`. Tabs (<kbd>[</kbd> <kbd>]</kbd>). Buttons under the tabs do each tab's actions (**New goal**, **New task**, **Refresh issues**, **Scan for repositories**); new goals, new tasks and links to goals open a popup form (<kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> goes to the next and then submits, <kbd>Esc</kbd> cancels). Click any task, goal or issue (or press <kbd>e</kbd>) to open its details, with buttons to go to its agent, read its thread, review its changes or act on the issue; on Now and Backlog, the **Repo** dropdown under the tabs (or <kbd>f</kbd>, then <kbd>↑</kbd><kbd>↓</kbd> <kbd>Enter</kbd>) narrows everything to one repository, <kbd>Esc</kbd> clears it.
-
-- **Now**: only what's happening.
-  - **Your turn**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply in the selected card's answer field and press <kbd>Enter</kbd>; the agent gets it within seconds.
-  - **Goals** running, with their coordinator's state, a rail of their tasks and the tasks below; **finished** ones (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
-  - **Work in progress** outside goals. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
-- **Backlog**: every goal, newest first, with its status; <kbd>Enter</kbd> shows a goal's tasks, <kbd>s</kbd> (or Start goal) starts a proposed one. Closed goals and finished tasks move to **Done today**; older ones are hidden (<kbd>d</kbd> shows them) and deleted after 30 days. Goals come from agents (`goal_propose`) or from you (<kbd>g</kbd>: a title, then optional details). A goal needs no tasks: once started it runs in a session of its own, where its coordinator reads the repositories, plans the tasks (`goal_plan` add, edit, drop), starts workers in their own worktrees and manages them to the end. Then every task outside goals; <kbd>n</kbd> adds one.
-- **Issues**: open GitHub issues of every known repository that isn't ignored (through `gh`; cached 10 minutes, <kbd>r</kbd> refetches). <kbd>Enter</kbd> proposes a goal from the selected issue; <kbd>space</kbd> marks several, then <kbd>Enter</kbd> asks a title and makes one goal linked to all of them; <kbd>l</kbd> links the issue to an existing goal (type G3); <kbd>o</kbd> opens it; <kbd>x</kbd> twice closes it as not planned. Linked issues show on their goal (click to open) and in its coordinator's and workers' briefs. Overseer comments on them when the goal starts and when it finishes, with the summary; it never closes them itself: PRs use closing keywords (`Fixes owner/repo#12`) so GitHub closes the issue on merge. Agents link issues with `issue_link`, or `issues` in `goal_propose`.
-- **Stats**: spend today, over 7 and 30 days, and per day, by project, by model and by goal (coordinator plus workers and their subagents), read from the usage omp records in its session files (USD at API prices); agents working over the last 24 hours (sampled each minute); tasks done and failed per day; goal totals. Refreshes every minute, <kbd>r</kbd> now.
-- **Repos**: every Git repository Overseer knows. The server finds them by scanning your home folder (to 5 levels, skipping `Library`, `node_modules` and the like; rescans every 30 minutes, <kbd>s</kbd> scans now; roots, depth and skipped folders in `<plugin data>/repos.json`), plus ones agents work in. <kbd>Enter</kbd> ignores a repository: coordinators aren't told about it (and its issues aren't listed). <kbd>i</kbd> hides only its issues from the Issues tab: agents still know it and can explore it.
-
-A goal's coordinator owns its workers: it closes finished ones (`worker_stop`; the worktree stays) and starts fresh ones for follow-up work (`worker_start` with `context`, on a new task or a finished one, which reopens in its worktree).
-
-The sidebar button shows how many questions wait (**2 need you**); a **Goals** section (progress, task rows, **Close goal** in the menu), and each agent's task under its state. Goal sessions don't appear under Spaces.
+- **Unlock SSH key** (palette): if your SSH key is on a hardware security key, this floats a terminal running `git fetch` so the key asks for its touch or PIN. Agents are told to ask you for this rather than work around a locked key. Bind it to a key in Tern's `settings.json`, for example `"keybinds": { "cmd+shift+s": "plugin.flightdeck.unlock-key" }`.
 
 ## Install
 
 You need macOS and:
 
-| | Required for | |
+| | Needed for | |
 |---|---|---|
-| [Tern](https://docs.stencil.so/tern/) desktop 0.9.16 or later | everything | tested with 0.9.18 |
-| [Worktrunk](https://worktrunk.dev) (`wt`), Git, Bash | worktrees | tested with wt 0.40.0 |
-| [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Visualize PR | optional |
-| [omp](https://omp.sh) | Visualize PR | optional |
+| [Tern](https://docs.stencil.so/tern/) desktop | everything | tested with 0.9.21 |
+| [Worktrunk](https://worktrunk.dev) (`wt`), Git | worktrees, goal workers | tested with wt 0.80 |
+| [omp](https://omp.sh) | agents, Mission control, Visualize PR | tested with 18.21 |
+| [Bun](https://bun.sh) | Mission control's server | |
+| [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Issues, Visualize PR | optional |
 
-**Mission control** (optional) needs [Bun](https://bun.sh). Overseer runs `server/` on `127.0.0.1:8095` and restarts it if it stops; its data and access token are in the plugin data directory. Connect omp to it once:
+1. Get the code and link it into Tern (it reloads when the files change):
+   ```sh
+   git clone <this repository> flightdeck
+   /Applications/Tern.app/Contents/MacOS/tern plugin link "$PWD/flightdeck"
+   ```
+2. In Tern's command palette, run **Connect omp to Flightdeck**. It adds a `flightdeck` MCP server to `~/.omp/agent/mcp.json` and a short work-tracking note to `~/.omp/agent/AGENTS.md` (between `<!-- flightdeck -->` markers; rerunning replaces it). Flightdeck reminds you once per launch until it's done.
+3. Open the sidebar with <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>P</kbd>, and Mission control with <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>. Agents you start from now on have the tools.
 
-```sh
-DATA="$HOME/Library/Application Support/Tern/plugin-data/overseer"
-jq --arg auth "!printf 'Bearer %s' \"\$(cat '$DATA/token')\"" \
-  '.mcpServers.overseer = {type: "http", url: "http://127.0.0.1:8095/mcp", headers: {"X-Tern-Pane": "${TERN_PANE}", Authorization: $auth}}' \
-  ~/.omp/agent/mcp.json > /tmp/mcp.json && mv /tmp/mcp.json ~/.omp/agent/mcp.json
-```
-
-```sh
-git clone git@github.com:itsjxck/tern-overseer.git
-cd tern-overseer
-/Applications/Tern.app/Contents/MacOS/tern plugin link "$PWD"
-```
-
-Linking reloads the plugin whenever the source changes. Use `tern plugin install "$PWD"` instead if you'd rather have a frozen copy.
+Optional: `repos.json` in the plugin data folder (`~/Library/Application Support/Tern/plugin-data/flightdeck/`) sets where Flightdeck looks for repositories: `{ "roots": ["~"], "maxDepth": 5, "skip": ["~/go/pkg"] }` are the defaults. `FLIGHTDECK_PORT` changes the server's port (8095).
 
 ## Use it
 
 1. **Show Spaces:** <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>P</kbd>, or **Show or hide Spaces** in the command palette. Press it again while the sidebar has focus to hide it.
 2. **New space:** **+** in the header opens the folder picker; the folder opens in a new session.
-3. **Switch:** click a space, a worktree or an agent. <kbd>⌃</kbd><kbd>⌘</kbd><kbd>]</kbd> and <kbd>⌃</kbd><kbd>⌘</kbd><kbd>[</kbd> go to the next and previous space in the sidebar's order, worktree sessions included (but not those inside a collapsed space), wrapping at the ends. For arrows instead, bind them in Tern's `settings.json`; this takes <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd>/<kbd>↓</kbd> from resizing splits, which is why Overseer can't make them its default:
-   ```json
-   "keybinds": { "ctrl+cmd+up": "plugin.overseer.previous-space", "ctrl+cmd+down": "plugin.overseer.next-space" }
-   ```
-4. **Reorder:** <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↑</kbd> and <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd> move the space you're in up and down, using Tern's own session order. Worktree sessions stay under their repository; move the repository's space instead. Drag and drop isn't possible: Tern doesn't give plugins drag events.
-5. **New worktree:** **+** beside a space in a Git repository. Type a branch name (and, if you like, a friendly display name). Setup runs in a background **Create** tab, and a notification tells you when it's ready. **▾** hides or shows a space's worktrees.
-6. **Everything else is a right-click away:**
-   - On a space: **Rename space** (renames its Tern session; leave it blank to name it after its folder again), **New worktree**, **Change base branch** and **Close space**.
-   - On a worktree: **Visualize PR** for a reviewer's outline of the branch's pull request, **Rename** (the row's label; the branch stays as it is), **Close session** (stops its programs and closes its tabs; the files stay) and **Delete worktree** (runs `wt remove` and always keeps the branch). A worktree with uncommitted changes lists them and asks again, as **Force delete**.
-   - Closing and deleting ask first in a popup over the tab; Cancel, Esc or a click outside it keeps things as they are.
+3. **Switch:** click a space, a worktree or an agent. <kbd>⌃</kbd><kbd>⌘</kbd><kbd>]</kbd> and <kbd>⌃</kbd><kbd>⌘</kbd><kbd>[</kbd> go to the next and previous space, wrapping at the ends.
+4. **Reorder:** <kbd>⌃</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> move the space you're in up and down.
+5. **New worktree:** **+** beside a space in a Git repository. Setup runs in a background **Create** tab, and a notification tells you when it's ready.
+6. **Everything else is a right-click away:** on a space, **Rename space**, **New worktree**, **Change base branch**, **Close space**; on a worktree, **Visualize PR**, **Rename**, **Close session** and **Delete worktree** (it lists uncommitted changes and asks again before a **Force delete**; the branch is always kept).
 
-A worktree's session is named `repo / branch` in Tern's session list unless you rename it. Closing a space's last tab closes the space.
+**Show Flightdeck's operation log** (command palette) opens `ops.log`: every creation and deletion, agent deliveries, worker starts and plugin reloads.
 
-A new worktree's row appears as soon as setup starts: "creating", how long it's been running and Worktrunk's current step. If setup asks a question (a hook approval, say) or prints nothing for a minute, the row says **needs you?** and you get one notification; click the row to open the setup tab.
+### Mission control keys
 
-**Show Overseer's operation log** (command palette) opens `ops.log`: every creation and deletion with its duration and outcome (and the first warning its setup printed), hook-approval waits, budget pauses, tick restarts and plugin reloads. Nothing about it shows in the sidebar.
+| Key | Does |
+|---|---|
+| <kbd>[</kbd> <kbd>]</kbd> | Previous / next tab |
+| <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>e</kbd> | Move, open details |
+| <kbd>1</kbd>–<kbd>9</kbd>, <kbd>Enter</kbd> | Answer a question; go to an agent; show a goal's tasks |
+| <kbd>o</kbd>, <kbd>r</kbd> | Thread, review a task's changes |
+| <kbd>g</kbd>, <kbd>n</kbd> | New goal, new task |
+| <kbd>f</kbd>, <kbd>Esc</kbd> | Filter by repository, clear |
+| <kbd>s</kbd> | Start a proposed goal (Backlog), scan for repositories (Repos) |
+| <kbd>d</kbd> | Show older finished work (Backlog) |
+| <kbd>space</kbd>, <kbd>l</kbd>, <kbd>x</kbd> <kbd>x</kbd> | Mark issues, link one to a goal, close one (Issues) |
 
 ### Visualize a PR
 
 <img src="docs/images/visualize-pr.png" alt="A Visualize PR outline: why the change exists, things to note, and a sequence diagram of the change" width="900">
 
-Overseer fetches the PR's metadata and full diff from GitHub, then has omp write an outline following HumanLayer's [visual-pr](https://github.com/humanlayer/skills) skill: why the change exists, what to watch for, and Mermaid diagrams, file-tree diffs and pseudocode. The local checkout only adds surrounding context. It takes a minute or two, and unchanged PRs reopen instantly from a cache.
+Flightdeck fetches the PR's metadata and full diff from GitHub, then has omp write an outline following HumanLayer's [visual-pr](https://github.com/humanlayer/skills) skill: why the change exists, what to watch for, and Mermaid diagrams, file-tree diffs and pseudocode. It takes a minute or two, and unchanged PRs reopen instantly from a cache.
 
 It's **read-only by construction**: omp runs with only read/grep/glob tools and no shell, so it can't push, comment or edit anything.
 
@@ -135,9 +111,9 @@ flowchart LR
     panel -. "gh pr diff → omp (read-only)" .-> outline["PR outline canvas"]
 ```
 
-- **Tern owns the sessions.** A space is a session; renaming a space renames the session. Overseer remembers which session belongs to which worktree and switches between them.
-- **Worktrunk owns the worktrees.** Overseer calls `wt` and never passes `--yes`, `--no-hooks` or force flags. Your hooks and approval prompts run in a visible tab.
-- **The sidebar follows you.** Tern plugins can't pin a sidebar to the window, so Overseer keeps one sidebar per window and moves it into whichever tab you're on.
+- **Tern owns the sessions.** A space is a session; renaming a space renames the session. Flightdeck remembers which session belongs to which worktree and switches between them.
+- **Worktrunk owns the worktrees.** Flightdeck calls `wt` and never passes `--yes`, `--no-hooks` or force flags. Your hooks and approval prompts run in a visible tab.
+- **The sidebar follows you.** Tern plugins can't pin a sidebar to the window, so Flightdeck keeps one sidebar per window and moves it into whichever tab you're on.
 - **Everything else is a read.** Repositories, PR badges, agent status and change counts come from `git`, `wt`, `gh` and Tern's own agent state.
 
 ## Safety
@@ -151,20 +127,20 @@ flowchart LR
 
 ## For agents
 
-This section is for coding agents (and humans) changing Overseer. It favors completeness over brevity.
+This section is for coding agents (and humans) changing Flightdeck. It favors completeness over brevity.
 
 ### Runtime model
 
-Overseer is a Tern plugin written in Luau. `plugin.toml` declares two entry points:
+Flightdeck is a Tern plugin written in Luau. `plugin.toml` declares two entry points:
 
-- `host.luau` runs in Tern's host and renders the `overseer.form` block, the native form used for New worktree, Rename (worktree), Rename space and Change base branch. `input.luau` is its Unicode-aware text editing.
+- `host.luau` runs in Tern's host and renders the `flightdeck.form` block, the native form used for New worktree, Rename (worktree), Rename space and Change base branch. `input.luau` is its Unicode-aware text editing.
 - `window.luau` runs once per Tern window. It owns the Spaces sidebar (a canvas that follows you between tabs; Agents is its dock), event hooks, the background job tracker and Visualize PR canvases.
 
 Tern APIs are typed in the definitions Tern generates: `/Applications/Tern.app/Contents/MacOS/tern plugin types <dir>` writes `tern.d.luau`. Read it before using an API you haven't used here.
 
 ### The 50 ms rule (read this first)
 
-Tern gives **every plugin callback 50 ms of its own Lua** (4 ms in the status formatter), and at most ten times that in total wall time, Tern's own calls included (`cx`, `tern.fs`, `tern.kv`, starting a process). An overrun **pauses that hook** (`canvas_action`, `timer`, `process`, …): 5 s, doubling for each repeat within 10 minutes, up to 5 minutes. Timer, process and fetch callbacks that come due meanwhile wait. Tern toasts the overrun; Overseer's `budget` handler writes each pause to the operation log (and Tern's log, `~/Library/Logs/Tern/tern.log`). A paused `canvas_action` makes clicks in the sidebar answer `Nothing handles "open" here` until it resumes.
+Tern gives **every plugin callback 50 ms of its own Lua** (4 ms in the status formatter), and at most ten times that in total wall time, Tern's own calls included (`cx`, `tern.fs`, `tern.kv`, starting a process). An overrun **pauses that hook** (`canvas_action`, `timer`, `process`, …): 5 s, doubling for each repeat within 10 minutes, up to 5 minutes. Timer, process and fetch callbacks that come due meanwhile wait. Tern toasts the overrun; Flightdeck's `budget` handler writes each pause to the operation log (and Tern's log, `~/Library/Logs/Tern/tern.log`). A paused `canvas_action` makes clicks in the sidebar answer `Nothing handles "open" here` until it resumes.
 
 Consequences, enforced throughout `window.luau`:
 
@@ -182,17 +158,17 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 | `window.luau` | Spaces and repositories (`spaceDir`, `namedByYou`, `inspectDirs`, `repos`), model building (`model`), drawing (`draw`/`redraw`), the following sidebar (`slot`, `pin`, `follow`, `togglePanel`), session binding (`worktreeSession`, `ensureSession`, `createSpace`), forms swapped into the sidebar's slot, background jobs (`launchCreation`, `checkJobs`, `jobFinished`, `trackCreations`), confirmations, Visualize PR canvases, hooks, the 750 ms `tick` and its watchdog (`ensureTicking`, `processClock`). |
 | `worktrunk.luau` | Every external command: repository discovery (`inspect`), `wt list`, validation, a worktree's uncommitted changes (`local_changes`), the creation and removal command lines, `git` status, `gh pr list`/`gh pr view`/`gh pr diff`. Commands are argv arrays; `find_executable` checks Homebrew, `/usr/local/bin`, `~/.bun/bin` and `~/.local/bin`. |
 | `oplog.luau` | The operation log (`ops.log`): writing entries, reading a setup tab's progress and warnings. |
-| `mission.luau` | Mission control's Overseer side, called from `tick`: polls the server every 2 s (panes → sessions, deliveries, workers). Its parts live in `mission/`: |
+| `mission.luau` | Mission control's window side, called from `tick`: polls the server every 2 s (panes → sessions, deliveries, workers). Its parts live in `mission/`: |
 | `mission/client.luau` | Server address, the access token (plugin data `token`), `api`/`post` JSON calls, `warnOnce`. |
 | `mission/server.luau` | Keeps `server/` running: `/health` every 5 s, starts Bun when needed. |
 | `mission/deliveries.luau` | Sends queued answers and agents' messages to the pane running each session; one prompt per pane. |
-| `mission/launch.luau` | Opens agent panes in the background (`tern new session|tab … -- omp`) and sends the brief once omp is up, so the overseer tools are connected first. |
-| `mission/goals.luau` | Starts a goal: its own session `G-n · title`, the coordinator in it. |
+| `mission/launch.luau` | Opens agent panes in the background (`tern new session|tab … -- omp`) and sends the brief once omp is up, so the flightdeck tools are connected first. |
+| `mission/goals.luau` | Starts a goal: its own session `G3 · title`, the coordinator in it. |
 | `unlock.luau` | The **Unlock SSH key** terminal: finds a repository with an SSH remote and floats a `git fetch` over the current tab. |
 | `mission/state.luau` | The last server state the poll fetched, for the sidebar (Needs you, Goals, each agent's task; which sessions are goal sessions). |
 | `ui/model.luau`, `ui/render.luau`, `ui/dialog.luau`, `ui/block.luau` | The **Mission control** block (host half): server calls and grouping into sections; the pure view; the popup forms; the block itself (keys, reply field, 2 s refresh). Actions only the window can take go through kv `mission:requests` (`missionRequests` in `window.luau`). |
 | `mission/workers.luau` | Starts workers as tabs in their goal's session, each creating its worktree with `wt switch --create … -x omp`; stops them. |
-| `server/` | `overseer-server` (Bun, TypeScript, SQLite): `src/store.ts` data and every rule, `src/tools.ts` the agents' MCP tools, `src/api.ts` Overseer's JSON API, `src/identity.ts` pane → omp session, `src/main.ts` HTTP and auth. `bun test` in `server/` runs its tests. |
+| `server/` | `flightdeck-server` (Bun, TypeScript, SQLite); see [`server/README.md`](server/README.md). `src/store.ts` data and every rule, `src/tools.ts` the agents' MCP tools, `src/api.ts` the window's and block's JSON API (and the agents' briefs), `src/identity.ts` pane → omp session, `src/repos.ts` repository discovery, `src/github.ts` issues through `gh`, `src/analytics.ts` the Stats tab, `src/main.ts` HTTP, auth and timers; `scripts/setup-omp.ts` connects omp, `scripts/demo.ts` makes demo goals. `bun test` in `server/` runs its tests. |
 | `visualize.luau` | Visualize PR: prompt, read-only omp invocation, output extraction, cache. |
 | `view.luau` | Pure render: model → the sidebar's main node tree (spaces, worktrees, creations, menus) and its dock (agents), and the confirmation popup's view. |
 | `worktree-operation.sh` | The helper that runs `wt switch --create` / `wt remove` (or `--force` for a confirmed Force delete) in a visible terminal and writes an atomic completion receipt. |
@@ -204,13 +180,13 @@ When debugging an overrun, add temporary `tern.log.warn(string.format("PROBE …
 
 ### State
 
-Tern's plugin KV (`~/Library/Application Support/Tern/plugin-data/overseer/kv.json`), via `tern.kv`:
+Tern's plugin KV (`~/Library/Application Support/Tern/plugin-data/flightdeck/kv.json`), via `tern.kv`:
 
 | Key | Shape | Notes |
 |---|---|---|
-| `auto-names` | `{[sessionId]: name}` | Each session's name when Overseer first saw it (or gave it). A space shows its folder's name while its session still has this name, and the session's name once you rename it. Tern names new sessions with random words, so there's no other way to tell. Dropped on `session_ended`. |
+| `auto-names` | `{[sessionId]: name}` | Each session's name when Flightdeck first saw it (or gave it). A space shows its folder's name while its session still has this name, and the session's name once you rename it. Tern names new sessions with random words, so there's no other way to tell. Dropped on `session_ended`. |
 | `sessions` | `{[path]: {id, host, project}}` | Worktree → Tern session binding; `project` is the repository id. A space found open in a worktree is bound when you click or close its row. |
-| `worktree-names` | `{[repoId]: {[path]: name}}` | Worktree display names. Removed when Overseer deletes the worktree. |
+| `worktree-names` | `{[repoId]: {[path]: name}}` | Worktree display names. Removed when Flightdeck deletes the worktree. |
 | `repo-base` | `{[repoId]: branch}` | Base branches chosen in Change base branch; otherwise `wt.inspect` discovers one. |
 | `jobs` | `{[id]: {kind = "create" \| "remove", project, receipt, pane, …}}` | Running creations and deletions; creations also carry `branch` and `displayName?`. Persisted so a plugin reload doesn't lose them. |
 | `panel-open`, `panel-share` | `boolean`, `number` | Whether you want the sidebar shown (the shortcut sets it), and its width as a share of the tab. |
@@ -231,11 +207,11 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 **The following sidebar.** Tern panes belong to one tab, and plugins can't add a window-level sidebar, so the window keeps exactly one Spaces slot and moves it into whichever tab is shown, left of everything and full height. `slot` finds it: the navigator canvas (titled Spaces, or Projects before 3.0) or a form shown in its place, adopting what a reload left open and closing any extra. `pin` moves it with `move_to_tab` (or `unpark`) then `move(…, "left")` and steers the split ratio to the remembered share, since Tern resizes in cells and hidden tabs measure differently. `follow` runs on `focus`, `tab_created`, `tab_closed`, `pane_created`, `pane_closed` (each through `followSoon`, one coalesced timer callback), `window_start` and every `tick`, so one paused hook can't strand the sidebar. Moves work across sessions. Edge cases:
 
 - **Last terminal in a tab closed:** the sidebar would be left alone, so `follow` parks it; the tab closes as Tern would have, and the next shown tab (or new tab) takes the sidebar back. If that was the session's last tab, `closeEmptySessions` (after each follow and every `tick`) closes the session, which the parked sidebar would otherwise keep open with no tabs; the sidebar dies with it and `follow` opens a fresh one.
-- **Overseer closes a session:** `closeManagedSession` and `closeSpace` switch away and call `follow` first, so the sidebar leaves before the session closes.
+- **Flightdeck closes a session:** `closeManagedSession` and `closeSpace` switch away and call `follow` first, so the sidebar leaves before the session closes.
 - **Tern closes the sidebar's tab or session:** the sidebar dies with it. If you wanted it (`panel-open`) and its last tab is gone, `follow` opens a fresh one in the shown tab. If its tab is still there, you closed the sidebar yourself, and it stays closed until the shortcut.
-- **A worktree is deleted outside Overseer** (`wt merge`, `wt remove`, an agent): `closeOrphanedSessions`, on every tick, closes a bound session whose folder no longer exists, through `closeManagedSession`. It skips sessions with an agent pane (any state), worktrees Overseer is deleting itself, and the repository's primary checkout, and logs `worktree gone` to `ops.log`.
+- **A worktree is deleted outside Flightdeck** (`wt merge`, `wt remove`, an agent): `closeOrphanedSessions`, on every tick, closes a bound session whose folder no longer exists, through `closeManagedSession`. It skips sessions with an agent pane (any state), worktrees Flightdeck is deleting itself, and the repository's primary checkout, and logs `worktree gone` to `ops.log`.
 
-**Confirmations.** Close session, Close space and Delete worktree open a canvas with `how = "glimpse"`: over the whole tab, in no split, until the next click outside it. Glimpses can't be sized (`float` refuses them), so the dialog is a card centred inside. `confirmation` holds the request and its pane; `pane_closed` on that pane cancels it, and `endConfirmation` closes it when Overseer finishes. A deletion keeps it open, showing "Checking worktree…", while `wt.validate_removal` runs.
+**Confirmations.** Close session, Close space and Delete worktree open a canvas with `how = "glimpse"`: over the whole tab, in no split, until the next click outside it. Glimpses can't be sized (`float` refuses them), so the dialog is a card centred inside. `confirmation` holds the request and its pane; `pane_closed` on that pane cancels it, and `endConfirmation` closes it when Flightdeck finishes. A deletion keeps it open, showing "Checking worktree…", while `wt.validate_removal` runs.
 
 **Session names.** Worktree rows whose session you haven't named collect `repo / branch` in `model`; `draw` passes them to `nameWorktreeSessions`, which renames the sessions in a callback of its own and records the new names in `auto-names`. New worktree sessions are created with that name.
 
@@ -270,13 +246,13 @@ TERN_CONFIG_DIR="$D/config" TERN_DAEMON_SOCKET="$D/daemon.sock" \
 Drive it with `tern ctl --control "$D/desktop.sock" …`:
 
 - `ready`, `palette Spaces`, `key Enter`, `click X Y [right]`, `shot NAME` (screenshots land in `target/shots/tern/live/` under the directory Tern was started from)
-- `tree "[data-role=overseer\.worktreeRow]"` returns node rects and text
+- `tree "[data-role=flightdeck\.worktreeRow]"` returns node rects and text
 - `a11y` returns menu items and their bounds
 - `carly lua "…"` runs Lua with a window `cx`, and `state` shows the result under `.carly.last_tool`. `cx.sessions:create({cwd = …})` and `cx.layout:new_tab({cwd = …, command = …})` set up spaces and agents to look at.
 
 Other conventions:
 
-- Editing any file in a linked plugin reloads it in every running Tern. `tern plugin reload overseer` reloads only Overseer.
+- Editing any file in a linked plugin reloads it in every running Tern. `tern plugin reload flightdeck` reloads only Flightdeck.
 - After changing an icon, run `python3 icons/generate-css.py`.
 - Bump `version` in `plugin.toml` for user-visible changes and add an entry to [`CHANGELOG.md`](CHANGELOG.md). A change to how the sidebar or its state is structured is a major version.
 - Keep external commands in `worktrunk.luau` as argv arrays. Shell is only used where a redirect is needed, with arguments as `$0…$n`.
@@ -285,9 +261,9 @@ Other conventions:
 
 - macOS only (folder picker, paths, Tern desktop).
 - A session whose first tab has no terminal or agent (only a file or browser, say) has no folder; its space shows the session's name and no worktrees.
-- A space renamed to the exact name its session had when Overseer first saw it still counts as unnamed.
+- A space renamed to the exact name its session had when Flightdeck first saw it still counts as unnamed.
 - Visualize PR fails on PRs whose diff exceeds GitHub's 20,000-line API limit (`gh pr diff` returns HTTP 406). The tab shows the error.
-- The sidebar moves into each tab you switch to, so every switch animates briefly and resizes the terminals in both tabs (full-screen programs redraw). Tern can only move a pane beside another pane, so in a tab with more than one pane Overseer rearranges the others back into the same splits and ratios to the sidebar's right; their ratios can drift by up to half a percent.
+- The sidebar moves into each tab you switch to, so every switch animates briefly and resizes the terminals in both tabs (full-screen programs redraw). Tern can only move a pane beside another pane, so in a tab with more than one pane Flightdeck rearranges the others back into the same splits and ratios to the sidebar's right; their ratios can drift by up to half a percent.
 - A plugin reload during a Visualize PR run, including the one Tern does when you edit a file in a linked plugin, ends the run and leaves its tab on the waiting message. Run it again.
 - Multiple Tern windows work but haven't been exhaustively tested together.
 
@@ -296,14 +272,14 @@ Other conventions:
 ## Credits
 
 - Pull request and refresh icons: [Primer Octicons](https://primer.style/octicons/) (MIT, `icons/LICENSE`).
-- Started as a fork of [mmnavarr/overseer](https://github.com/mmnavarr/overseer) (MIT); 3.0 rebuilt its Projects panel as Spaces and Agents. The tick watchdog, Force delete, creation progress, the operation log and the fallow filter are ported from its 2.3.1.
+- Forked from [mmnavarr/overseer](https://github.com/mmnavarr/overseer) by Malcolm Navarro (MIT), and heavily inspired by it: the sidebar, worktree handling, Visualize PR, the tick watchdog, Force delete, creation progress and the operation log all start from its code. 3.0 rebuilt its Projects panel as Spaces and Agents; 4.0 added Mission control and the new name.
 - Visualize PR follows [humanlayer/skills](https://github.com/humanlayer/skills)' visual-pr skill, vendored at `ca7c8088db69` (MIT, `skills/visual-pr/LICENSE`).
 - The Spaces and Agents layout follows [herdr](https://herdr.dev)'s sidebar.
 - Built on [Tern](https://docs.stencil.so/tern/), [Worktrunk](https://worktrunk.dev) and [omp](https://omp.sh).
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). 3.0 replaced Projects with Spaces and Agents; 2.0 replaced the panel-per-session layout with one panel that follows you between tabs.
+See [CHANGELOG.md](CHANGELOG.md). 4.0 added Mission control and renamed the plugin Flightdeck; 3.0 replaced Projects with Spaces and Agents; 2.0 replaced the panel-per-session layout with one panel that follows you between tabs.
 
 ## License
 

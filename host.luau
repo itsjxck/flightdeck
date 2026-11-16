@@ -124,16 +124,16 @@ tern.block.define("form", {
 			-- In a row so the link is only as wide as its text, not the whole pane.
 			ui.node("row", { key = "nav" }, {
 				ui.el("button", {
-					key = "back", role = "overseer.backLink", text = "← Spaces",
+					key = "back", role = "flightdeck.backLink", text = "← Spaces",
 					title = "Back to Spaces (Esc)", actions = { click = "cancel" },
 				}),
 			}),
-			text("heading", heading, "overseer.formHeading"),
+			text("heading", heading, "flightdeck.formHeading"),
 		}
 		if state.submitted then
-			table.insert(children, text("submitted", if state.cancelled then "Returning to Spaces…" else "Working…", "overseer.message"))
+			table.insert(children, text("submitted", if state.cancelled then "Returning to Spaces…" else "Working…", "flightdeck.message"))
 		else
-			table.insert(children, text("help", MODES[state.mode].help(state), "overseer.hint"))
+			table.insert(children, text("help", MODES[state.mode].help(state), "flightdeck.hint"))
 			local labels = {
 				name = "Display name (optional)", branch = "Branch name", base = "Base branch",
 			}
@@ -142,20 +142,20 @@ tern.block.define("form", {
 				branch = "feature/branch-name", base = "main",
 			}
 			for _, name in ipairs(fieldOrder(state)) do
-				table.insert(children, text(name .. "Label", labels[name], "overseer.fieldLabel"))
+				table.insert(children, text(name .. "Label", labels[name], "flightdeck.fieldLabel"))
 				local props = Input.props(state.fields[name])
-				props.key, props.role, props.aria = name, "overseer.field", labels[name]
+				props.key, props.role, props.aria = name, "flightdeck.field", labels[name]
 				props.placeholder = placeholders[name]
 				table.insert(children, ui.node("input", props))
 			end
-			table.insert(children, ui.node("row", { key = "buttons", role = "overseer.formButtons" }, {
+			table.insert(children, ui.node("row", { key = "buttons", role = "flightdeck.formButtons" }, {
 				ui.el("button", {
-					key = "submit", role = "overseer.primaryButton",
+					key = "submit", role = "flightdeck.primaryButton",
 					text = MODES[state.mode].submit,
 					actions = { click = "submit" },
 				}),
 			}))
-			table.insert(children, text("keys", "Enter to submit · Esc to go back · Tab to change fields", "overseer.hint"))
+			table.insert(children, text("keys", "Enter to submit · Esc to go back · Tab to change fields", "flightdeck.hint"))
 			if not state.focusScheduled then
 				state.focusScheduled = true
 				-- Timer executes after this view mounts; a closed pane safely ignores focus.
@@ -167,9 +167,9 @@ tern.block.define("form", {
 			end
 		end
 		if state.error then
-			table.insert(children, text("error", state.error, "overseer.error"))
+			table.insert(children, text("error", state.error, "flightdeck.error"))
 		end
-		return { main = ui.node("col", { role = "overseer.form" }, children) }
+		return { main = ui.node("col", { role = "flightdeck.form" }, children) }
 	end,
 	key = function(state, key, cx)
 		if state.submitted then

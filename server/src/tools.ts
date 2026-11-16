@@ -19,7 +19,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     return `${store.tref(t.id)} [${t.status}] ${t.title}${t.repo ? ` (${t.repo})` : ""}${t.goal ? ` · ${Store.gid(t.goal)}` : ""}`;
   }
 
-  const server = new McpServer({ name: "overseer", version: "1.0.0" });
+  const server = new McpServer({ name: "flightdeck", version: "1.0.0" });
 
   function tool<S extends z.ZodRawShape>(name: string, description: string, shape: S,
     fn: (caller: Caller, args: z.infer<z.ZodObject<S>>) => string) {
@@ -140,7 +140,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     });
 
   tool("worker_start",
-    "Coordinator only: start an omp worker on a task that's ready, or done/failed for follow-up work (it reopens; the worker continues in the task's worktree). Overseer opens it as a tab in the goal's session, in its own worktree (read-only tasks may use the checkout). `context` is added to its brief: what it should know from you or earlier workers. At most 4 open workers per goal.",
+    "Coordinator only: start an omp worker on a task that's ready, or done/failed for follow-up work (it reopens; the worker continues in the task's worktree). Flightdeck opens it as a tab in the goal's session, in its own worktree (read-only tasks may use the checkout). `context` is added to its brief: what it should know from you or earlier workers. At most 4 open workers per goal.",
     { task: z.string(), context: z.string().optional() },
     (c, a) => `${Store.wid(store.requestWorker(c, store.taskId(a.task), a.context).id)} requested for ${a.task}; its done arrives in your inbox.`);
 

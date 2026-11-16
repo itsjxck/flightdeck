@@ -1,5 +1,8 @@
-// JSON API for Overseer (window.luau): state for Mission control and the
+// JSON API for Flightdeck (window.luau): state for Mission control and the
 // sidebar, your answers, goal lifecycle, deliveries to agents, worker starts.
+import { readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Store, type Caller, type TaskStatus } from "./store";
 import { closeIssue, commentAll, listIssues, parseIssueRef, type Issue } from "./github";
 import { analytics, recordSample } from "./analytics";
@@ -13,12 +16,16 @@ function field(body: Record<string, unknown>, key: string): string {
   return v;
 }
 
-// The user's SSH key lives on a hardware security key that has to be unlocked
-// (touch or PIN) about every hour. Agents must ask, never work around it.
-const SECURITY_KEY_NOTE = `Git over SSH (push, fetch, pull, clone) uses the user's hardware security key, which needs unlocking about every hour. If an SSH operation fails with "incorrect passphrase", "signing failed", "agent refused operation" or "Permission denied (publickey)", don't work around it: no HTTPS remotes, no new keys, no changing remotes or SSH config. Ask the user with ask_user to unlock their security key, then retry.`;
+// For a user whose SSH key lives on a hardware security key (an `~/.ssh/id_*_sk`
+// key), which needs unlocking (touch or PIN) now and then: agents must ask,
+// never work around it. Empty without such a key.
+function hasSecurityKey(): boolean {
+  try { return readdirSync(join(homedir(), ".ssh")).some((f) => /^id_\w+_sk$/.test(f)); } catch { return false; }
+}
+const SECURITY_KEY_NOTE = !hasSecurityKey() ? "" : `Git over SSH (push, fetch, pull, clone) uses the user's hardware security key, which needs unlocking about every hour. If an SSH operation fails with "incorrect passphrase", "signing failed", "agent refused operation" or "Permission denied (publickey)", don't work around it: no HTTPS remotes, no new keys, no changing remotes or SSH config. Ask the user with ask_user to unlock their security key, then retry.`;
 
 // How agents treat a goal's linked GitHub issues.
-const ISSUES_NOTE = `Overseer comments on linked issues when the goal starts and finishes. Never close issues yourself. A PR that resolves an issue says so in its body with a closing keyword ("Fixes owner/repo#12"), so GitHub closes it on merge. If an issue turns out to be no longer needed, tell the user with ask_user; they decide whether to close it.`;
+const ISSUES_NOTE = `Flightdeck comments on linked issues when the goal starts and finishes. Never close issues yourself. A PR that resolves an issue says so in its body with a closing keyword ("Fixes owner/repo#12"), so GitHub closes it on merge. If an issue turns out to be no longer needed, tell the user with ask_user; they decide whether to close it.`;
 
 function issueLines(store: Store, goal: number): string {
   const issues = store.goalIssues(goal);
@@ -51,7 +58,7 @@ function linkRefs(store: Store, goal: number, refs: unknown) {
 // Tells a goal's linked issues that it finished, with the coordinator's summary.
 export function goalFinished(store: Store, goal: number, summary: string) {
   const g = store.goal(goal);
-  commentAll(store.goalIssues(goal), `Overseer: goal ${Store.gid(g.id)} "${g.title}" finished.\n\n${summary}`);
+  commentAll(store.goalIssues(goal), `Flightdeck: goal ${Store.gid(g.id)} "${g.title}" finished.\n\n${summary}`);
 }
 
 function workerBrief(store: Store, workerId: number) {
@@ -76,7 +83,7 @@ export function coordinatorBrief(store: Store, goal: number) {
     `You coordinate goal ${Store.gid(g.id)}: ${g.title}.`, g.body, issueLines(store, g.id),
     `First call goal_join with "${Store.gid(g.id)}"; it lists any tasks planned so far.`,
     `You own the plan: it may be empty or partial. Read the repositories you need, then break the goal into tasks with goal_plan (add, edit, drop) as you learn more; ask the user with ask_user when the goal is unclear.`,
-    repos.length ? `Repositories Overseer knows (use these names as a task's repo):\n${repos.map((r) => `- ${r.name}: ${r.path}`).join("\n")}` : "",
+    repos.length ? `Repositories Flightdeck knows (use these names as a task's repo):\n${repos.map((r) => `- ${r.name}: ${r.path}`).join("\n")}` : "",
     `Start workers on ready tasks with worker_start,`,
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
@@ -116,7 +123,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "GET state":
         return json(state(store));
       case "POST panes": {
-        // Which omp session runs in each live pane; Overseer delivers by it.
+        // Which omp session runs in each live pane; Flightdeck delivers by it.
         const panes = Array.isArray(body.panes) ? body.panes.filter((p): p is string => typeof p === "string") : [];
         const map: Record<string, string> = {};
         for (const pane of panes) {
@@ -191,7 +198,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         if (parts[2] === "start") {
           store.startGoal(goal);
           const g = store.goal(goal);
-          commentAll(store.goalIssues(goal), `Overseer: started goal ${Store.gid(goal)} "${g.title}". A coordinator agent is planning and doing the work; this issue will get a summary when it finishes.`);
+          commentAll(store.goalIssues(goal), `Flightdeck: started goal ${Store.gid(goal)} "${g.title}". A coordinator agent is planning and doing the work; this issue will get a summary when it finishes.`);
           return json({ brief: coordinatorBrief(store, goal) });
         }
         if (parts[2] === "issues") { linkRefs(store, goal, [field(body, "issue")]); return json({ issues: store.goalIssues(goal) }); }

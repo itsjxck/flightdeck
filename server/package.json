@@ -1,5 +1,5 @@
 {
-  "name": "overseer-server",
+  "name": "flightdeck-server",
   "private": true,
   "type": "module",
   "scripts": { "start": "bun src/main.ts", "test": "bun test" },

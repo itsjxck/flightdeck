@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Store } from "../src/store";
 
-const me = { session: "s-me", repo: "overseer", branch: "main", cwd: "/r/overseer" };
+const me = { session: "s-me", repo: "flightdeck", branch: "main", cwd: "/r/flightdeck" };
 
 describe("schema", () => {
   test("opens an empty store and formats ids", () => {
@@ -23,7 +23,7 @@ describe("tasks", () => {
     const t = store.startTask(me, { title: "Fix tick" });
     expect(t.status).toBe("doing");
     expect(t.session).toBe("s-me");
-    expect(t.repo).toBe("overseer");
+    expect(t.repo).toBe("flightdeck");
     expect(store.myTask("s-me").id).toBe(t.id);
   });
 
@@ -79,8 +79,8 @@ describe("goals and conversation", () => {
   const plan = {
     title: "Cross-repo auth", body: "Swap token format",
     tasks: [
-      { key: "api", title: "Issue new tokens", repo: "web-app" },
-      { key: "web", title: "Read new tokens", repo: "dashboard", needs: ["api"] },
+      { key: "api", title: "Issue new tokens", repo: "api" },
+      { key: "web", title: "Read new tokens", repo: "web", needs: ["api"] },
     ],
   };
 
@@ -265,9 +265,9 @@ describe("goals and conversation", () => {
 describe("repositories", () => {
   test("callers teach the store where each repository lives", () => {
     const store = new Store(":memory:");
-    store.learnRepo("web-app", "/Users/j/projects/web-app");
-    store.learnRepo("web-app", "/Users/j/projects/web-app");
-    expect(store.repoPath("web-app")).toBe("/Users/j/projects/web-app");
+    store.learnRepo("api", "/Users/j/projects/api");
+    store.learnRepo("api", "/Users/j/projects/api");
+    expect(store.repoPath("api")).toBe("/Users/j/projects/api");
     expect(store.repoPath("unknown")).toBeNull();
   });
 });

@@ -32,7 +32,7 @@ function M.new(kind, opts)
 			} }
 	elseif kind == "link" then
 		return { kind = kind, title = "Link " .. opts.issue, submit = "Link", focus = 1, issue = opts.issue,
-			note = "Its coordinator and workers see the issue; Overseer comments on it when the goal starts and finishes.",
+			note = "Its coordinator and workers see the issue; Flightdeck comments on it when the goal starts and finishes.",
 			fields = { field("goal", "Goal", "G3", true) } }
 	end
 	error("unknown dialog " .. tostring(kind))

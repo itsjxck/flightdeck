@@ -1,8 +1,8 @@
 schema = 1
-id = "overseer"
-name = "Overseer"
-version = "3.0.0"
-description = "A sidebar of spaces (your Tern sessions, with their Worktrunk worktrees) and every running agent."
+id = "flightdeck"
+name = "Flightdeck"
+version = "4.0.0"
+description = "Run omp agents in parallel from Tern: a sidebar of spaces, worktrees and agents, and Mission control for goals, tasks, questions, GitHub issues and spend."
 icon = "branch"
 host = "host.luau"
 window = "window.luau"
@@ -10,7 +10,7 @@ styles = ["styles.css", "icons.css"]
 
 [[blocks]]
 id = "form"
-title = "Overseer form"
+title = "Flightdeck form"
 palette = false
 
 [[blocks]]

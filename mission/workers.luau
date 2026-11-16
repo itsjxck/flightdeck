@@ -75,7 +75,7 @@ local function startOne(start, hooks)
 	local repoPath = start.repoPath or hooks.repoPath(start.repo)
 	local wtPath = wt.find_executable("wt")
 	if not start.ternSession then fail(start.id, "its goal has no session"); return end
-	if not repoPath then fail(start.id, "Overseer doesn't know where " .. tostring(start.repo) .. " is: open it in a space once"); return end
+	if not repoPath then fail(start.id, "Flightdeck doesn't know where " .. tostring(start.repo) .. " is: open it in a space once"); return end
 	if not start.readonly and not wtPath then fail(start.id, "Worktrunk (wt) isn't installed"); return end
 	launching[start.id] = true
 	launch.open(M.tabArgs(start, repoPath, wtPath, hooks.baseFor(start.repo)), start.brief, function(err, pane)

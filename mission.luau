@@ -1,4 +1,4 @@
--- Mission control's Overseer side: what Overseer does for overseer-server.
+-- Mission control's Flightdeck side: what Flightdeck does for flightdeck-server.
 -- window.luau calls tick() from its tick; the work lives in mission/:
 --
 --   client.luau      server address, token, JSON calls
@@ -33,7 +33,7 @@ M.sessionPanes = {}
 
 local polling, lastPoll = false, -POLL_MS
 
--- Called from Overseer's tick. `panes`: every live terminal and agent pane id (strings).
+-- Called from Flightdeck's tick. `panes`: every live terminal and agent pane id (strings).
 -- `hooks`: what the window knows (see missionHooks in window.luau); hooks.changed(cx)
 -- runs when the server's state changed, so the sidebar redraws.
 function M.tick(cx, panes, hooks)
