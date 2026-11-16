@@ -210,19 +210,46 @@ describe("goals and conversation", () => {
     expect(store.task(t.id).worktree).toBeNull();
   });
 
-  test("the coordinator finishing its own task marks the goal finished, without another summary request", () => {
+  test("a coordinator finishes its goal itself, only once tasks, workers, questions and worktrees are dealt with", () => {
     const store = new Store(":memory:");
+    store.learnRepo("x", "/r/x");
     const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
     store.startGoal(g.id);
-    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const coord = { ...me, session: "coord" };
+    store.joinGoal(coord, g.id);
+    expect(() => store.doneTask("coord", { outcome: "succeeded", summary: "x" })).toThrow("goal_complete");
     const worker = store.listTasks({ goal: g.id }).find((t) => t.session !== "coord")!;
-    store.startTask({ ...me, session: "w" }, { id: worker.id });
+    expect(() => store.completeGoal(coord, { summary: "s" })).toThrow("isn't done yet");
+    const w = store.requestWorker(coord, worker.id);
+    store.workerStarted(w.id, "42");
+    store.startTask({ ...me, session: "w", cwd: "/r/x" }, { id: worker.id });
     store.doneTask("w", { outcome: "succeeded", summary: "done" });
-    const before = store.goalEvents(g.id).filter((e) => e.kind === "status").length;
-    store.doneTask("coord", { outcome: "succeeded", summary: "closed as is" });
-    expect(store.goal(g.id).status).toBe("finished");
-    expect(store.goalEvents(g.id).filter((e) => e.kind === "status").length).toBe(before);
+    expect(() => store.completeGoal(coord, { summary: "s" })).toThrow("worker is still open");
+    expect(() => store.requestWorktreeRemoval(coord, worker.id)).toThrow("worker_stop");
+    store.stopWorker(coord, worker.id);
+    store.workerStopped(w.id);
+    store.ask("coord", { question: "Ship?" });
+    expect(() => store.completeGoal(coord, { summary: "s" })).toThrow("wait for the user");
+    store.answer(store.listTasks({ goal: g.id }).find((t) => t.session === "coord")!.id, "yes");
+    store.inbox("coord");
+    expect(store.completeGoal(coord, { summary: "all merged" }).status).toBe("done");
   });
+
+  test("a worktree removal the coordinator asks for is reported back to it", () => {
+    const store = new Store(":memory:");
+    store.learnRepo("x", "/r/x");
+    const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });
+    store.startGoal(g.id);
+    const coord = { ...me, session: "coord" };
+    store.joinGoal(coord, g.id);
+    const t = store.listTasks({ goal: g.id }).find((x) => x.session !== "coord")!;
+    store.db.query("update tasks set status = 'done', worktree = '/w/x/b', branch = 'b' where id = ?").run(t.id);
+    store.requestWorktreeRemoval(coord, t.id);
+    expect(store.pendingCleanups().map((c) => c.id)).toEqual([t.id]);
+    store.cleanupDone(t.id);
+    expect(store.inbox("coord").map((e) => e.body)).toContain("Removed G1.1's worktree and branch b.");
+  });
+
 
   test("a note marked answered closes the open question", () => {
     const store = new Store(":memory:");

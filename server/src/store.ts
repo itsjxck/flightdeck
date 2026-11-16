@@ -3,6 +3,7 @@
 // so the MCP tools and Flightdeck's HTTP API share the same behaviour.
 import { Database } from "bun:sqlite";
 import { ANALYTICS_SCHEMA } from "./analytics";
+import { existsSync } from "node:fs";
 
 export type TaskStatus = "todo" | "ready" | "doing" | "done" | "failed" | "dropped";
 // finished: the coordinator has reported (its own task is done); the goal stays on
@@ -255,16 +256,14 @@ export class Store {
 
   doneTask(session: string, a: { ref?: string; outcome: "succeeded" | "failed"; summary: string; files?: string[] }): Task {
     const t = this.myTask(session, a.ref);
+    const own = t.goal != null ? this.goal(t.goal) : null;
+    if (own && own.coordinator === t.session && own.status === "active") {
+      throw new Error("you coordinate this goal: finish it with goal_complete once it's verified and cleaned up");
+    }
     this.touch(t.id, { status: a.outcome === "succeeded" ? "done" : "failed" });
     const files = a.files?.length ? `\n\nFiles: ${a.files.map((f) => "`" + f + "`").join(", ")}` : "";
     this.addEvent({ task: t.id, goal: t.goal, author: session, kind: "done", body: `**${a.outcome}:** ${a.summary}${files}`,
       options: null, recommended: null, to_target: t.goal != null ? "coordinator" : null });
-    // The coordinator finishing its own task ends the goal's run.
-    const goal = t.goal != null ? this.goal(t.goal) : null;
-    if (goal && goal.coordinator === t.session && goal.status === "active") {
-      this.db.query("update goals set status = 'finished' where id = ?").run(goal.id);
-      return this.task(t.id);
-    }
     const dependents = this.db.query("select task from deps where needs = ?").all(t.id) as { task: number }[];
     for (const d of dependents) this.promote(d.task);
     this.finishGoalIfDone(t.goal);
@@ -308,6 +307,20 @@ export class Store {
     return !!this.db.query("select 1 from cleanups where task = ? and done is null").get(task);
   }
 
+  // A coordinator asks to remove a finished task's worktree; the window does it
+  // and the result comes back through the coordinator's inbox.
+  requestWorktreeRemoval(caller: Caller, task: number): Task {
+    const g = this.coordinatorGoalFor(caller.session);
+    const t = this.task(task);
+    if (t.goal !== g.id) throw new Error(`${this.tref(t.id)} isn't part of ${Store.gid(g.id)}`);
+    if (t.session === g.coordinator) throw new Error("that's your own checkout");
+    if (!["done", "failed", "dropped"].includes(t.status)) throw new Error(`${this.tref(t.id)} is ${t.status}; finish or drop it first`);
+    if (this.hasOpenWorker(t.id)) throw new Error(`${this.tref(t.id)}'s worker is still open; close it with worker_stop first`);
+    if (!t.worktree || t.worktree === this.repoPath(t.repo)) throw new Error(`${this.tref(t.id)} has no worktree of its own`);
+    this.queueCleanup(t.id);
+    return t;
+  }
+
   queueCleanup(task: number) {
     this.db.query("insert into cleanups (task, queued) values (?, ?) on conflict(task) do update set queued = excluded.queued, done = null").run(task, this.now());
   }
@@ -319,9 +332,51 @@ export class Store {
     return rows.map((t) => ({ id: t.id, repoPath: this.repoPath(t.repo), branch: t.branch!, worktree: t.worktree! }));
   }
 
-  cleanupDone(task: number) {
+  // The window removed a queued worktree (ok) or couldn't (error): tell the goal's coordinator.
+  cleanupDone(task: number, error?: string) {
+    const t = this.task(task);
     this.db.query("update cleanups set done = ? where task = ?").run(this.now(), task);
-    this.touch(task, { worktree: null });
+    if (!error) this.touch(task, { worktree: null });
+    if (t.goal != null && this.cleanupWasQueued(task)) {
+      this.addEvent({ task: t.id, goal: t.goal, author: "flightdeck", kind: "status",
+        body: error ? `Couldn't remove ${this.tref(t.id)}'s worktree (${t.worktree}): ${error}` : `Removed ${this.tref(t.id)}'s worktree and branch ${t.branch}.`,
+        options: null, recommended: null, to_target: "coordinator" });
+    }
+  }
+
+  private cleanupWasQueued(task: number): boolean {
+    return !!this.db.query("select 1 from cleanups where task = ?").get(task);
+  }
+
+  // The coordinator ends the goal, once nothing is left: every task finished, no
+  // worker open, no question waiting, and every worktree removed or kept with a reason.
+  completeGoal(caller: Caller, a: { summary: string; keep?: { task: number; reason: string }[] }): Goal {
+    const g = this.coordinatorGoalFor(caller.session);
+    const problems: string[] = [];
+    const kept = new Map((a.keep ?? []).map((k) => [k.task, k.reason]));
+    for (const t of this.listTasks({ goal: g.id })) {
+      if (t.session === g.coordinator) continue;
+      const ref = this.tref(t.id);
+      if (!["done", "failed", "dropped"].includes(t.status)) problems.push(`${ref} is ${t.status}`);
+      if (this.hasOpenWorker(t.id)) problems.push(`${ref}'s worker is still open (worker_stop)`);
+      if (t.worktree && t.worktree !== this.repoPath(t.repo) && existsSync(t.worktree) && !kept.has(t.id)) {
+        problems.push(`${ref}'s worktree ${t.worktree} is still there (worktree_remove, or keep it with a reason)`);
+      }
+    }
+    const waiting = this.waiting().filter((w) => w.task.goal === g.id);
+    if (waiting.length) problems.push(`${waiting.length} question(s) still wait for the user: the goal isn't done while it needs their direction`);
+    if (problems.length) throw new Error(`${Store.gid(g.id)} isn't done yet:\n- ${problems.join("\n- ")}`);
+    const keptLines = [...kept].map(([task, reason]) => `- ${this.tref(task)}: worktree kept (${reason})`);
+    const own = this.listTasks({ goal: g.id }).find((t) => t.session === g.coordinator && t.status === "doing");
+    this.db.transaction(() => {
+      if (own) {
+        this.touch(own.id, { status: "done" });
+        this.addEvent({ task: own.id, goal: g.id, author: caller.session, kind: "done",
+          body: `**Goal complete:** ${a.summary}${keptLines.length ? "\n\n" + keptLines.join("\n") : ""}`, options: null, recommended: null, to_target: null });
+      }
+      this.closeGoal(g.id, "done");
+    })();
+    return this.goal(g.id);
   }
 
   dropTask(goal: number, task: number) {
@@ -509,7 +564,7 @@ export class Store {
       .get(goal) as { n: number };
     if (open.n > 0) return;
     this.addEvent({ task: null, goal, author: "flightdeck", kind: "status",
-      body: "Every task is finished. Summarise the outcome for the user with ask_user (what to review, merge order, follow-ups).",
+      body: "Every task is finished. Verify the work (PRs merged or ready), close finished workers (worker_stop), remove worktrees that are done with (worktree_remove), then finish the goal with goal_complete. Ask the user only for decisions you can't make.",
       options: null, recommended: null, to_target: "coordinator" });
   }
 

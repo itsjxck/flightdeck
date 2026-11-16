@@ -32,7 +32,7 @@ flowchart LR
   S --> DB[(flightdeck.db)]
 ```
 
-Answers and agents' messages are queued as events; Flightdeck fetches `/api/deliveries`, sends each to the pane running its session, then acks it. Worker starts are queued the same way (`/api/workers`), and Flightdeck opens them. Goal lifecycle: proposed → active (started) → finished (the coordinator called `task_done` on its own task) → done (the user closed it) or dropped. Coordinators manage workers: `worker_stop` closes one (a finished task stays finished), `worker_start` on a done or failed task reopens it, switching to its existing branch, with optional `context` added to the brief.
+Answers and agents' messages are queued as events; Flightdeck fetches `/api/deliveries`, sends each to the pane running its session, then acks it. Worker starts are queued the same way (`/api/workers`), and Flightdeck opens them. Goal lifecycle: proposed → active (started) → done (the coordinator's `goal_complete`, which checks tasks, workers, questions and worktrees; or the user's Close goal) or dropped. `finished` is a legacy state from before `goal_complete`. Coordinators manage workers: `worker_stop` closes one (a finished task stays finished), `worker_start` on a done or failed task reopens it, switching to its existing branch, with optional `context` added to the brief.
 
 ## Conventions
 

@@ -34,8 +34,8 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 
 1. You (or an agent, with `goal_propose`) write what should be true when it's done. Tasks are optional.
 2. **Start goal** opens a background session with a *coordinator* agent. It reads the repositories, plans tasks (`goal_plan`), and starts *workers* (`worker_start`), each in a fresh worktree on its own branch.
-3. Workers report progress, ask you questions (they appear under **Now**; answer from there or in the agent's pane), and finish their task. The coordinator closes finished workers, starts follow-ups, and asks you when it needs a decision.
-4. When it's done, the goal shows **Finished**, and the coordinator's summary says which PRs are merged and which are still open. A worker's worktree and branch are removed once its PR is merged and its worker is closed. **Close goal** lists what's left and removes the merged ones.
+3. Workers report progress, ask you questions (they appear under **Now**; answer from there or in the agent's pane), and finish their task. The coordinator reads each result, closes the worker (`worker_stop`), and once the work is merged or no longer wanted removes its worktree and branch (`worktree_remove`; the result comes back to it). It starts follow-ups and asks you when it needs a decision.
+4. When the coordinator is satisfied nothing is left (every task finished, workers closed, worktrees removed or kept for a stated reason, no question waiting for you), it finishes the goal itself with `goal_complete` and a summary: what was done, each PR and its state, anything left for you. Flightdeck refuses `goal_complete` until those checks pass, and needing your direction doesn't count as done. The goal's session closes once its agents are idle. You can still close a goal yourself (**Close goal**), which lists its remaining worktrees and their PRs and removes the merged ones.
 
 References: goals are `G3`, a goal's tasks `G3.1`, `G3.2` (its coordinator is `G3.0`), tasks outside goals `T7`. Linked GitHub issues get a comment when the goal starts and finishes; PRs close them with `Fixes owner/repo#12`, never Flightdeck itself.
 

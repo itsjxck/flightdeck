@@ -2031,6 +2031,36 @@ local function publishAgents()
 	if encoded ~= publishedAgents then publishedAgents = encoded; tern.kv.set("mission:agents", states) end
 end
 
+-- A goal its coordinator completed (or you closed) leaves its session behind:
+-- close it once none of its agents is still working (the coordinator's last
+-- reply, say). Your Close goal closes it at once (goalClosed).
+local function closeFinishedGoalSessions(cx)
+	local closed = mission.state.get().closedSessions or {}
+	if #closed == 0 then return end
+	local panesBySession = {}
+	local tabsById = {}
+	for _, tab in cx.session:tabs() do tabsById[tab.id] = tab end
+	for _, pane in cx.session:panes() do
+		local tab = tabsById[cx.session:tab_of(pane.pane)]
+		if tab then
+			panesBySession[tab.session] = panesBySession[tab.session] or {}
+			table.insert(panesBySession[tab.session], pane.pane)
+		end
+	end
+	for _, info in cx.sessions:list() do
+		for _, s in closed do
+			if tostring(info.id) == s then
+				local busy = false
+				for _, pane in (panesBySession[info.id] or {}) do if agentStates[pane] == "working" then busy = true end end
+				if not busy then
+					pcall(function() cx.sessions:close(info.id) end)
+					oplog.write("info", { op = "mission", event = "goal session closed", detail = info.name })
+				end
+			end
+		end
+	end
+end
+
 -- A minute's agent counts for Mission control's Stats tab (POST /api/samples).
 local SAMPLE_MS = 60000
 local lastSample = -SAMPLE_MS
@@ -2281,6 +2311,7 @@ tick = function(generation, cx)
 	end)
 	separately(missionRequests)
 	separately(sampleAgents)
+	separately(closeFinishedGoalSessions)
 	separately(follow)
 	separately(closeEmptySessions)
 	separately(closeOrphanedSessions)

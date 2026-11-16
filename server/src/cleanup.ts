@@ -1,8 +1,8 @@
-// Goal workers' worktrees after their work lands. A finished task whose worker
-// is closed and whose PR is merged no longer needs its worktree: it's queued
-// for removal (`wt remove`, branch deleted too), which the window runs and
-// confirms (`removed`). Closing a goal queues every merged one at once; the
-// rest stay, listed by `goalWorktrees` with their PR state.
+// Goal workers' worktrees and their PRs. The coordinator removes worktrees as
+// tasks finish (worktree_remove, store.requestWorktreeRemoval); this module
+// serves the user's Close goal: `goalWorktrees` lists what's left with each
+// PR's state, and `queueMerged` removes the merged ones when the user confirms.
+// The window runs queued removals (`wt remove`, branch too) and reports back.
 //
 // PRs are found by branch with `gh pr list --head`, cached for PR_TTL_MS, and
 // recorded on the task when it hadn't recorded one itself.
@@ -53,8 +53,8 @@ export async function goalWorktrees(store: Store, goal: number): Promise<GoalWor
   return out;
 }
 
-// Queues the removal of finished tasks' worktrees whose PR merged and whose worker is closed.
-// `all`: every merged one (closing the goal), not only those with a closed worker.
+// Queues the removal of finished tasks' worktrees whose PR merged (the user closing the goal).
+// `all`: also those whose worker is still open.
 export async function queueMerged(store: Store, goal: number, all = false): Promise<number> {
   let queued = 0;
   for (const w of await goalWorktrees(store, goal)) {
@@ -65,9 +65,4 @@ export async function queueMerged(store: Store, goal: number, all = false): Prom
     queued++;
   }
   return queued;
-}
-
-// Every running goal, now and then (main.ts).
-export async function sweep(store: Store): Promise<void> {
-  for (const g of [...store.listGoals("active"), ...store.listGoals("finished")]) await queueMerged(store, g.id);
 }

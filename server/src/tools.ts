@@ -61,8 +61,6 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     { id, outcome: z.enum(["succeeded", "failed"]), summary: z.string(), files: z.array(z.string()).optional() },
     (c, a) => {
       const t = store.doneTask(c.session, { ref: a.id, outcome: a.outcome, summary: a.summary, files: a.files });
-      // The coordinator finishing its own task finishes the goal: tell its linked issues.
-      if (t.goal != null && store.goal(t.goal).status === "finished" && store.goal(t.goal).coordinator === c.session) goalFinished(store, t.goal, a.summary);
       return line(t) + " — finished.";
     });
 
@@ -95,6 +93,21 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
         store.linkIssue(g.id, p);
       }
       return `${Store.gid(g.id)} proposed; the user will start it.`;
+    });
+
+  tool("worktree_remove",
+    "Coordinator only: remove a finished task's worktree and its local branch, once its work is merged (check gh pr view) or no longer wanted, and its worker is closed. Flightdeck runs it and tells you the result in your inbox.",
+    { task: z.string() },
+    (c, a) => `${store.tref(store.requestWorktreeRemoval(c, store.taskId(a.task)).id)}: removal queued; the result arrives in your inbox.`);
+
+  tool("goal_complete",
+    "Coordinator only: finish your goal when you're satisfied nothing is left to do: every task finished, every worker closed, worktrees removed (or kept, each with a reason, e.g. a PR still in review), and no question waiting for the user. Waiting for the user's direction is not done: ask_user and keep going. The summary goes to the user and to linked issues.",
+    { summary: z.string().describe("What was done, PRs and their state, anything left for the user"),
+      keep: z.array(z.object({ task: z.string(), reason: z.string() })).optional().describe("Worktrees to leave in place, with why") },
+    (c, a) => {
+      const g = store.completeGoal(c, { summary: a.summary, keep: a.keep?.map((k) => ({ task: store.taskId(k.task), reason: k.reason })) });
+      goalFinished(store, g.id, a.summary);
+      return `${Store.gid(g.id)} complete. Its session closes shortly; thank you.`;
     });
 
   tool("issue_link",

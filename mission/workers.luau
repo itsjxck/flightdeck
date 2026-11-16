@@ -88,9 +88,11 @@ end
 
 -- One worker pass: opens requested workers, closes stopping ones. done() runs when it's finished.
 -- `hooks`: repoPath(name), baseFor(name) (missionHooks in window.luau).
--- Removes the worktrees the server queued (merged PRs, cleanup.ts): `wt remove`
--- with the branch (-D: squash merges look unmerged to Git) and --yes, since no
--- one is there to approve hooks. A worktree already gone counts as removed.
+-- Removes the worktrees the server queued (a coordinator's worktree_remove, or
+-- the user's Close goal): `wt remove` with the branch (-D: squash merges look
+-- unmerged to Git) and --yes, since no one is there to approve hooks. A
+-- worktree already gone counts as removed. The result goes back to the server,
+-- which tells the coordinator.
 local removing = {}
 local function removeQueued(list)
 	local wtPath = wt.find_executable("wt")
@@ -99,7 +101,7 @@ local function removeQueued(list)
 			removing[c.id] = true
 			local function done(ok, detail)
 				removing[c.id] = nil
-				if ok then client.post("/api/cleanups/" .. tostring(c.id), {}) end
+				client.post("/api/cleanups/" .. tostring(c.id), if ok then {} else { error = detail or "wt remove failed" })
 				oplog.write(if ok then "info" else "warn", { op = "mission", event = if ok then "worktree removed" else "worktree removal failed",
 					detail = c.worktree .. (if detail then ": " .. detail else "") })
 			end

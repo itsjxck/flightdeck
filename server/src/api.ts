@@ -71,7 +71,7 @@ function workerBrief(store: Store, workerId: number) {
     `Your task is ${store.tref(t.id)}: ${t.title}.`, t.body,
     `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
-    `When you open a PR, record it with task_note (pr: its URL). Once your PR is merged and your worker is closed, Flightdeck removes your worktree and branch.`,
+    `When you open a PR, record it with task_note (pr: its URL).`,
     issueLines(store, g.id),
     SECURITY_KEY_NOTE,
     w.context ? `\nFrom your coordinator:\n${w.context}` : "",
@@ -90,8 +90,8 @@ export function coordinatorBrief(store: Store, goal: number) {
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
-    `Before you finish, check every task's PR (gh pr view) and say in your summary to the user which are merged and which are still open, with links. Flightdeck removes a task's worktree once its PR is merged and you've closed its worker.`,
-    `When the goal is over, call task_done on your own task.`,
+    `You see the goal through to the end, including cleanup: as each task finishes, read its result, close its worker (worker_stop), and once its work is merged (check gh pr view) or no longer wanted, remove its worktree and branch (worktree_remove).`,
+    `When you're satisfied nothing is left (every task finished, workers closed, worktrees removed or kept for a stated reason, such as a PR still in review), finish the goal yourself with goal_complete and a summary: what was done, each PR and its state, anything left for the user. Needing the user's direction is not "nothing left": ask_user and keep going.`,
     SECURITY_KEY_NOTE,
   ].filter(Boolean).join("\n");
 }
@@ -111,6 +111,9 @@ function state(store: Store) {
   return {
     goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id) })),
     goalSessions: goals.map((g) => g.tern_session).filter((s): s is string => !!s),
+    // Sessions of goals closed in the last day, for the window to close once their agents are idle.
+    closedSessions: store.db.query(`select tern_session from goals where status in ('done', 'dropped') and tern_session is not null
+      and coalesce(closed, created) > ?`).all(Date.now() - 86_400_000).map((r) => (r as { tern_session: string }).tern_session),
     tasks, waiting, workers,
     // The server's clock, so clients can show ages ("3 min ago") without one of their own.
     now: Date.now(),
@@ -156,7 +159,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "GET cleanups":
         return json({ cleanups: store.pendingCleanups() });
       case "POST cleanups":
-        store.cleanupDone(Number(parts[1]));
+        store.cleanupDone(Number(parts[1]), typeof body.error === "string" ? body.error : undefined);
         return json({ ok: true });
       case "GET analytics":
         return json(analytics(store));
