@@ -268,33 +268,32 @@ local function spaceNode(space)
 end
 
 local AGENT_STATES = {
-	waiting = { dot = "overseer.dotWaiting", label = "waiting", role = "overseer.agentWaiting" },
-	working = { dot = "overseer.dotAgent", label = "working", role = "overseer.agentWorking" },
-	idle = { dot = "overseer.dotIdle", label = "idle", role = "overseer.agentIdle" },
+	waiting = { dot = "overseer.dotWaiting", label = "waiting" },
+	working = { dot = "overseer.dotAgent", label = "working" },
+	idle = { dot = "overseer.dotIdle", label = "idle" },
 }
 
+-- One line per agent: its dot (the state), its name, then its Mission control
+-- task's ref, which opens the task there (the title is in the tooltip).
 local function agentNode(agent)
 	local state = AGENT_STATES[agent.state] or AGENT_STATES.idle
-	local stateLine = text("state", state.label, state.role)
-	-- With a Mission control task, the state line names it: "idle · T-12 · title"; the task opens Mission control.
+	local children = {
+		ui.el("div", { key = "status", role = state.dot }),
+		text("name", agent.name, "overseer.spaceName", { grow = 1 }),
+	}
 	if agent.task then
-		stateLine = ui.node("row", { key = "state", role = "overseer.agentStateLine" }, {
-			text("label", state.label .. " ·", state.role),
-			text("task", agent.task.ref .. " · " .. agent.task.title, "overseer.taskLink", {
-				title = "Open " .. agent.task.ref .. " in Mission control", actions = { click = "mission=" .. agent.task.ref },
-			}),
-		})
+		table.insert(children, text("task", agent.task.ref, "overseer.taskLink", {
+			title = agent.task.ref .. " · " .. agent.task.title .. "\nOpen it in Mission control",
+			actions = { click = "mission=" .. agent.task.ref },
+		}))
 	end
 	return ui.node("row", {
 		key = "a" .. tostring(agent.pane), role = "overseer.agentRow",
 		mark = if agent.active then "pick" else nil,
-		title = agent.title,
+		title = agent.title .. "\n" .. state.label,
 		aria = agent.name .. ", " .. state.label .. (if agent.task then ", " .. agent.task.ref else ""),
 		actions = { click = "agent=" .. tostring(agent.pane) },
-	}, {
-		ui.el("div", { key = "status", role = state.dot }),
-		ui.node("col", { key = "text", role = "overseer.agentText", grow = 1 }, { text("name", agent.name, "overseer.spaceName"), stateLine }),
-	})
+	}, children)
 end
 
 -- "Needs you N": the sidebar's top line while questions wait; opens Mission control.
