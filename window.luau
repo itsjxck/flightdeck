@@ -312,7 +312,9 @@ local function model(cx)
 	-- sessions are left out (they show under Goals), and so is Mission
 	-- control's own session (the button at the top).
 	local spaces, byId, missionActive = {}, {}, false
+	local sessionNames = {}
 	for index, info in cx.session:sessions() do
+		sessionNames[tostring(info.id)] = info.name
 		if mission.state.isGoalSession(info.id) then continue end
 		if info.name == MISSION_SESSION then
 			missionActive = info.id == current.id
@@ -402,6 +404,8 @@ local function model(cx)
 	local result = { spaces = {}, agents = {}, refreshing = spinning, missionActive = missionActive }
 	for _, space in spaces do
 		if not nested[space.id] then
+			-- Its session goes by the name the sidebar shows, unless you named it.
+			if not space.named and space.dir and space.sessionName ~= space.name then renames[space.id] = space.name end
 			local branch = space.tree and (space.tree.branch or "detached")
 			-- The PR of the branch the space is on, as worktree rows show theirs.
 			local prs = space.repo and cache[space.repo] and cache[space.repo].prs
@@ -438,6 +442,11 @@ local function model(cx)
 	local URGENCY = { waiting = 3, working = 2, idle = 1 }
 	for _, g in ms.goals do
 		if g.status == "active" or g.status == "finished" then
+			-- Goal sessions read "G3 · title" (renamed when references or titles change).
+			local goalName = g.ref .. " · " .. g.title
+			if g.tern_session and sessionNames[g.tern_session] and sessionNames[g.tern_session] ~= goalName then
+				renames[tonumber(g.tern_session)] = goalName
+			end
 			local goal = { ref = g.ref, title = g.title, session = g.tern_session, progress = g.progress or { done = 0, total = 0 },
 				finished = g.status == "finished",
 				needsYou = 0, dot = nil, tasks = {}, collapsed = collapsed["goal:" .. g.ref] == true }
