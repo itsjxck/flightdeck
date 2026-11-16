@@ -460,7 +460,9 @@ local function model(cx)
 					if state and (not goal.dot or URGENCY[state] > URGENCY[goal.dot]) then goal.dot = state end
 					-- The coordinator's own task colours the goal's dot but isn't listed; its pane is where the goal opens.
 					if t.session ~= nil and t.session == g.coordinator then goal.coordinatorPane = pane end
-					if t.session == nil or t.session ~= g.coordinator then
+					-- Finished tasks drop out of the sidebar's list (the goal's count has them; Mission control lists them).
+					local finished = t.status == "done" or t.status == "dropped"
+					if not finished and (t.session == nil or t.session ~= g.coordinator) then
 						table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
 					end
 				end
