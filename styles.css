@@ -507,7 +507,7 @@
 [data-role='mission.tabOn'] [data-role='mission.tabLabel'] { color: var(--t1); font-weight: 600; }
 
 /* Repository filter: a dropdown under the tabs; the menu floats over the page. */
-[data-role='mission.filter'] { position: relative; align-items: flex-start; margin-top: -8px; z-index: 5; }
+[data-role='mission.filter'] { position: relative; align-items: flex-start; z-index: 5; }
 [data-role='mission.select'],
 [data-role='mission.selectOpen'] {
   align-items: center;
@@ -615,6 +615,27 @@
 
 [data-role='mission.showDone'] { padding: 2px 0; cursor: pointer; }
 [data-role='mission.showDone']:hover [data-role='mission.sectionNote'] { color: var(--t1); }
+
+/* Toolbar under the tabs: filter left, actions right. */
+[data-role='mission.toolbar'] { align-items: center; gap: 8px; margin-top: -8px; position: relative; z-index: 5; }
+
+/* Popup forms (ui/dialog.luau) */
+[data-role='mission.form'] { gap: 14px; padding: 4px 2px 8px; min-width: 420px; }
+[data-role='mission.formField'] { gap: 6px; }
+[data-role='mission.fieldLabel'] { font: 500 12px/1.3 var(--sans); color: var(--t2); }
+[data-role='mission.field'],
+[data-role='mission.fieldOn'] {
+  font: 14px/1.4 var(--sans);
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--l3);
+  background: var(--card);
+  color: var(--t1);
+  cursor: text;
+}
+[data-role='mission.fieldOn'] { border-color: rgb(from var(--accent) r g b / 70%); box-shadow: 0 0 0 3px rgb(from var(--accent) r g b / 15%); }
+[data-role='mission.formNote'] { font-size: 12px; line-height: 1.45; color: var(--t3); }
+[data-role='mission.formButtons'] { gap: 8px; justify-content: flex-end; }
 
 /* Repos tab */
 [data-role='mission.repo'],

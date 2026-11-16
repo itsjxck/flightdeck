@@ -1,10 +1,11 @@
--- The Mission control block (host half): wires ui/model.luau (data) and
--- ui/render.luau (view) into a Tern plugin block with keys, a reply field
--- and a 2-second refresh. Actions the host can't take (open a goal's
+-- The Mission control block (host half): wires ui/model.luau (data),
+-- ui/render.luau (view) and ui/dialog.luau (popup forms) into a Tern plugin
+-- block with buttons, keys, an answer field and a 2-second refresh. Actions the host can't take (open a goal's
 -- session, focus a pane, open a review tab) go to the window as requests.
 local Input = require("../input")
 local model = require("./model")
 local render = require("./render")
+local dialog = require("./dialog")
 
 local POLL_MS = 2000
 
@@ -40,10 +41,6 @@ end
 
 -- Who the reply field writes to: the open thread, else the selected question.
 local function replyTarget(state)
-	if state.newTask then return "New task", "Title of a task for later, Enter adds it" end
-	if state.linking then return "Link", "Goal to link " .. state.linking .. " to (G3), Enter" end
-	if state.newGoal and not state.newGoal.title then return "New goal", "What should be true when it's done? A short title, Enter" end
-	if state.newGoal then return "New goal", "Details for the coordinator (repos, constraints), or Enter to skip" end
 	if state.thread then return state.thread.task, nil end
 	if state.tab ~= "now" then return nil, nil end
 	local row = selectedRow(state)
@@ -107,41 +104,51 @@ end
 
 local function send(state, cx)
 	local body = state.reply.text
-	-- A new goal's details are optional: Enter on an empty field proposes it.
-	if state.newGoal and state.newGoal.title then
-		model.api("POST", "/api/goals", { title = state.newGoal.title, body = body, issues = state.newGoal.issues }, function(g, err)
-			if not err then state.marked = {} end
-			state.error = err or (g and (g.ref .. " proposed. Start it when you're ready; its coordinator plans the tasks."))
-			refresh(state, cx)
-		end)
-		state.newGoal, state.reply = nil, Input.new("")
-		return
-	end
 	if not string.find(body, "%S") then return end
 	local target = replyTarget(state)
-	if state.newGoal then
-		state.newGoal.title, state.reply = body, Input.new("")
-		return
-	end
-	if state.linking then
-		local goal, issue = string.upper((string.gsub(body, "%s", ""))), state.linking
-		model.api("POST", "/api/goals/" .. goal .. "/issues", { issue = issue }, function(_, err)
-			state.error = err or (issue .. " linked to " .. goal .. ".")
-			state.issuesAt = nil
-			refresh(state, cx)
-		end)
-		state.linking, state.reply = nil, Input.new("")
-		return
-	end
-	if state.newTask then
-		local row = selectedRow(state)
-		local repo = row and row.item.repo or "personal"
-		model.api("POST", "/api/tasks", { title = body, repo = repo }, function(_, err) state.error = err; refresh(state, cx) end)
-		state.newTask = false
-	elseif target then
+	if target then
 		model.api("POST", "/api/answer", { task = target, body = body }, function(_, err) state.error = err; refresh(state, cx) end)
 	end
 	state.reply = Input.new("")
+end
+
+-- Opens a popup form (ui/dialog.luau): "goal", "task" or "link".
+local function openDialog(state, kind, opts)
+	if kind == "task" and not (opts and opts.repo) then
+		local row = selectedRow(state)
+		opts = { repo = state.repoFilter or (row and row.item.repo) or nil }
+	end
+	state.dialog = dialog.new(kind, opts)
+end
+
+-- Sends the open dialog; it closes once the server accepts it, else shows the error.
+local function submitDialog(state, cx)
+	local d = state.dialog
+	if not d then return end
+	if dialog.missing(d) then d.focus, d.error = dialog.missing(d), "Fill this in first."; return end
+	local v = dialog.values(d)
+	local function done(message)
+		return function(result, err)
+			if err then d.error = err
+			else
+				if state.dialog == d then state.dialog = nil end
+				state.error = message(result)
+			end
+			state.issuesAt = nil
+			refresh(state, cx)
+		end
+	end
+	if d.kind == "goal" then
+		model.api("POST", "/api/goals", { title = v.title, body = v.body, issues = d.issues }, done(function(g)
+			state.marked = {}
+			return g.ref .. " proposed. Start it from Backlog when you're ready; its coordinator plans the tasks."
+		end))
+	elseif d.kind == "task" then
+		model.api("POST", "/api/tasks", { title = v.title, repo = v.repo }, done(function(t) return "Task added." end))
+	elseif d.kind == "link" then
+		local goal = string.upper((string.gsub(v.goal, "%s", "")))
+		model.api("POST", "/api/goals/" .. goal .. "/issues", { issue = d.issue }, done(function() return d.issue .. " linked to " .. goal .. "." end))
+	end
 end
 
 local function answerOption(state, cx, task, option)
@@ -193,7 +200,7 @@ issueKey = function(state, cx, name, row)
 		for ref in state.marked do table.insert(refs, ref) end
 		if #refs > 0 then
 			table.sort(refs)
-			state.newGoal = { issues = refs }
+			openDialog(state, "goal", { issues = refs })
 		else
 			model.api("POST", "/api/goals", { title = issue.title, body = issue.body .. "\n\n" .. issue.url, issues = { issue.ref } }, function(g, err)
 				state.error = err or (g and (g.ref .. " proposed from " .. issue.ref .. ". Start it from Backlog."))
@@ -202,7 +209,7 @@ issueKey = function(state, cx, name, row)
 			end)
 		end
 	elseif name == "l" then
-		state.linking = issue.ref
+		openDialog(state, "link", { issue = issue.ref })
 	elseif name == "o" then
 		model.request({ kind = "url", url = issue.url })
 	elseif name == "x" then
@@ -228,6 +235,15 @@ local function toggleRepoIssues(state, cx, repo)
 		refresh(state, cx)
 	end)
 	repo.issuesIgnored = not repo.issuesIgnored
+end
+
+local function scanRepos(state, cx)
+	state.error = "Scanning for repositories…"
+	model.api("POST", "/api/repos/scan", {}, function(r, err)
+		state.error = err or (r and string.format("Scan done: %d added, %d removed%s.", r.added, r.removed,
+			if #r.duplicates > 0 then string.format(", %d skipped (name already taken)", #r.duplicates) else ""))
+		refresh(state, cx)
+	end)
 end
 
 local function switchTab(state, cx, tab)
@@ -264,7 +280,7 @@ local DEF = {
 			sections = EMPTY, selectedRef = args[1], thread = nil,
 			repoFilter = if type(saved) == "table" and type(saved.repoFilter) == "string" then saved.repoFilter else nil,
 			tab = "now", backlog = nil, expanded = {}, marked = {}, open = {},
-			reply = Input.new(""), newTask = false, error = nil, alive = true,
+			reply = Input.new(""), dialog = nil, error = nil, alive = true,
 		}
 		refresh(state, cx)
 		poll(state, cx)
@@ -289,11 +305,18 @@ local DEF = {
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, replyInCard = inCard, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
 		})
-		return { main = main, dock = dock }
+		return { main = main, dock = dock, layer = if state.dialog then dialog.node(state.dialog) else nil }
 	end,
 	key = function(state, key, cx)
 		local list, index = rows(state)
-		local typing = state.reply.text ~= "" or state.newTask or state.newGoal ~= nil
+		-- An open popup form takes every key.
+		if state.dialog then
+			local result = dialog.key(state.dialog, key)
+			if result == "cancel" then state.dialog = nil
+			elseif result == "submit" then submitDialog(state, cx) end
+			return true
+		end
+		local typing = state.reply.text ~= ""
 		-- The open repository menu takes the arrows, Enter and Esc.
 		if state.filterOpen then
 			local names = choices(state)
@@ -313,7 +336,6 @@ local DEF = {
 			-- handled
 		elseif key.name == "escape" or key.name == "esc" then
 			if state.reply.text ~= "" then state.reply = Input.new("")
-			elseif state.newTask or state.newGoal or state.linking then state.newTask, state.newGoal, state.linking = false, nil, nil
 			elseif state.thread then state.thread = nil
 			elseif state.repoFilter then state.repoFilter = nil
 			else return false end
@@ -349,20 +371,15 @@ local DEF = {
 			model.request({ kind = "start", goal = row.item.ref })
 			state.error = "Starting " .. row.item.ref .. " in a session of its own…"
 		elseif not typing and key.name == "n" then
-			state.newTask = true
+			openDialog(state, "task")
 		elseif not typing and key.name == "i" and state.tab == "repos" then
 			local row = list[index]
 			if not row then return false end
 			toggleRepoIssues(state, cx, row.item)
 		elseif not typing and key.name == "s" and state.tab == "repos" then
-			state.error = "Scanning for repositories…"
-			model.api("POST", "/api/repos/scan", {}, function(r, err)
-				state.error = err or (r and string.format("Scan done: %d added, %d removed%s.", r.added, r.removed,
-					if #r.duplicates > 0 then string.format(", %d skipped (name already taken)", #r.duplicates) else ""))
-				refresh(state, cx)
-			end)
+			scanRepos(state, cx)
 		elseif not typing and key.name == "g" then
-			state.newGoal = {}
+			openDialog(state, "goal")
 		else
 			if not replyTarget(state) then return false end
 			local handled, err = Input.key(state.reply, key)
@@ -373,7 +390,22 @@ local DEF = {
 	end,
 	event = function(state, ev, cx)
 		-- Table rows: a click selects, a double click goes to the agent (or starts the goal).
-		if ev.ev == "action" and ev.act == "showdone" then state.showDone = true; return end
+		-- Toolbar buttons and the popup form.
+		if ev.ev == "action" then
+			if ev.act == "showdone" then state.showDone = not state.showDone; return end
+			if ev.act == "newgoal" then openDialog(state, "goal"); return end
+			if ev.act == "newtask" then openDialog(state, "task"); return end
+			if ev.act == "scanrepos" then scanRepos(state, cx); return end
+			if ev.act == "refreshissues" then issueKey(state, cx, "r", nil); return end
+			if ev.act == "dialog" and state.dialog then
+				if ev.value == "cancel" then state.dialog = nil else submitDialog(state, cx) end
+				return
+			end
+			if ev.act == "field" and state.dialog then
+				state.dialog.focus = math.clamp(tonumber(ev.value) or 1, 1, #state.dialog.fields)
+				return
+			end
+		end
 		if ev.ev == "action" and ev.act == "filtermenu" then
 			if state.filterOpen then state.filterOpen = false else openFilter(state) end
 			return

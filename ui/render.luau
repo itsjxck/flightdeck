@@ -489,10 +489,26 @@ function M.view(view)
 		text("summary", summary(s, agentOf), "mission.summary"),
 	}))
 	table.insert(main, tabStrip(view.tab or "now", #s.needs))
+	-- The toolbar: the repository filter on the left, the tab's actions on the right.
+	local tools = {}
 	if view.tab ~= "repos" then
 		local bar = filterBar(view.repoChoices or {}, view.repoFilter, view.filterOpen, view.filterHover)
-		if bar then table.insert(main, bar) end
+		if bar then table.insert(tools, bar) end
 	end
+	table.insert(tools, ui.node("row", { key = "spacer", grow = 1 }, {}))
+	local function button(key, label, act, primary, icon)
+		table.insert(tools, ui.button(label, { key = key, variant = if primary then "primary" else "default", icon = icon, actions = { click = act } }))
+	end
+	if view.tab == "now" or view.tab == "backlog" then
+		if view.tab == "backlog" then button("done", if view.showDone then "Hide older done" else "Show older done", "showdone") end
+		button("task", "New task", "newtask", false, "plus")
+		button("goal", "New goal", "newgoal", true, "plus")
+	elseif view.tab == "issues" then
+		button("refresh", "Refresh issues", "refreshissues", false, "refresh")
+	elseif view.tab == "repos" then
+		button("scan", "Scan for repositories", "scanrepos", false, "refresh")
+	end
+	table.insert(main, row("toolbar", "mission.toolbar", tools))
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
 	if view.tab == "issues" then
 		for _, node in issueNodes(view) do table.insert(main, node) end
