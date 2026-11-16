@@ -135,6 +135,14 @@ local function toggleRepo(state, cx, repo)
 	repo.ignored = not repo.ignored
 end
 
+-- Opens the repository menu with the current choice under the keyboard.
+local function openFilter(state)
+	state.filterOpen, state.filterHover = true, 1
+	for i, name in model.repoChoices(state.backlog) do
+		if name == state.repoFilter then state.filterHover = i + 1 end
+	end
+end
+
 local function switchTab(state, cx, tab)
 	state.tab, state.thread = tab, nil
 	refresh(state, cx)
@@ -188,6 +196,7 @@ local DEF = {
 		local main, dock = render.view({
 			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos,
 			repoChoices = model.repoChoices(state.backlog), repoFilter = state.repoFilter,
+			filterOpen = state.filterOpen, filterHover = state.filterHover,
 			sections = sections, selectedRef = row and (row.item.task or row.item.ref),
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
@@ -197,6 +206,18 @@ local DEF = {
 	key = function(state, key, cx)
 		local list, index = rows(state)
 		local typing = state.reply.text ~= "" or state.newTask or state.newGoal ~= nil
+		-- The open repository menu takes the arrows, Enter and Esc.
+		if state.filterOpen then
+			local choices = model.repoChoices(state.backlog)
+			if key.name == "up" or key.name == "down" then
+				state.filterHover = math.clamp(state.filterHover + (if key.name == "up" then -1 else 1), 1, #choices + 1)
+			elseif key.name == "enter" then
+				state.repoFilter, state.filterOpen = if state.filterHover == 1 then nil else choices[state.filterHover - 1], false
+			elseif key.name == "escape" or key.name == "esc" or key.name == "f" then
+				state.filterOpen = false
+			end
+			return true
+		end
 		if key.name == "up" or key.name == "down" then
 			local next = list[math.clamp(index + (if key.name == "up" then -1 else 1), 1, math.max(#list, 1))]
 			if next then state.selectedRef = next.item.task or next.item.ref end
@@ -222,13 +243,7 @@ local DEF = {
 			if not row or row.kind ~= "task" then return false end
 			model.request({ kind = "review", task = row.item.ref })
 		elseif not typing and key.name == "f" and state.tab ~= "repos" then
-			-- Next repository in the filter, then back to all.
-			local choices, nextRepo = model.repoChoices(state.backlog), nil
-			for i, name in choices do
-				if name == state.repoFilter then nextRepo = choices[i + 1] end
-			end
-			if state.repoFilter == nil then nextRepo = choices[1] end
-			state.repoFilter = nextRepo
+			openFilter(state)
 		elseif not typing and key.name == "s" and state.tab == "backlog" then
 			local row = list[index]
 			if not (row and row.kind == "goal" and row.item.status == "proposed") then return false end
@@ -255,6 +270,10 @@ local DEF = {
 	end,
 	event = function(state, ev, cx)
 		-- Table rows: a click selects, a double click goes to the agent (or starts the goal).
+		if ev.ev == "action" and ev.act == "filtermenu" then
+			if state.filterOpen then state.filterOpen = false else openFilter(state) end
+			return
+		end
 		if (ev.ev == "select" or ev.ev == "activate") and type(ev.item) == "string" then
 			state.selectedRef = ev.item
 			if ev.ev == "activate" then activate(state, cx) end
@@ -274,7 +293,7 @@ local DEF = {
 		elseif verb == "repo" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepo(state, cx, r.item) end end
-		elseif verb == "filter" then state.repoFilter = if a == "*" then nil else a
+		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
 		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"

@@ -46,7 +46,7 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 ## Mission control
 
-**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. Three tabs (<kbd>[</kbd> <kbd>]</kbd>); on Now and Backlog, the chips under the tabs (or <kbd>f</kbd>) narrow everything to one repository, <kbd>Esc</kbd> clears it.
+**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. Three tabs (<kbd>[</kbd> <kbd>]</kbd>); on Now and Backlog, the **Repo** dropdown under the tabs (or <kbd>f</kbd>, then <kbd>↑</kbd><kbd>↓</kbd> <kbd>Enter</kbd>) narrows everything to one repository, <kbd>Esc</kbd> clears it.
 
 - **Now**: only what's happening.
   - **Your turn**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.

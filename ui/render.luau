@@ -211,16 +211,29 @@ local function tabStrip(current, needs)
 	return row("tabs", "mission.tabs", tabs)
 end
 
--- The repository filter: "All repos" then each repository goals and tasks are in.
-local function filterBar(choices, current)
+-- The repository filter, a dropdown (Tern has no native select): a trigger
+-- showing the choice, and when open a menu of "All repos" then each repository
+-- goals and tasks are in. `hover` is the menu item the keyboard is on.
+local function filterBar(choices, current, open, hover)
 	if #choices == 0 then return nil end
-	local chips = { row("all", if current == nil then "mission.chipOn" else "mission.chip",
-		{ text("label", "All repos", "mission.chipLabel") }, { actions = { click = "filter=*" } }) }
-	for _, name in choices do
-		table.insert(chips, row("r" .. name, if current == name then "mission.chipOn" else "mission.chip",
-			{ text("label", name, "mission.chipLabel") }, { actions = { click = "filter=" .. name } }))
+	local items = {}
+	if open then
+		for i, name in { "*", table.unpack(choices) } do
+			local picked = (name == "*" and current == nil) or name == current
+			table.insert(items, row("i" .. tostring(i), if i == hover then "mission.menuItemOn" else "mission.menuItem", {
+				text("check", if picked then "✓" else "", "mission.menuCheck"),
+				text("label", if name == "*" then "All repos" else name, "mission.menuLabel"),
+			}, { actions = { click = "filter=" .. name } }))
+		end
 	end
-	return row("filter", "mission.filter", chips)
+	return col("filter", "mission.filter", {
+		row("trigger", if open then "mission.selectOpen" else "mission.select", {
+			text("what", "Repo", "mission.selectWhat"),
+			text("value", current or "All repos", "mission.selectValue"),
+			text("chev", "▾", "mission.selectChev"),
+		}, { actions = { click = "filtermenu" }, title = "Filter by repository (f)" }),
+		if open then col("menu", "mission.menu", items) else nil,
+	})
 end
 
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
@@ -306,7 +319,7 @@ function M.view(view)
 	}))
 	table.insert(main, tabStrip(view.tab or "now", #s.needs))
 	if view.tab ~= "repos" then
-		local bar = filterBar(view.repoChoices or {}, view.repoFilter)
+		local bar = filterBar(view.repoChoices or {}, view.repoFilter, view.filterOpen, view.filterHover)
 		if bar then table.insert(main, bar) end
 	end
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
