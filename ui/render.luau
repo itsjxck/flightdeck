@@ -94,7 +94,7 @@ local function summary(s, agentOf)
 	table.insert(parts, if working > 0 then plural(working, "agent working", "agents working") else "no agent working")
 	if goals > 0 then table.insert(parts, plural(goals, "goal running", "goals running")) end
 	if finished > 0 then table.insert(parts, plural(finished, "goal to review", "goals to review")) end
-	if #s.proposed > 0 then table.insert(parts, plural(#s.proposed, "goal to start", "goals to start")) end
+	if #s.proposed > 0 then table.insert(parts, plural(#s.proposed, "goal to start in Backlog", "goals to start in Backlog")) end
 	return table.concat(parts, " · ")
 end
 
@@ -211,6 +211,18 @@ local function tabStrip(current, needs)
 	return row("tabs", "mission.tabs", tabs)
 end
 
+-- The repository filter: "All repos" then each repository goals and tasks are in.
+local function filterBar(choices, current)
+	if #choices == 0 then return nil end
+	local chips = { row("all", if current == nil then "mission.chipOn" else "mission.chip",
+		{ text("label", "All repos", "mission.chipLabel") }, { actions = { click = "filter=*" } }) }
+	for _, name in choices do
+		table.insert(chips, row("r" .. name, if current == name then "mission.chipOn" else "mission.chip",
+			{ text("label", name, "mission.chipLabel") }, { actions = { click = "filter=" .. name } }))
+	end
+	return row("filter", "mission.filter", chips)
+end
+
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
 
 -- The Backlog tab: every goal (newest first, click to show its tasks) and every task outside goals.
@@ -236,13 +248,16 @@ local function backlogNodes(view)
 				text("progress", progress, "mission.goalProgress"),
 				text("age", M.ago(b.now, g.created) or "", "mission.goalProgress"),
 				text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
+				if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
+					title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
 			}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
 			if open then col("tasks", "mission.backlogTasks", strips) else nil,
 		}))
 	end
 	table.insert(out, col("goals", "mission.section", {
-		sectionHead("head", "Goals", plural(#b.goals, "goal", "goals") .. " · Enter shows tasks"),
-		if #goals > 0 then col("list", "mission.strips", goals) else text("none", "No goals yet. Agents propose them with goal_propose.", "mission.empty"),
+		sectionHead("head", "Goals", plural(#b.goals, "goal", "goals") .. " · Enter shows tasks · s starts a proposed one"),
+		if #goals > 0 then col("list", "mission.strips", goals)
+			else text("none", if view.repoFilter then "No goals touch " .. view.repoFilter .. "." else "No goals yet. Press g to propose one.", "mission.empty"),
 	}))
 	local loose = {}
 	for _, t in b.loose do table.insert(loose, strip(t, t.ref == view.selectedRef, view.agentOf, {})) end
@@ -275,8 +290,9 @@ local function repoNodes(view)
 	}) }
 end
 
--- The whole block. `view`: { tab, sections, backlog, expanded, repos, selectedRef, showTodo, thread, reply, replyTo,
--- replyHint, error, agentOf }. Returns the block's main and dock nodes.
+-- The whole block. `view`: { tab, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
+-- reply, replyTo, replyHint, error, agentOf }. Sections and backlog arrive already filtered.
+-- Returns the block's main and dock nodes.
 function M.view(view)
 	local s = view.sections
 	local agentOf = view.agentOf or function() return nil end
@@ -289,6 +305,10 @@ function M.view(view)
 		text("summary", summary(s, agentOf), "mission.summary"),
 	}))
 	table.insert(main, tabStrip(view.tab or "now", #s.needs))
+	if view.tab ~= "repos" then
+		local bar = filterBar(view.repoChoices or {}, view.repoFilter)
+		if bar then table.insert(main, bar) end
+	end
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
@@ -300,7 +320,7 @@ function M.view(view)
 		for _, node in backlogNodes(view) do table.insert(main, node) end
 		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   ↑↓ move   Enter show tasks / go to agent   o thread   g new goal")
+			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter show tasks / go to agent   s start goal   o thread   n new task   g new goal")
 	end
 
 	-- Your turn
@@ -366,40 +386,10 @@ function M.view(view)
 		}))
 	end
 
-	-- Proposed goals
-	if #s.proposed > 0 then
-		local cards = {}
-		for _, g in s.proposed do
-			table.insert(cards, row("p" .. g.ref, if g.ref == view.selectedRef then "mission.proposalPicked" else "mission.proposal", {
-				text("ref", g.ref, "mission.ref"),
-				col("text", "mission.stripMain", {
-					text("title", g.title, "mission.stripTitle"),
-					if g.body and g.body ~= "" then text("body", oneLine(g.body), "mission.stripNote") else nil,
-				}, { grow = 1 }),
-				ui.button("Start goal", { key = "start", variant = "primary", actions = { click = "start=" .. g.ref } }),
-			}, { actions = { click = "select=" .. g.ref } }))
-		end
-		table.insert(main, col("proposed", "mission.section", {
-			sectionHead("head", "Proposed goals", "starting one opens its own session; its coordinator plans the tasks"),
-			col("list", "mission.strips", cards),
-		}))
-	end
-
-	-- Todo
-	local todo = {}
-	if view.showTodo then
-		for _, t in s.todo do table.insert(todo, strip(t, t.ref == view.selectedRef, agentOf, waitingTasks)) end
-		if #todo == 0 then table.insert(todo, text("empty", "Nothing for later. Press n to add a task.", "mission.empty")) end
-	end
-	table.insert(main, col("todo", "mission.section", {
-		sectionHead("head", "For later", plural(#s.todo, "task", "tasks") .. (if view.showTodo then " · t hides" else " · t shows")),
-		if view.showTodo then col("list", "mission.strips", todo) else nil,
-	}))
-
 	if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 
 	return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-		dockNode(view, "[ ] tabs   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   t later   n new task   g new goal")
+		dockNode(view, "[ ] tabs   f repo   ↑↓ move   1–9 answer   Enter go to agent   o thread   r review   n new task   g new goal")
 end
 
 do
@@ -411,8 +401,8 @@ do
 		proposed = { { ref = "G-2", title = "p" } },
 		working = { { goal = { ref = "G-1", title = "g", progress = { done = 0, total = 1 } }, tasks = { { ref = "T-2", title = "x", status = "doing", session = "s" } } } },
 		todo = {} }
-	local main, dock = M.view({ sections = sections, selectedRef = "T-1", showTodo = true, reply = Input.new(""), replyTo = "T-1",
-		agentOf = function() return "working" end })
+	local main, dock = M.view({ sections = sections, selectedRef = "T-1", reply = Input.new(""), replyTo = "T-1",
+		repoChoices = { "a" }, repoFilter = "a", agentOf = function() return "working" end })
 	assert(main ~= nil and dock ~= nil, "ui.render.view self-check")
 	local backlog = { now = 0, goals = { { goal = { ref = "G-1", title = "g", status = "done", created = 0 }, tasks = { { ref = "T-2", title = "x", status = "done" } } } }, loose = {} }
 	local bm = M.view({ tab = "backlog", sections = sections, backlog = backlog, expanded = { ["G-1"] = true }, reply = Input.new("") })

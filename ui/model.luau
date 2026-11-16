@@ -64,17 +64,61 @@ function M.sections(state)
 	return { needs = state.waiting, proposed = proposed, working = working, todo = todo, now = state.now }
 end
 
--- What the cursor moves over, in screen order: { kind, item }, kind one of
--- "question", "proposal", "task", "todo". Todo rows count only when shown.
-function M.selectable(sections, showTodo)
+-- What the cursor moves over in the Now tab, in screen order: { kind, item },
+-- kind "question" or "task". Proposed goals and tasks for later live in Backlog.
+function M.selectable(sections)
 	local rows = {}
 	for _, q in sections.needs do table.insert(rows, { kind = "question", item = q }) end
-	for _, g in sections.proposed do table.insert(rows, { kind = "proposal", item = g }) end
 	for _, group in sections.working do
 		for _, t in group.tasks do table.insert(rows, { kind = "task", item = t }) end
 	end
-	if showTodo then for _, t in sections.todo do table.insert(rows, { kind = "todo", item = t }) end end
 	return rows
+end
+
+-- Whether any of `tasks` (or `extra`, a goal's coordinator task) is in `repo`.
+local function touches(tasks, repo, extra)
+	if extra and extra.repo == repo then return true end
+	for _, t in tasks do if t.repo == repo then return true end end
+	return false
+end
+
+-- The Now tab narrowed to one repository (nil: everything). A goal stays when
+-- any of its tasks is in the repository, with all its tasks. Pure.
+function M.filterSections(sections, repo)
+	if not repo then return sections end
+	local needs, working = {}, {}
+	for _, q in sections.needs do if q.repo == repo then table.insert(needs, q) end end
+	for _, group in sections.working do
+		if group.goal then
+			if touches(group.tasks, repo, group.coordinator) then table.insert(working, group) end
+		else
+			local tasks = {}
+			for _, t in group.tasks do if t.repo == repo then table.insert(tasks, t) end end
+			if #tasks > 0 then table.insert(working, { goal = nil, tasks = tasks }) end
+		end
+	end
+	return { needs = needs, working = working, proposed = sections.proposed, todo = sections.todo, now = sections.now }
+end
+
+-- The Backlog narrowed to one repository (nil: everything). Pure.
+function M.filterBacklog(backlog, repo)
+	if not repo or not backlog then return backlog end
+	local goals, loose = {}, {}
+	for _, entry in backlog.goals do if touches(entry.tasks, repo) then table.insert(goals, entry) end end
+	for _, t in backlog.loose do if t.repo == repo then table.insert(loose, t) end end
+	return { goals = goals, loose = loose, now = backlog.now }
+end
+
+-- The repositories goals and tasks are in, by name, for the filter. Pure.
+function M.repoChoices(backlog)
+	local seen, names = {}, {}
+	local function add(t) if t.repo and not seen[t.repo] then seen[t.repo] = true; table.insert(names, t.repo) end end
+	if backlog then
+		for _, entry in backlog.goals do for _, t in entry.tasks do add(t) end end
+		for _, t in backlog.loose do add(t) end
+	end
+	table.sort(names)
+	return names
 end
 
 -- The Backlog tab's groups, from /api/backlog. Pure.
@@ -132,6 +176,9 @@ do
 		tasks = { { ref = "T-3", goal = 2, session = "c" }, { ref = "T-2", goal = 2 }, { ref = "T-1" } } })
 	assert(#b.goals == 2 and #b.goals[1].tasks == 1 and #b.loose == 1, "ui.model.backlog self-check")
 	assert(#M.backlogRows(b, {}) == 3 and #M.backlogRows(b, { ["G-2"] = true }) == 4, "ui.model.backlogRows self-check")
+	b.goals[1].tasks[1].repo, b.loose[1].repo = "web", "api"
+	assert(table.concat(M.repoChoices(b), ",") == "api,web" and #M.filterBacklog(b, "web").goals == 1
+		and #M.filterBacklog(b, "web").loose == 0, "ui.model.repoChoices/filterBacklog self-check")
 end
 
 do
@@ -144,7 +191,10 @@ do
 	})
 	assert(#s.needs == 1 and #s.proposed == 1 and #s.working == 2 and s.working[1].goal.ref == "G-1"
 		and #s.working[1].tasks == 2 and s.working[1].coordinator.ref == "T-6" and #s.todo == 1, "ui.model.sections self-check")
-	assert(#M.selectable(s, false) == 5 and #M.selectable(s, true) == 6, "ui.model.selectable self-check")
+	assert(#M.selectable(s) == 4, "ui.model.selectable self-check")
+	local f = M.filterSections({ needs = { { repo = "a" }, { repo = "b" } },
+		working = { { goal = { ref = "G-1" }, tasks = { { repo = "b" }, { repo = "a" } } }, { tasks = { { repo = "a" }, { repo = "b" } } } } }, "a")
+	assert(#f.needs == 1 and #f.working == 2 and #f.working[1].tasks == 2 and #f.working[2].tasks == 1, "ui.model.filterSections self-check")
 end
 
 return M

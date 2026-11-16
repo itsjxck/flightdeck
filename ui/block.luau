@@ -10,11 +10,17 @@ local POLL_MS = 2000
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
+-- Sections and backlog narrowed to the repository filter (state.repoFilter, nil: all).
+local function shown(state)
+	return model.filterSections(state.sections, state.repoFilter), model.filterBacklog(state.backlog, state.repoFilter)
+end
+
 -- The selectable rows of the shown tab and the index of the selected one (by ref, so a refresh keeps it).
 local function rows(state)
-	local list = if state.tab == "backlog" then (if state.backlog then model.backlogRows(state.backlog, state.expanded) else {})
+	local sections, backlog = shown(state)
+	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded) else {})
 		elseif state.tab == "repos" then (state.repos or {})
-		else model.selectable(state.sections, state.showTodo)
+		else model.selectable(sections)
 	local index = 1
 	for i, r in list do
 		local ref = r.item.task or r.item.ref
@@ -52,7 +58,8 @@ local function refresh(state, cx)
 				pcall(function() cx:render() end)
 			end)
 		end
-		if state.tab == "backlog" then
+		-- Every tab: the backlog also gives the repository filter its choices.
+		do
 			model.api("GET", "/api/backlog", nil, function(data)
 				if data then state.backlog = model.backlog(data) end
 				pcall(function() cx:render() end)
@@ -157,9 +164,10 @@ local function activate(state, cx)
 end
 
 local DEF = {
-	init = function(cx, args)
+	init = function(cx, args, saved)
 		local state = {
-			sections = EMPTY, selectedRef = args[1], showTodo = false, thread = nil,
+			sections = EMPTY, selectedRef = args[1], thread = nil,
+			repoFilter = if type(saved) == "table" and type(saved.repoFilter) == "string" then saved.repoFilter else nil,
 			tab = "now", backlog = nil, expanded = {},
 			reply = Input.new(""), newTask = false, error = nil, alive = true,
 		}
@@ -176,9 +184,11 @@ local DEF = {
 		local row = list[index]
 		local to, hint = replyTarget(state)
 		local agents = tern.kv.get("mission:agents")
+		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, backlog = state.backlog, expanded = state.expanded, repos = state.repos,
-			sections = state.sections, selectedRef = row and (row.item.task or row.item.ref), showTodo = state.showTodo,
+			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos,
+			repoChoices = model.repoChoices(state.backlog), repoFilter = state.repoFilter,
+			sections = sections, selectedRef = row and (row.item.task or row.item.ref),
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
 		})
@@ -194,6 +204,7 @@ local DEF = {
 			if state.reply.text ~= "" then state.reply = Input.new("")
 			elseif state.newTask or state.newGoal then state.newTask, state.newGoal = false, nil
 			elseif state.thread then state.thread = nil
+			elseif state.repoFilter then state.repoFilter = nil
 			else return false end
 		elseif not typing and (key.name == "[" or key.name == "]" or key.name == "bracketleft" or key.name == "bracketright") then
 			switchTab(state, cx, stepTab(state, if key.name == "[" or key.name == "bracketleft" then -1 else 1))
@@ -210,8 +221,19 @@ local DEF = {
 			local row = list[index]
 			if not row or row.kind ~= "task" then return false end
 			model.request({ kind = "review", task = row.item.ref })
-		elseif not typing and key.name == "t" then
-			state.showTodo = not state.showTodo
+		elseif not typing and key.name == "f" and state.tab ~= "repos" then
+			-- Next repository in the filter, then back to all.
+			local choices, nextRepo = model.repoChoices(state.backlog), nil
+			for i, name in choices do
+				if name == state.repoFilter then nextRepo = choices[i + 1] end
+			end
+			if state.repoFilter == nil then nextRepo = choices[1] end
+			state.repoFilter = nextRepo
+		elseif not typing and key.name == "s" and state.tab == "backlog" then
+			local row = list[index]
+			if not (row and row.kind == "goal" and row.item.status == "proposed") then return false end
+			model.request({ kind = "start", goal = row.item.ref })
+			state.error = "Starting " .. row.item.ref .. " in a session of its own…"
 		elseif not typing and key.name == "n" then
 			state.newTask = true
 		elseif not typing and key.name == "s" and state.tab == "repos" then
@@ -252,6 +274,7 @@ local DEF = {
 		elseif verb == "repo" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepo(state, cx, r.item) end end
+		elseif verb == "filter" then state.repoFilter = if a == "*" then nil else a
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
 		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"
@@ -259,7 +282,7 @@ local DEF = {
 		end
 	end,
 	save = function(state)
-		return { showTodo = state.showTodo }
+		return { repoFilter = state.repoFilter }
 	end,
 }
 tern.block.define("mission", DEF)

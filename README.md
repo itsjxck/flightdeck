@@ -46,16 +46,14 @@ The sidebar stays with you: it sits on the left of whichever tab you're looking 
 
 ## Mission control
 
-**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. It shows:
+**Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>) lives in a session of its own, also called Mission control, left out of Spaces. Three tabs (<kbd>[</kbd> <kbd>]</kbd>); on Now and Backlog, the chips under the tabs (or <kbd>f</kbd>) narrow everything to one repository, <kbd>Esc</kbd> clears it.
 
-- **Needs you**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
-- **Proposed goals**: from agents (`goal_propose`) or from you (<kbd>g</kbd>: a title, then optional details). A goal needs no tasks: <kbd>Enter</kbd> (or Start goal) opens it in a session of its own, where its coordinator reads the repositories, plans the tasks (`goal_plan` add, edit, drop), starts workers in their own worktrees and manages them to the end.
-- **Working**: tasks in progress, grouped by goal with progress. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
-- **Finished goals** (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
-- **Todo**: <kbd>t</kbd> shows it, <kbd>n</kbd> adds a task.
-- **Backlog** tab (<kbd>[</kbd> <kbd>]</kbd> switch tabs): every goal, newest first, with its status; <kbd>Enter</kbd> shows a goal's tasks. Then every task outside goals.
-
-- **Repos** tab: every Git repository Overseer knows. The server finds them by scanning your home folder (to 5 levels, skipping `Library`, `node_modules` and the like; rescans every 30 minutes, <kbd>s</kbd> scans now; roots, depth and skipped folders in `<plugin data>/repos.json`), plus ones agents work in. <kbd>Enter</kbd> ignores a repository: coordinators aren't told about it.
+- **Now**: only what's happening.
+  - **Your turn**: every question agents asked with `ask_user`, with its options. Press <kbd>1</kbd>–<kbd>9</kbd> for an option, or type a reply and press <kbd>Enter</kbd>; the agent gets it within seconds.
+  - **Goals** running, with their coordinator's state, a rail of their tasks and the tasks below; **finished** ones (the coordinator reported back) stay, green, with **Close goal**: review the worktrees first. Closing marks the goal done and closes its session; the worktrees stay.
+  - **Work in progress** outside goals. <kbd>Enter</kbd> goes to the agent, <kbd>o</kbd> shows the task's thread (reply there too), <kbd>r</kbd> opens a tab in its worktree to review with the Branch widget.
+- **Backlog**: every goal, newest first, with its status; <kbd>Enter</kbd> shows a goal's tasks, <kbd>s</kbd> (or Start goal) starts a proposed one. Goals come from agents (`goal_propose`) or from you (<kbd>g</kbd>: a title, then optional details). A goal needs no tasks: once started it runs in a session of its own, where its coordinator reads the repositories, plans the tasks (`goal_plan` add, edit, drop), starts workers in their own worktrees and manages them to the end. Then every task outside goals; <kbd>n</kbd> adds one.
+- **Repos**: every Git repository Overseer knows. The server finds them by scanning your home folder (to 5 levels, skipping `Library`, `node_modules` and the like; rescans every 30 minutes, <kbd>s</kbd> scans now; roots, depth and skipped folders in `<plugin data>/repos.json`), plus ones agents work in. <kbd>Enter</kbd> ignores a repository: coordinators aren't told about it.
 
 A goal's coordinator owns its workers: it closes finished ones (`worker_stop`; the worktree stays) and starts fresh ones for follow-up work (`worker_start` with `context`, on a new task or a finished one, which reopens in its worktree).
 
