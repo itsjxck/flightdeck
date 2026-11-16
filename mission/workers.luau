@@ -39,7 +39,15 @@ function M.tabArgs(start, repoPath, wtPath, base)
 	return args
 end
 
+-- Whether a branch is one branchFor made for a goal's worker: g3.2-… (or t-12-…
+-- from before goal-numbered tasks). Spaces leaves those worktrees out.
+function M.isWorkerBranch(branch)
+	return type(branch) == "string" and (string.match(branch, "^g%d+%.%d+") ~= nil or string.match(branch, "^t%-%d+%-") ~= nil)
+end
+
 do
+	assert(M.isWorkerBranch("g1.3-db-secrets") and M.isWorkerBranch("t-5-db-land") and not M.isWorkerBranch("main")
+		and not M.isWorkerBranch("feat/g1.3") and not M.isWorkerBranch(nil), "workers.isWorkerBranch self-check")
 	assert(M.branchFor("T-12", "Fix the Tick: stalls!") == "t-12-fix-the-tick-stalls", "workers.branchFor self-check")
 	assert(#M.branchFor("T-1", string.rep("word ", 20)) <= 48, "workers.branchFor length self-check")
 	local s = { task = "T-3", title = "Add API", ternSession = "9", readonly = false }

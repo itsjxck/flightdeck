@@ -27,6 +27,7 @@ M.api = client.api
 M.startOldestProposedGoal = goals.startOldestProposed
 M.startGoal = goals.start
 M.state = state
+M.workers = workers
 -- Which pane each omp session runs in, from the last poll ({ [session] = pane }).
 M.sessionPanes = {}
 

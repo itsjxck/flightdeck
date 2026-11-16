@@ -877,3 +877,10 @@
   margin: 10px 4px 12px;
   background: color-mix(in srgb, var(--t4) 25%, transparent);
 }
+/* A goal task's state at the end of its row: one line, never squeezed; the title gives way. */
+[data-role='overseer.taskState'] {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.82em;
+  color: var(--t3);
+}

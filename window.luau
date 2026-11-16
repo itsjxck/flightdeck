@@ -349,7 +349,8 @@ local function model(cx)
 		local repo = repoById(repoId)
 		local rows = {}
 		for _, worktree in (entry and entry.worktrees or {}) do
-			if not (anchor.tree and anchor.tree.path == worktree.path) then
+			-- Goal workers' worktrees belong to their goal (Goals, Mission control), not Spaces.
+			if not (anchor.tree and anchor.tree.path == worktree.path) and not mission.workers.isWorkerBranch(worktree.branch) then
 				local session = boundSession(worktree.path, sessions, bindings)
 				local space = session and byId[session.id]
 				if not space then
@@ -448,7 +449,8 @@ local function model(cx)
 					-- A finished task's agent may linger idle; show the task's status instead.
 					local state = if agent and t.status == "doing" then agent.state else nil
 					if state and (not goal.dot or URGENCY[state] > URGENCY[goal.dot]) then goal.dot = state end
-					-- The coordinator's own task colours the goal's dot but isn't listed.
+					-- The coordinator's own task colours the goal's dot but isn't listed; its pane is where the goal opens.
+					if t.session ~= nil and t.session == g.coordinator then goal.coordinatorPane = pane end
 					if t.session == nil or t.session ~= g.coordinator then
 						table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
 					end

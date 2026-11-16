@@ -333,7 +333,9 @@ local function goalNode(goal)
 	local line = ui.node("row", { key = "line", role = "overseer.spaceLine" }, {
 		ui.node("row", {
 			key = "row", role = "overseer.spaceRow", grow = 1, title = "Go to " .. goal.ref .. "'s session",
-			actions = { click = if goal.session then "goal=" .. goal.session else "mission", menu = { "Open Mission control", "Close goal" } },
+			-- The coordinator's pane, else the goal's session, else Mission control.
+			actions = { click = if goal.coordinatorPane then "pane=" .. goal.coordinatorPane
+				elseif goal.session then "goal=" .. goal.session else "mission", menu = { "Open Mission control", "Close goal" } },
 		}, { ui.node("row", { key = "head", role = "overseer.spaceHead", grow = 1 }, head) }),
 		ui.node("row", { key = "buttons", role = "overseer.buttons" }, {
 			iconButton("collapse", if goal.collapsed then "iconCollapsed" else "iconExpanded", "collapse=goal:" .. goal.ref,
@@ -352,7 +354,7 @@ local function goalNode(goal)
 			}, {
 				ui.el("div", { key = "status", role = if state then state.dot else "overseer.dotIdle" }),
 				text("name", t.ref .. " · " .. t.title, "overseer.worktreeName", { grow = 1 }),
-				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.hint"),
+				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "overseer.taskState"),
 			}))
 		end
 		table.insert(children, ui.node("col", { key = "tasks", role = "overseer.worktrees" }, rows))
