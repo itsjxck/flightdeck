@@ -161,7 +161,8 @@ end
 function M.repoRows(data)
 	local rows = {}
 	for _, r in data.repos do
-		table.insert(rows, { kind = "repo", item = { ref = r.name, name = r.name, path = r.path, source = r.source, ignored = r.ignored == 1 } })
+		table.insert(rows, { kind = "repo", item = { ref = r.name, name = r.name, path = r.path, source = r.source,
+			ignored = r.ignored == 1, issuesIgnored = r.issues_ignored == 1 } })
 	end
 	return rows
 end

@@ -220,6 +220,15 @@ issueKey = function(state, cx, name, row)
 	return true
 end
 
+-- Hides a repository's issues from the Issues tab, or shows them again; agents still see the repository.
+local function toggleRepoIssues(state, cx, repo)
+	model.api("POST", "/api/repos/" .. repo.name .. "/ignore-issues", { ignored = not repo.issuesIgnored }, function(_, err)
+		state.error, state.issuesAt = err, nil
+		refresh(state, cx)
+	end)
+	repo.issuesIgnored = not repo.issuesIgnored
+end
+
 local function switchTab(state, cx, tab)
 	state.tab, state.thread = tab, nil
 	refresh(state, cx)
@@ -331,6 +340,10 @@ local DEF = {
 			state.error = "Starting " .. row.item.ref .. " in a session of its own…"
 		elseif not typing and key.name == "n" then
 			state.newTask = true
+		elseif not typing and key.name == "i" and state.tab == "repos" then
+			local row = list[index]
+			if not row then return false end
+			toggleRepoIssues(state, cx, row.item)
 		elseif not typing and key.name == "s" and state.tab == "repos" then
 			state.error = "Scanning for repositories…"
 			model.api("POST", "/api/repos/scan", {}, function(r, err)
@@ -377,6 +390,9 @@ local DEF = {
 		elseif verb == "repo" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepo(state, cx, r.item) end end
+		elseif verb == "repoissues" then
+			state.selectedRef = a
+			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepoIssues(state, cx, r.item) end end
 		elseif verb == "mark" then state.marked[a] = not state.marked[a] or nil
 		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil

@@ -30,7 +30,7 @@ const ISSUES_TTL_MS = 10 * 60_000;
 let issueCache: { at: number; issues: Issue[]; errors: string[] } | null = null;
 async function issues(store: Store, refresh: boolean) {
   if (refresh || !issueCache || Date.now() - issueCache.at > ISSUES_TTL_MS) {
-    const r = await listIssues(store.repos().map((x) => ({ name: x.name, path: x.path })));
+    const r = await listIssues(store.repos().filter((x) => !x.issues_ignored).map((x) => ({ name: x.name, path: x.path })));
     issueCache = { at: Date.now(), ...r };
   }
   return issueCache;
@@ -129,9 +129,13 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "GET repos":
         return json({ repos: store.repos({ ignored: true }) });
       case "POST repos": {
-        // POST /api/repos/<name>/ignore {ignored}
-        if (parts[2] !== "ignore") break;
-        store.setRepoIgnored(decodeURIComponent(parts[1] ?? ""), body.ignored === true);
+        // POST /api/repos/<name>/ignore {ignored} (agents don't see it), /ignore-issues {ignored} (Issues tab skips it)
+        const name = decodeURIComponent(parts[1] ?? "");
+        if (parts[2] === "ignore") store.setRepoIgnored(name, body.ignored === true);
+        else if (parts[2] === "ignore-issues") {
+          store.setRepoIssuesIgnored(name, body.ignored === true);
+          issueCache = null;
+        } else break;
         return json({ ok: true });
       }
       case "GET issues": {

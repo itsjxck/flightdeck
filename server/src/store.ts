@@ -57,7 +57,8 @@ create table if not exists goal_issues (
   goal integer not null references goals(id), repo text not null, number integer not null,
   title text not null default '', url text not null default '', primary key (goal, repo, number));
 create table if not exists repos (name text primary key, path text not null,
-  source text not null default 'learned', ignored integer not null default 0);
+  source text not null default 'learned', ignored integer not null default 0,
+  issues_ignored integer not null default 0);
 `;
 
 type PlanTask = { key: string; title: string; body?: string; repo: string; needs?: string[]; readonly?: boolean };
@@ -77,6 +78,7 @@ export class Store {
       this.db.exec("alter table repos add column source text not null default 'learned'");
       this.db.exec("alter table repos add column ignored integer not null default 0");
     }
+    if (!repoCols.some((c) => c.name === "issues_ignored")) this.db.exec("alter table repos add column issues_ignored integer not null default 0");
   }
 
   static tid(id: number) { return `T-${id}`; }
@@ -304,10 +306,16 @@ export class Store {
     if (r.changes === 0) throw new Error(`unknown repository ${name}`);
   }
 
+  // Its issues stay out of Mission control; agents still know the repository.
+  setRepoIssuesIgnored(name: string, ignored: boolean) {
+    const r = this.db.query("update repos set issues_ignored = ? where name = ?").run(ignored ? 1 : 0, name);
+    if (r.changes === 0) throw new Error(`unknown repository ${name}`);
+  }
+
   // Every known repository; ignored ones only when asked (agents never see them).
-  repos(opts: { ignored?: boolean } = {}): { name: string; path: string; source: string; ignored: number }[] {
-    return this.db.query(`select name, path, source, ignored from repos ${opts.ignored ? "" : "where ignored = 0"} order by name`)
-      .all() as { name: string; path: string; source: string; ignored: number }[];
+  repos(opts: { ignored?: boolean } = {}): { name: string; path: string; source: string; ignored: number; issues_ignored: number }[] {
+    return this.db.query(`select name, path, source, ignored, issues_ignored from repos ${opts.ignored ? "" : "where ignored = 0"} order by name`)
+      .all() as { name: string; path: string; source: string; ignored: number; issues_ignored: number }[];
   }
 
   repoPath(name: string | null): string | null {

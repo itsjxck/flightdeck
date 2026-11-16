@@ -345,20 +345,24 @@ end
 -- learned from agents), and whether agents may use it.
 local function repoNodes(view)
 	if not view.repos then return { text("loading", "Loading…", "mission.empty") } end
-	local rows, ignored = {}, 0
+	local rows, ignored, issuesHidden = {}, 0, 0
 	for _, r in view.repos do
 		local it = r.item
-		if it.ignored then ignored += 1 end
+		if it.ignored then ignored += 1 elseif it.issuesIgnored then issuesHidden += 1 end
 		table.insert(rows, row("r" .. it.name, if it.ignored then "mission.repoIgnored" else "mission.repo", {
 			text("name", it.name, "mission.repoName"),
 			text("path", (string.gsub(it.path, "^/Users/[^/]+", "~")), "mission.repoPath", { grow = 1 }),
 			text("source", if it.source == "learned" then "from an agent" else "found", "mission.goalProgress"),
-			text("state", if it.ignored then "Ignored" else "Used", if it.ignored then "mission.statusChip-dropped" else "mission.statusChip-finished"),
-		}, { actions = { click = "repo=" .. it.name }, mark = if it.name == view.selectedRef then "pick" else nil,
-			title = if it.ignored then "Agents don't see it. Enter to use it again" else "Enter to hide it from agents" }))
+			text("issues", if it.ignored or it.issuesIgnored then "Issues hidden" else "Issues shown",
+				if it.ignored or it.issuesIgnored then "mission.statusChip-dropped" else "mission.statusChip-proposed",
+				{ actions = { click = "repoissues=" .. it.name }, title = "Whether the Issues tab lists its GitHub issues (i)" }),
+			text("state", if it.ignored then "Ignored" else "Used", if it.ignored then "mission.statusChip-dropped" else "mission.statusChip-finished",
+				{ actions = { click = "repo=" .. it.name }, title = if it.ignored then "Agents don't see it. Enter to use it again" else "Agents can use it. Enter to hide it from them" }),
+		}, { actions = { click = "select=" .. it.name }, mark = if it.name == view.selectedRef then "pick" else nil }))
 	end
 	return { col("repos", "mission.section", {
-		sectionHead("head", "Repositories", plural(#view.repos, "known", "known") .. " · " .. tostring(ignored) .. " ignored · rescanned every 30 min"),
+		sectionHead("head", "Repositories", plural(#view.repos, "known", "known") .. " · " .. tostring(ignored) .. " ignored · "
+			.. tostring(issuesHidden) .. " with issues hidden · rescanned every 30 min"),
 		if #rows > 0 then col("list", "mission.strips", rows) else text("none", "None found yet. Press s to scan.", "mission.empty"),
 	}) }
 end
@@ -391,7 +395,7 @@ function M.view(view)
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   ↑↓ move   Enter ignore / use   s scan now")
+			dockNode(view, "[ ] tabs   ↑↓ move   Enter ignore / use (agents)   i hide / show issues   s scan now")
 	end
 	if view.tab == "backlog" then
 		view.agentOf = agentOf

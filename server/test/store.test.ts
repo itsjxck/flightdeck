@@ -148,6 +148,8 @@ describe("goals and conversation", () => {
     const again = store.syncScanned([{ name: "a", path: "/p/a" }, { name: "a", path: "/q/a" }]);
     expect(again).toMatchObject({ added: 0, removed: 1, duplicates: [{ name: "a", path: "/q/a" }] });
     expect(store.repos({ ignored: true })).toMatchObject([{ name: "a", ignored: 1 }]);
+    store.setRepoIssuesIgnored("b", true);
+    expect(store.repos()).toMatchObject([{ name: "b", ignored: 0, issues_ignored: 1 }]);
   });
 
   test("issues link to a goal once each, and unlink", () => {
