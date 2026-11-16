@@ -47,7 +47,8 @@ local function replyTarget(state)
 	if state.thread then return state.thread.task, nil end
 	if state.tab ~= "now" then return nil, nil end
 	local row = selectedRow(state)
-	if row and row.kind == "question" then return row.item.task, nil end
+	-- The selected question's answer field sits in its card (third value).
+	if row and row.kind == "question" then return row.item.task, nil, true end
 	return nil, nil
 end
 
@@ -276,7 +277,7 @@ local DEF = {
 	view = function(state)
 		local list, index = rows(state)
 		local row = list[index]
-		local to, hint = replyTarget(state)
+		local to, hint, inCard = replyTarget(state)
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
@@ -285,7 +286,7 @@ local DEF = {
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
 			sections = sections, selectedRef = row and (row.item.task or row.item.ref),
-			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
+			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, replyInCard = inCard, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
 		})
 		return { main = main, dock = dock }

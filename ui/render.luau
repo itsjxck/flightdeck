@@ -99,7 +99,8 @@ local function summary(s, agentOf)
 end
 
 -- A question waiting on you.
-local function questionNode(q, picked, now)
+-- `reply`: the answer field's props when this card is the selected one.
+local function questionNode(q, picked, now, reply)
 	local options = {}
 	for i, option in (q.options or {}) do
 		local recommended = q.recommended == i
@@ -119,8 +120,11 @@ local function questionNode(q, picked, now)
 		col("question", "mission.questionText", { ui.md(q.question) }),
 	}
 	if #options > 0 then table.insert(children, row("options", "mission.options", options)) end
-	table.insert(children, text("how", if #options > 0 then "Press a number, or type your own answer below"
-		else "Type your answer below and press Enter", "mission.hint"))
+	if reply then
+		table.insert(children, ui.node("input", reply))
+	else
+		table.insert(children, text("how", "Click to answer", "mission.hint"))
+	end
 	return col("q" .. q.task, if picked then "mission.questionPicked" else "mission.question", children,
 		{ actions = { click = "select=" .. q.task }, mark = if picked then "pick" else nil })
 end
@@ -233,7 +237,7 @@ end
 -- The dock: the reply field when something takes text, then what the keys do.
 local function dockNode(view, keys)
 	local dock = {}
-	if view.replyTo then
+	if view.replyTo and not view.replyInCard then
 		local props = Input.props(view.reply)
 		props.key, props.role, props.grow = "reply", "mission.reply", 1
 		props.placeholder = view.replyHint or ("Answer " .. view.replyTo .. " and press Enter")
@@ -511,7 +515,17 @@ function M.view(view)
 	-- Your turn
 	if #s.needs > 0 then
 		local cards = {}
-		for _, q in s.needs do table.insert(cards, questionNode(q, q.task == view.selectedRef, s.now)) end
+		for _, q in s.needs do
+			local picked = q.task == view.selectedRef
+			local reply
+			if picked and view.replyInCard then
+				reply = Input.props(view.reply)
+				reply.key, reply.role = "reply", "mission.cardReply"
+				reply.placeholder = if q.options and #q.options > 0 then "Press a number, or type your own answer and press Enter"
+					else "Type your answer and press Enter"
+			end
+			table.insert(cards, questionNode(q, picked, s.now, reply))
+		end
 		table.insert(main, col("needs", "mission.section", {
 			sectionHead("head", "Your turn", plural(#s.needs, "question", "questions")),
 			col("cards", "mission.questions", cards),

@@ -725,6 +725,15 @@
   background: var(--card);
 }
 [data-role='mission.optionLabel'] { font-size: 14px; color: var(--t1); }
+[data-role='mission.cardReply'] {
+  margin-top: 4px;
+  font: 14px/1.4 var(--sans);
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--l3);
+  background: var(--card);
+  color: var(--t1);
+}
 [data-role='mission.optionNote'] { font-size: 11px; color: var(--accent); letter-spacing: 0.02em; }
 
 [data-role='mission.allClear'] {
