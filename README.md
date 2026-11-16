@@ -11,6 +11,11 @@ It does two jobs:
 
 Everything runs on your Mac: a small local server (Bun, SQLite) behind a random token, talking to Tern and to omp. Nothing is sent anywhere except the GitHub calls you'd make with `gh`.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/mission-now-dark.png">
+  <img src="docs/images/mission-now-light.png" alt="Mission control's Now tab: a question from an agent with two options, and two running goals with their tasks, progress rails and agent states, beside the Flightdeck sidebar" width="900">
+</picture>
+
 ## What you can do
 
 **In the sidebar**
@@ -19,6 +24,11 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 - Create and delete worktrees through [Worktrunk](https://worktrunk.dev) (your hooks and approvals run in a visible tab), see their PRs, uncommitted changes and conflicts at a glance.
 - Right-click a worktree for **Visualize PR**: a read-only, diagram-first outline of its pull request.
 - See each running goal, its progress and its tasks, under **Goals**.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/sidebar-dark.png">
+  <img src="docs/images/sidebar-light.png" alt="The sidebar: spaces with a worktree that has uncommitted changes, running goals with their open tasks, and the agents list, beside an omp agent" width="700">
+</picture>
 
 **In Mission control** (the button at the top of the sidebar, or <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>)
 
@@ -29,6 +39,22 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 | **Issues** | Open GitHub issues across your repositories. Make one (or several) into a goal, link one to a goal, open it, or close it as not planned. |
 | **Stats** | Spend per day, project, model and goal (read from omp's own usage records), agents working per hour, tasks finished per day. Hover a bar for details. |
 | **Repos** | Every Git repository Flightdeck found on your Mac. Hide one from agents, or hide just its issues. |
+
+<table><tr><td>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/mission-backlog-dark.png">
+  <img src="docs/images/mission-backlog-light.png" alt="The Backlog tab: a proposed goal to start, running goals, tasks outside goals and what finished today" width="440">
+</picture>
+
+</td><td>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/mission-stats-dark.png">
+  <img src="docs/images/mission-stats-light.png" alt="The Stats tab: spend today and over 7 and 30 days, spend per day, agents working per hour, tasks done per day" width="440">
+</picture>
+
+</td></tr></table>
 
 **How a goal runs**
 
@@ -55,7 +81,7 @@ You need macOS and:
 | [Bun](https://bun.sh) | Mission control's server | |
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Issues, Visualize PR | optional |
 
-1. Install it into Tern:
+1. Install it into Tern: in Tern's plugin settings, add `https://github.com/itsjxck/flightdeck`. Or from a terminal:
    ```sh
    /Applications/Tern.app/Contents/MacOS/tern plugin install github.com/itsjxck/flightdeck
    ```
@@ -226,6 +252,9 @@ In-memory only: `repos` and `dirRepo` (which folder is in which repository, `fal
 **Visualize PR.** `wt.pull_request_meta` (`gh pr view --json …`) and `wt.pull_request_diff` (`gh pr diff > file`) write the PR into a temp dir under plugin data. Then `omp -p --no-session --no-extensions --no-skills --no-title --tools=read,grep,glob "<prompt>"` runs in the worktree with a 10-minute timeout. Its stdout from the first Markdown heading becomes the canvas. The read-only guarantee is the tool allow-list. Keep it that way: never add shell, edit or write tools, and never let it call `gh`.
 
 ### Developing
+
+**Screenshots.** `scripts/showcase.sh` opens a separate Tern window (its own config, daemon and Flightdeck server on port 8096) with made-up repositories, goals, tasks, a question and two weeks of spend; nothing touches your own Tern or data. `scripts/showcase-shots.sh` then takes the README's screenshots, light and dark, into `docs/images/`.
+
 
 Run the helper's tests (they use temporary repos, config and approvals):
 

@@ -2022,6 +2022,8 @@ end
 -- can't see agents. Written only when it changes.
 local publishedAgents = ""
 local function publishAgents()
+	-- Nothing resolved yet (just started, or no agent connected): keep the last map.
+	if next(mission.sessionPanes or {}) == nil then return end
 	local states = {}
 	for session, pane in mission.sessionPanes or {} do
 		local id = tonumber(pane)

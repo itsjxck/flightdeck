@@ -13,7 +13,8 @@ import { join, relative } from "node:path";
 import { homedir } from "node:os";
 import type { Store } from "./store";
 
-const SESSIONS = join(homedir(), ".omp/agent/sessions");
+// FLIGHTDECK_OMP_SESSIONS points it elsewhere (the screenshot demo).
+const SESSIONS = process.env.FLIGHTDECK_OMP_SESSIONS ?? join(homedir(), ".omp/agent/sessions");
 const SESSION_ID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/;
 const DAY_MS = 86_400_000;
 

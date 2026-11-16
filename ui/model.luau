@@ -3,7 +3,7 @@
 -- No drawing (ui/render.luau) and no block wiring (ui/block.luau).
 local M = {}
 
-local BASE = "http://127.0.0.1:8095"
+local BASE = "http://127.0.0.1:" .. (tonumber(tern.getenv("FLIGHTDECK_PORT") or "") or 8095)
 
 local function token()
 	local ok, t = pcall(tern.fs.read, tern.plugin.data .. "/token", 256)

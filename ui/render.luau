@@ -69,13 +69,15 @@ function M.taskState(t, agent, waiting)
 		return "lost", "No agent"
 	end
 	if t.status == "ready" then return "pending", "Ready to start" end
+	if t.goal == nil then return "pending", "For later" end
 	return "pending", "Waiting on others"
 end
 
 -- A note on one line, without Markdown emphasis and code marks. Pure.
 function M.oneLine(s)
 	if not s then return nil end
-	return (string.gsub(string.gsub(s, "[*_`]+", ""), "%s+", " "))
+	-- Emphasis marks only: underscores inside words (apple_pay) stay.
+	return (string.gsub(string.gsub(string.gsub(s, "[*`]+", ""), "%f[%w]__?(.-)__?%f[%W]", "%1"), "%s+", " "))
 end
 local oneLine = M.oneLine
 
@@ -743,7 +745,7 @@ do
 	assert(M.barStep(0, 10) == 0 and M.barStep(0.1, 10) == 1 and M.barStep(10, 10) == 20 and M.barStep(5, 0) == 0, "ui.render.barStep self-check")
 	assert(M.money(1.234) == "$1.23" and M.count(1234567) == "1.2M" and M.count(8.07e9) == "8.1B" and M.count(34000) == "34k" and M.shortDay("2026-11-06") == "6 Nov",
 		"ui.render money/count/shortDay self-check")
-	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b", "ui.render.oneLine self-check")
+	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b" and M.oneLine("accepts apple_pay") == "accepts apple_pay", "ui.render.oneLine self-check")
 	assert(M.ago(120000, 0) == "2 min ago" and M.ago(1000, 0) == "just now" and M.ago(nil, 0) == nil, "ui.render.ago self-check")
 	assert(M.taskState({ status = "doing" }, nil) == "lost" and M.taskState({ status = "doing" }, "working") == "working"
 		and M.taskState({ status = "todo" }, nil, true) == "waiting", "ui.render.taskState self-check")

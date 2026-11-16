@@ -3,7 +3,8 @@
 -- `tern` CLI lives and a warn-once logger, shared by the mission modules.
 local M = {}
 
-M.PORT = 8095
+-- FLIGHTDECK_PORT in Tern's environment moves the server (a second instance, a demo).
+M.PORT = tonumber(tern.getenv("FLIGHTDECK_PORT") or "") or 8095
 M.BASE = "http://127.0.0.1:" .. M.PORT
 M.TERN = tern.getenv("TERN_EXE") or "/Applications/Tern.app/Contents/MacOS/tern"
 
