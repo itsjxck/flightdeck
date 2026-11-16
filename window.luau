@@ -2000,20 +2000,23 @@ tern.command({ id = "mission", title = "Mission control", icon = "list", keys = 
 
 -- Closes goal `ref` (G-3): marks it done on the server and closes its session.
 -- Its worktrees stay, for review; Delete worktree removes them.
+-- Close goal (sidebar menu): Mission control shows what closing does (its
+-- worktrees, which PRs merged) and asks; see ui/block.luau.
 local function closeGoal(cx, ref)
-	local goal
-	for _, g in mission.state.get().goals do if g.ref == ref then goal = g end end
-	if not goal then report(cx, "That goal is no longer active."); return end
-	mission.api("POST", "/api/goals/" .. goal.ref .. "/close", { status = "done" }, function(_, err, nextCx)
-		if err then if nextCx then report(nextCx, "Couldn't close " .. goal.ref .. ": " .. err) end; return end
-		if nextCx and goal.tern_session then pcall(function() nextCx.sessions:close(tonumber(goal.tern_session)) end) end
-		oplog.write("info", { op = "mission", event = "goal closed", detail = goal.ref })
-	end)
+	if not ref then return end
+	tern.kv.set("mission:closeGoal", ref)
+	openMissionControl(cx)
+end
+
+-- After Mission control closed a goal: close its session (the worktrees go with their PRs, cleanup.ts).
+local function goalClosed(cx, ref, session)
+	if session then pcall(function() cx.sessions:close(tonumber(session)) end) end
+	oplog.write("info", { op = "mission", event = "goal closed", detail = ref })
 end
 
 -- Requests from the Mission control block (host half), which can't open
 -- sessions or focus panes itself: kv `mission:requests`, a list of
--- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" }, { kind = "session", goal = "G-3" } or { kind = "close", goal = "G-3" }.
+-- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" }, { kind = "session", goal = "G-3" } or { kind = "closed", goal = "G-3", session }.
 -- Publishes how each task's agent is doing (kv `mission:agents`, omp session
 -- → "working" | "waiting" | "idle") for the Mission control block, which
 -- can't see agents. Written only when it changes.
@@ -2061,7 +2064,7 @@ local function missionRequests(cx)
 					end)
 				end
 			end
-		elseif r.kind == "close" then closeGoal(cx, r.goal)
+		elseif r.kind == "closed" then goalClosed(cx, r.goal, r.session)
 		elseif r.kind == "url" and type(r.url) == "string" and string.match(r.url, "^https://") then
 			tern.process.run({ "/usr/bin/open", r.url }, { timeout_ms = 10000 }, function() end)
 		elseif r.kind == "session" then

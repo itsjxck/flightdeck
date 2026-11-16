@@ -30,6 +30,19 @@ function M.new(kind, opts)
 				field("title", "Task", "What needs doing", true),
 				field("repo", "Repository", "Its name, as in Repos", true, opts.repo),
 			} }
+	elseif kind == "close" then
+		-- No fields: what closing does, per worktree. `opts.worktrees` from /api/goals/G3/worktrees.
+		local merged, lines = 0, {}
+		for _, w in opts.worktrees do
+			local state = if w.pr then "PR #" .. tostring(w.pr.number) .. " " .. string.lower(w.pr.state) else "no PR"
+			if w.pr and w.pr.state == "MERGED" and w.status == "done" then merged += 1 end
+			table.insert(lines, "• " .. w.task .. "  " .. w.branch .. ": " .. state)
+		end
+		local note = if #lines == 0 then "It has no worktrees left."
+			else table.concat(lines, "\n") .. "\n\n" .. (if merged > 0 then tostring(merged) .. " merged one(s) will be removed with their branches; " else "")
+				.. "the others stay for you to finish."
+		return { kind = kind, title = "Close " .. opts.goal, submit = "Close goal", focus = 1, goal = opts.goal, session = opts.session,
+			note = "Marks the goal done and closes its session.\n\n" .. note, fields = {} }
 	elseif kind == "link" then
 		return { kind = kind, title = "Link " .. opts.issue, submit = "Link", focus = 1, issue = opts.issue,
 			note = "Its coordinator and workers see the issue; Flightdeck comments on it when the goal starts and finishes.",
@@ -56,6 +69,7 @@ end
 -- A key in the dialog: returns "submit", "cancel", or nil (handled here: typing, Tab, Enter to the next field).
 function M.key(d, key)
 	if key.name == "escape" or key.name == "esc" then return "cancel" end
+	if #d.fields == 0 then return if key.name == "enter" then "submit" else nil end
 	if key.name == "tab" then
 		d.focus = (d.focus - 1 + (if key.shift then -1 else 1)) % #d.fields + 1
 		return nil
@@ -101,6 +115,8 @@ do
 	M.key(d, { name = "a", text = "a" })
 	assert(M.key(d, { name = "enter" }) == nil and d.focus == 2 and M.key(d, { name = "enter" }) == "submit", "ui.dialog.key self-check")
 	assert(M.values(d).title == "a" and M.missing(d) == nil and M.node(d) ~= nil, "ui.dialog.values self-check")
+	local c = M.new("close", { goal = "G1", worktrees = { { task = "G1.1", branch = "b", status = "done", pr = { number = 4, state = "MERGED" } } } })
+	assert(string.find(c.note, "1 merged") ~= nil and M.key(c, { name = "enter" }) == "submit" and M.node(c) ~= nil, "ui.dialog close self-check")
 end
 
 return M

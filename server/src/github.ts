@@ -58,6 +58,16 @@ export async function listIssues(repos: { name: string; path: string }[]): Promi
   return { issues: lists.flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), errors };
 }
 
+export interface PullRequest { number: number; state: "OPEN" | "MERGED" | "CLOSED"; url: string; title: string }
+
+// The newest PR whose head is `branch` in owner/name, or null (none, or gh failed).
+export async function prForBranch(repo: string, branch: string): Promise<PullRequest | null> {
+  const res = await run([GH, "pr", "list", "-R", repo, "--head", branch, "--state", "all", "--limit", "1", "--json", "number,state,url,title"]);
+  if (!res.ok) return null;
+  const list = JSON.parse(res.out) as PullRequest[];
+  return list[0] ?? null;
+}
+
 export async function comment(repo: string, number: number, body: string): Promise<string | null> {
   const res = await run([GH, "issue", "comment", String(number), "-R", repo, "--body", body]);
   return res.ok ? null : res.err;

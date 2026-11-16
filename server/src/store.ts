@@ -59,6 +59,7 @@ create table if not exists workers (
 create table if not exists goal_issues (
   goal integer not null references goals(id), repo text not null, number integer not null,
   title text not null default '', url text not null default '', primary key (goal, repo, number));
+create table if not exists cleanups (task integer primary key references tasks(id), queued integer not null, done integer);
 create table if not exists counters (name text primary key, value integer not null);
 create table if not exists repos (name text primary key, path text not null,
   source text not null default 'learned', ignored integer not null default 0,
@@ -291,6 +292,36 @@ export class Store {
       this.promote(task);
     }
     return this.task(task);
+  }
+
+  setTaskPr(task: number, url: string) {
+    this.touch(task, { pr: url });
+  }
+
+  // ── Worktree cleanup (cleanup.ts decides, the window removes) ──────────
+
+  hasOpenWorker(task: number): boolean {
+    return !!this.db.query("select 1 from workers where task = ? and status in ('requested', 'started', 'stopping')").get(task);
+  }
+
+  cleanupQueued(task: number): boolean {
+    return !!this.db.query("select 1 from cleanups where task = ? and done is null").get(task);
+  }
+
+  queueCleanup(task: number) {
+    this.db.query("insert into cleanups (task, queued) values (?, ?) on conflict(task) do update set queued = excluded.queued, done = null").run(task, this.now());
+  }
+
+  // Worktrees to remove: { task id, repository folder, branch, worktree }.
+  pendingCleanups(): { id: number; repoPath: string | null; branch: string; worktree: string }[] {
+    const rows = this.db.query(`select t.* from cleanups c join tasks t on t.id = c.task
+      where c.done is null and t.worktree is not null and t.branch is not null`).all() as Task[];
+    return rows.map((t) => ({ id: t.id, repoPath: this.repoPath(t.repo), branch: t.branch!, worktree: t.worktree! }));
+  }
+
+  cleanupDone(task: number) {
+    this.db.query("update cleanups set done = ? where task = ?").run(this.now(), task);
+    this.touch(task, { worktree: null });
   }
 
   dropTask(goal: number, task: number) {

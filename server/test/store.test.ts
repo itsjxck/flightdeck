@@ -198,6 +198,18 @@ describe("goals and conversation", () => {
     expect(store.task(b.id).status).toBe("ready");
   });
 
+  test("a queued worktree cleanup is listed until done, then the task forgets its worktree", () => {
+    const store = new Store(":memory:");
+    store.learnRepo("x", "/r/x");
+    const t = store.addTask(me, { title: "a", repo: "x" });
+    store.db.query("update tasks set branch = 'b', worktree = '/w/x/b', status = 'done' where id = ?").run(t.id);
+    store.queueCleanup(t.id);
+    expect(store.pendingCleanups()).toEqual([{ id: t.id, repoPath: "/r/x", branch: "b", worktree: "/w/x/b" }]);
+    store.cleanupDone(t.id);
+    expect(store.pendingCleanups()).toEqual([]);
+    expect(store.task(t.id).worktree).toBeNull();
+  });
+
   test("the coordinator finishing its own task marks the goal finished, without another summary request", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { ...plan, tasks: [plan.tasks[0]] });

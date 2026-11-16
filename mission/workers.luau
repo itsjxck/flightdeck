@@ -88,6 +88,31 @@ end
 
 -- One worker pass: opens requested workers, closes stopping ones. done() runs when it's finished.
 -- `hooks`: repoPath(name), baseFor(name) (missionHooks in window.luau).
+-- Removes the worktrees the server queued (merged PRs, cleanup.ts): `wt remove`
+-- with the branch (-D: squash merges look unmerged to Git) and --yes, since no
+-- one is there to approve hooks. A worktree already gone counts as removed.
+local removing = {}
+local function removeQueued(list)
+	local wtPath = wt.find_executable("wt")
+	for _, c in list do
+		if not removing[c.id] and c.repoPath and wtPath then
+			removing[c.id] = true
+			local function done(ok, detail)
+				removing[c.id] = nil
+				if ok then client.post("/api/cleanups/" .. tostring(c.id), {}) end
+				oplog.write(if ok then "info" else "warn", { op = "mission", event = if ok then "worktree removed" else "worktree removal failed",
+					detail = c.worktree .. (if detail then ": " .. detail else "") })
+			end
+			if not tern.fs.exists(c.worktree) then done(true, "already gone")
+			else
+				tern.process.run({ wtPath, "-C", c.repoPath, "remove", "--yes", "-D", c.branch }, { timeout_ms = 120000 }, function(r)
+					done(r.status == 0, if r.status ~= 0 then (r.stderr or ""):sub(1, 200) else nil)
+				end)
+			end
+		end
+	end
+end
+
 function M.run(hooks, done)
 	client.api("GET", "/api/workers", nil, function(list, err)
 		if err or type(list) ~= "table" then done(); return end
@@ -98,6 +123,9 @@ function M.run(hooks, done)
 			local function stopped() client.post("/api/workers/" .. tostring(stop.id) .. "/stopped", {}) end
 			if stop.pane then tern.process.run({ client.TERN, "close", stop.pane }, { timeout_ms = 10000 }, stopped) else stopped() end
 		end
+		client.api("GET", "/api/cleanups", nil, function(c)
+			if type(c) == "table" and c.cleanups then removeQueued(c.cleanups) end
+		end)
 		done()
 	end)
 end

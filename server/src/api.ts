@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Store, type Caller, type TaskStatus } from "./store";
 import { closeIssue, commentAll, listIssues, parseIssueRef, type Issue } from "./github";
 import { analytics, recordSample } from "./analytics";
+import { goalWorktrees, queueMerged } from "./cleanup";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const FINISHED: TaskStatus[] = ["done", "dropped", "failed"];
@@ -70,6 +71,7 @@ function workerBrief(store: Store, workerId: number) {
     `Your task is ${store.tref(t.id)}: ${t.title}.`, t.body,
     `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
+    `When you open a PR, record it with task_note (pr: its URL). Once your PR is merged and your worker is closed, Flightdeck removes your worktree and branch.`,
     issueLines(store, g.id),
     SECURITY_KEY_NOTE,
     w.context ? `\nFrom your coordinator:\n${w.context}` : "",
@@ -88,6 +90,7 @@ export function coordinatorBrief(store: Store, goal: number) {
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
+    `Before you finish, check every task's PR (gh pr view) and say in your summary to the user which are merged and which are still open, with links. Flightdeck removes a task's worktree once its PR is merged and you've closed its worker.`,
     `When the goal is over, call task_done on your own task.`,
     SECURITY_KEY_NOTE,
   ].filter(Boolean).join("\n");
@@ -146,6 +149,15 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         } else break;
         return json({ ok: true });
       }
+      case "GET goals":
+        // GET /api/goals/G3/worktrees: its workers' worktrees with their PRs.
+        if (parts[2] === "worktrees") return json({ worktrees: await goalWorktrees(store, Store.parseGoal(parts[1] ?? "")) });
+        break;
+      case "GET cleanups":
+        return json({ cleanups: store.pendingCleanups() });
+      case "POST cleanups":
+        store.cleanupDone(Number(parts[1]));
+        return json({ ok: true });
       case "GET analytics":
         return json(analytics(store));
       case "POST samples":
@@ -209,7 +221,12 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
           return json({ issues: store.goalIssues(goal) });
         }
         if (parts[2] === "session") { store.setGoalSession(goal, field(body, "ternSession")); return json({ ok: true }); }
-        if (parts[2] === "close") { store.closeGoal(goal, body.status === "dropped" ? "dropped" : "done"); return json({ ok: true }); }
+        if (parts[2] === "close") {
+          // removeMerged: queue the merged PRs' worktrees for removal as the goal closes.
+          const removed = body.removeMerged === true ? await queueMerged(store, goal, true) : 0;
+          store.closeGoal(goal, body.status === "dropped" ? "dropped" : "done");
+          return json({ ok: true, removing: removed });
+        }
         break;
       }
       case "GET deliveries":

@@ -13,6 +13,7 @@ local ISSUES_POLL_MS = 30000
 local STATS_POLL_MS = 60000
 local issueKey
 local publishLinkBase
+local askClose
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
@@ -60,6 +61,9 @@ local function refresh(state, cx)
 	model.api("GET", "/api/state", nil, function(s, err)
 		state.error = err
 		if s then state.sections = model.sections(s) end
+		-- The sidebar's Close goal asks here.
+		local closing = tern.kv.get("mission:closeGoal")
+		if type(closing) == "string" then tern.kv.set("mission:closeGoal", nil); askClose(state, cx, closing) end
 		local pending = tern.kv.get("mission:select")
 		if type(pending) == "string" then state.selectedRef = pending; tern.kv.set("mission:select", nil) end
 		if state.tab == "repos" then
@@ -160,6 +164,11 @@ local function submitDialog(state, cx)
 		end))
 	elseif d.kind == "task" then
 		model.api("POST", "/api/tasks", { title = v.title, repo = v.repo }, done(function(t) return "Task added." end))
+	elseif d.kind == "close" then
+		model.api("POST", "/api/goals/" .. d.goal .. "/close", { status = "done", removeMerged = true }, done(function(r)
+			model.request({ kind = "closed", goal = d.goal, session = d.session })
+			return d.goal .. " closed" .. (if r and r.removing and r.removing > 0 then "; removing " .. tostring(r.removing) .. " merged worktree(s)." else ".")
+		end))
 	elseif d.kind == "link" then
 		local goal = string.upper((string.gsub(v.goal, "%s", "")))
 		model.api("POST", "/api/goals/" .. goal .. "/issues", { issue = d.issue }, done(function() return d.issue .. " linked to " .. goal .. "." end))
@@ -250,6 +259,20 @@ local function toggleRepoIssues(state, cx, repo)
 		refresh(state, cx)
 	end)
 	repo.issuesIgnored = not repo.issuesIgnored
+end
+
+-- Close goal: fetch its worktrees and their PRs, then ask (ui/dialog.luau "close").
+askClose = function(state, cx, ref)
+	local session
+	for _, group in state.sections.working do
+		if group.goal and group.goal.ref == ref then session = group.goal.tern_session end
+	end
+	state.error = "Checking " .. ref .. "'s worktrees and PRs…"
+	model.api("GET", "/api/goals/" .. ref .. "/worktrees", nil, function(r, err)
+		state.error = err
+		if r then state.dialog = dialog.new("close", { goal = ref, session = session, worktrees = r.worktrees }) end
+		pcall(function() cx:render() end)
+	end)
 end
 
 local function scanRepos(state, cx)
@@ -495,7 +518,7 @@ local DEF = {
 		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
-		elseif verb == "close" then model.request({ kind = "close", goal = a }); state.error = "Closing " .. a .. "…"
+		elseif verb == "close" then askClose(state, cx, a)
 		elseif verb == "start" then model.request({ kind = "start", goal = a }); state.error = "Starting " .. a .. " in a session of its own…"
 		end
 	end,

@@ -35,7 +35,7 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 1. You (or an agent, with `goal_propose`) write what should be true when it's done. Tasks are optional.
 2. **Start goal** opens a background session with a *coordinator* agent. It reads the repositories, plans tasks (`goal_plan`), and starts *workers* (`worker_start`), each in a fresh worktree on its own branch.
 3. Workers report progress, ask you questions (they appear under **Now**; answer from there or in the agent's pane), and finish their task. The coordinator closes finished workers, starts follow-ups, and asks you when it needs a decision.
-4. When it's done, the goal shows **Finished**: review the worktrees and PRs, then **Close goal**.
+4. When it's done, the goal shows **Finished**, and the coordinator's summary says which PRs are merged and which are still open. A worker's worktree and branch are removed once its PR is merged and its worker is closed. **Close goal** lists what's left and removes the merged ones.
 
 References: goals are `G3`, a goal's tasks `G3.1`, `G3.2` (its coordinator is `G3.0`), tasks outside goals `T7`. Linked GitHub issues get a comment when the goal starts and finishes; PRs close them with `Fixes owner/repo#12`, never Flightdeck itself.
 
@@ -55,11 +55,11 @@ You need macOS and:
 | [Bun](https://bun.sh) | Mission control's server | |
 | [GitHub CLI](https://cli.github.com) (`gh`), signed in | PR badges, Issues, Visualize PR | optional |
 
-1. Get the code and link it into Tern (it reloads when the files change):
+1. Install it into Tern:
    ```sh
-   git clone https://github.com/itsjxck/flightdeck.git
-   /Applications/Tern.app/Contents/MacOS/tern plugin link "$PWD/flightdeck"
+   /Applications/Tern.app/Contents/MacOS/tern plugin install github.com/itsjxck/flightdeck
    ```
+   To update later, run the same command with `--force`. (Working on Flightdeck itself? Clone it and run `tern plugin link <folder>` instead: Tern then reloads it whenever a file changes.)
 2. In Tern's command palette, run **Connect omp to Flightdeck**. It adds a `flightdeck` MCP server to `~/.omp/agent/mcp.json` and a short work-tracking note to `~/.omp/agent/AGENTS.md` (between `<!-- flightdeck -->` markers; rerunning replaces it). Flightdeck reminds you once per launch until it's done.
 3. Open the sidebar with <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>P</kbd>, and Mission control with <kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>M</kbd>. Agents you start from now on have the tools.
 
