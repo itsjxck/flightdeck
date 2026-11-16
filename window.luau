@@ -1966,6 +1966,8 @@ local function missionRequests(cx)
 				end
 			end
 		elseif r.kind == "close" then closeGoal(cx, r.goal)
+		elseif r.kind == "url" and type(r.url) == "string" and string.match(r.url, "^https://") then
+			tern.process.run({ "/usr/bin/open", r.url }, { timeout_ms = 10000 }, function() end)
 		elseif r.kind == "session" then
 			for _, g in ms.goals do
 				if g.ref == r.goal and g.tern_session then cx.sessions:switch(tonumber(g.tern_session)) end

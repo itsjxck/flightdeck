@@ -197,7 +197,7 @@ local function dockNode(view, keys)
 end
 
 -- Mission control's tabs, in order: id and label.
-M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "repos", label = "Repos" } }
+M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "issues", label = "Issues" }, { id = "repos", label = "Repos" } }
 
 local function tabStrip(current, needs)
 	local tabs = {}
@@ -236,6 +236,65 @@ local function filterBar(choices, current, open, hover)
 	})
 end
 
+-- A goal's linked issues as small links (click opens the issue).
+local function issueLinks(issues)
+	if not issues or #issues == 0 then return nil end
+	local links = {}
+	for n, i in issues do
+		table.insert(links, text("i" .. tostring(n), i.repo .. "#" .. tostring(i.number), "mission.issueLink",
+			{ actions = { click = "url=" .. i.url }, title = i.title }))
+	end
+	return row("issues", "mission.issueLinks", links)
+end
+
+-- An ISO 8601 time (GitHub's) as milliseconds since 1970; nil when it isn't one. Pure.
+function M.isoMs(iso)
+	local y, mo, d, h, mi, s = string.match(iso or "", "^(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+	if not y then return nil end
+	-- Days from the civil date (Howard Hinnant's algorithm), so no os.time/time zone is involved.
+	y, mo = tonumber(y) - (if tonumber(mo) <= 2 then 1 else 0), tonumber(mo)
+	local era = math.floor(y / 400)
+	local yoe = y - era * 400
+	local doy = math.floor((153 * (mo + (if mo > 2 then -3 else 9)) + 2) / 5) + tonumber(d) - 1
+	local days = era * 146097 + yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy - 719468
+	return ((days * 24 + tonumber(h)) * 60 + tonumber(mi)) * 60000 + tonumber(s) * 1000
+end
+
+-- The Issues tab: open GitHub issues of your repositories, newest activity first.
+local function issueNodes(view)
+	local data = view.issues
+	if not data then return { text("loading", "Fetching issues with gh…", "mission.empty") } end
+	local rows = {}
+	for _, r in view.issueRows do
+		local i = r.item
+		local marked = view.marked[i.ref] == true
+		local labels = {}
+		for n, l in i.labels do if n <= 3 then table.insert(labels, text("l" .. tostring(n), l, "mission.label")) end end
+		table.insert(rows, row("i" .. i.ref, "mission.issue", {
+			text("mark", if marked then "■" else "□", if marked then "mission.markOn" else "mission.mark",
+				{ actions = { click = "mark=" .. i.ref }, title = "Mark (space) to make one goal from several issues" }),
+			text("ref", i.repo .. "#" .. tostring(i.number), "mission.issueRef"),
+			text("title", i.title, "mission.stripTitle", { grow = 1 }),
+			row("labels", "mission.labels", labels),
+			if #i.goals > 0 then text("goals", table.concat(i.goals, " "), "mission.statusChip-active") else nil,
+			text("age", M.ago(data.now, M.isoMs(i.updatedAt)) or "", "mission.goalProgress"),
+		}, { actions = { click = "select=" .. i.ref }, mark = if i.ref == view.selectedRef then "pick" else nil, title = i.url }))
+	end
+	local out = {}
+	for n, e in (data.errors or {}) do
+		if n <= 2 then table.insert(out, text("err" .. tostring(n), e, "mission.notice")) end
+	end
+	local marked = 0
+	for _ in view.marked do marked += 1 end
+	table.insert(out, col("issues", "mission.section", {
+		sectionHead("head", "Open issues", plural(#rows, "issue", "issues") .. " · fetched " .. (M.ago(data.now, data.fetched) or "")
+			.. (if marked > 0 then " · " .. tostring(marked) .. " marked" else "")),
+		if #rows > 0 then col("list", "mission.strips", rows)
+			else text("none", "No open issues" .. (if view.repoFilter then " in " .. view.repoFilter else "") .. ".", "mission.empty"),
+	}))
+	return out
+end
+
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
 
 -- The Backlog tab: every goal (newest first, click to show its tasks) and every task outside goals.
@@ -260,6 +319,7 @@ local function backlogNodes(view)
 				text("title", g.title, "mission.stripTitle", { grow = 1 }),
 				text("progress", progress, "mission.goalProgress"),
 				text("age", M.ago(b.now, g.created) or "", "mission.goalProgress"),
+				issueLinks(g.issues),
 				text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
 				if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
 					title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
@@ -323,6 +383,11 @@ function M.view(view)
 		if bar then table.insert(main, bar) end
 	end
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
+	if view.tab == "issues" then
+		for _, node in issueNodes(view) do table.insert(main, node) end
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter goal from issue   space mark   l link to goal   o open   x close   r refresh")
+	end
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
@@ -379,6 +444,7 @@ function M.view(view)
 						title = "Mark it done and close its session; the worktrees stay", actions = { click = "close=" .. g.ref } }) else nil,
 				}),
 				rail(group.tasks, agentOf, waitingTasks),
+				issueLinks(g.issues),
 			}), strips))
 		else
 			loose = strips
@@ -406,6 +472,8 @@ function M.view(view)
 end
 
 do
+	assert(M.isoMs("1970-01-02T00:00:01Z") == 86401000 and M.isoMs("2026-11-16T10:00:00Z") - M.isoMs("2026-11-15T10:00:00Z") == 86400000,
+		"ui.render.isoMs self-check")
 	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b", "ui.render.oneLine self-check")
 	assert(M.ago(120000, 0) == "2 min ago" and M.ago(1000, 0) == "just now" and M.ago(nil, 0) == nil, "ui.render.ago self-check")
 	assert(M.taskState({ status = "doing" }, nil) == "lost" and M.taskState({ status = "doing" }, "working") == "working"

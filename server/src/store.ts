@@ -53,6 +53,9 @@ create table if not exists events (
 create table if not exists workers (
   id integer primary key, task integer not null references tasks(id), goal integer not null references goals(id),
   requested_by text not null, status text not null, pane text, created integer not null, context text);
+create table if not exists goal_issues (
+  goal integer not null references goals(id), repo text not null, number integer not null,
+  title text not null default '', url text not null default '', primary key (goal, repo, number));
 create table if not exists repos (name text primary key, path text not null,
   source text not null default 'learned', ignored integer not null default 0);
 `;
@@ -235,6 +238,29 @@ export class Store {
     if (t.status === "doing") throw new Error(`${Store.tid(task)} has a worker; worker_stop it first`);
     this.touch(task, { status: "dropped" });
     this.finishGoalIfDone(goal);
+  }
+
+  // ── GitHub issues linked to goals (owner/name#number) ──────────────────
+
+  linkIssue(goal: number, i: { repo: string; number: number; title?: string; url?: string }) {
+    this.goal(goal);
+    this.db.query(`insert into goal_issues (goal, repo, number, title, url) values (?, ?, ?, ?, ?)
+      on conflict(goal, repo, number) do update set title = excluded.title, url = excluded.url`)
+      .run(goal, i.repo, i.number, i.title ?? "", i.url || `https://github.com/${i.repo}/issues/${i.number}`);
+  }
+
+  unlinkIssue(goal: number, repo: string, number: number) {
+    this.db.query("delete from goal_issues where goal = ? and repo = ? and number = ?").run(goal, repo, number);
+  }
+
+  goalIssues(goal: number): { repo: string; number: number; title: string; url: string }[] {
+    return this.db.query("select repo, number, title, url from goal_issues where goal = ? order by repo, number").all(goal) as
+      { repo: string; number: number; title: string; url: string }[];
+  }
+
+  // Every link, for marking issues that already belong to a goal.
+  issueLinks(): { goal: number; repo: string; number: number }[] {
+    return this.db.query("select goal, repo, number from goal_issues").all() as { goal: number; repo: string; number: number }[];
   }
 
   // ── Repositories (name → folder, learned from callers) ─────────────────

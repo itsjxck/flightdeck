@@ -8,6 +8,9 @@ local render = require("./render")
 
 local POLL_MS = 2000
 
+local ISSUES_POLL_MS = 30000
+local issueKey
+
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
 -- Sections and backlog narrowed to the repository filter (state.repoFilter, nil: all).
@@ -19,6 +22,7 @@ end
 local function rows(state)
 	local sections, backlog = shown(state)
 	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded) else {})
+		elseif state.tab == "issues" then model.issueRows(state.issues, state.repoFilter)
 		elseif state.tab == "repos" then (state.repos or {})
 		else model.selectable(sections)
 	local index = 1
@@ -37,6 +41,7 @@ end
 -- Who the reply field writes to: the open thread, else the selected question.
 local function replyTarget(state)
 	if state.newTask then return "New task", "Title of a task for later, Enter adds it" end
+	if state.linking then return "Link", "Goal to link " .. state.linking .. " to (G-3), Enter" end
 	if state.newGoal and not state.newGoal.title then return "New goal", "What should be true when it's done? A short title, Enter" end
 	if state.newGoal then return "New goal", "Details for the coordinator (repos, constraints), or Enter to skip" end
 	if state.thread then return state.thread.task, nil end
@@ -57,6 +62,16 @@ local function refresh(state, cx)
 				if data then state.repos = model.repoRows(data) end
 				pcall(function() cx:render() end)
 			end)
+		end
+		-- Issues: the server caches gh's answer; fetch it at most every ISSUES_POLL_MS.
+		if state.tab == "issues" and (not state.issuesAt or tern.now() - state.issuesAt > ISSUES_POLL_MS) then
+			state.issuesAt = tern.now()
+			model.api("GET", "/api/issues" .. (if state.issuesRefresh then "?refresh=1" else ""), nil, function(data, issuesErr)
+				if data then state.issues = data end
+				if issuesErr then state.error = issuesErr end
+				pcall(function() cx:render() end)
+			end)
+			state.issuesRefresh = false
 		end
 		-- Every tab: the backlog also gives the repository filter its choices.
 		do
@@ -93,7 +108,8 @@ local function send(state, cx)
 	local body = state.reply.text
 	-- A new goal's details are optional: Enter on an empty field proposes it.
 	if state.newGoal and state.newGoal.title then
-		model.api("POST", "/api/goals", { title = state.newGoal.title, body = body }, function(g, err)
+		model.api("POST", "/api/goals", { title = state.newGoal.title, body = body, issues = state.newGoal.issues }, function(g, err)
+			if not err then state.marked = {} end
 			state.error = err or (g and (g.ref .. " proposed. Start it when you're ready; its coordinator plans the tasks."))
 			refresh(state, cx)
 		end)
@@ -104,6 +120,16 @@ local function send(state, cx)
 	local target = replyTarget(state)
 	if state.newGoal then
 		state.newGoal.title, state.reply = body, Input.new("")
+		return
+	end
+	if state.linking then
+		local goal, issue = string.upper((string.gsub(body, "%s", ""))), state.linking
+		model.api("POST", "/api/goals/" .. goal .. "/issues", { issue = issue }, function(_, err)
+			state.error = err or (issue .. " linked to " .. goal .. ".")
+			state.issuesAt = nil
+			refresh(state, cx)
+		end)
+		state.linking, state.reply = nil, Input.new("")
 		return
 	end
 	if state.newTask then
@@ -135,12 +161,63 @@ local function toggleRepo(state, cx, repo)
 	repo.ignored = not repo.ignored
 end
 
+local function choices(state)
+	return model.repoChoices(state.backlog, state.issues and state.issues.issues)
+end
+
 -- Opens the repository menu with the current choice under the keyboard.
 local function openFilter(state)
 	state.filterOpen, state.filterHover = true, 1
-	for i, name in model.repoChoices(state.backlog) do
+	for i, name in choices(state) do
 		if name == state.repoFilter then state.filterHover = i + 1 end
 	end
+end
+
+-- Issues tab keys. Returns whether `name` was handled.
+-- Enter: a proposed goal from the marked issues (asks a title) or the selected one.
+-- space: mark. l: link to a goal. o: open on GitHub. x twice: close as not planned. r: refetch.
+issueKey = function(state, cx, name, row)
+	local issue = row and row.item
+	local confirming = state.confirmClose
+	state.confirmClose = nil
+	if name == "r" then
+		state.issuesAt, state.issuesRefresh, state.error = nil, true, "Fetching issues…"
+		refresh(state, cx)
+	elseif not issue then
+		return false
+	elseif name == "space" then
+		state.marked[issue.ref] = not state.marked[issue.ref] or nil
+	elseif name == "enter" then
+		local refs = {}
+		for ref in state.marked do table.insert(refs, ref) end
+		if #refs > 0 then
+			table.sort(refs)
+			state.newGoal = { issues = refs }
+		else
+			model.api("POST", "/api/goals", { title = issue.title, body = issue.body .. "\n\n" .. issue.url, issues = { issue.ref } }, function(g, err)
+				state.error = err or (g and (g.ref .. " proposed from " .. issue.ref .. ". Start it from Backlog."))
+				state.issuesAt = nil
+				refresh(state, cx)
+			end)
+		end
+	elseif name == "l" then
+		state.linking = issue.ref
+	elseif name == "o" then
+		model.request({ kind = "url", url = issue.url })
+	elseif name == "x" then
+		if confirming ~= issue.ref then
+			state.confirmClose, state.error = issue.ref, "Press x again to close " .. issue.ref .. " on GitHub as not planned."
+		else
+			model.api("POST", "/api/issues/close", { issue = issue.ref, reason = "not planned" }, function(_, err)
+				state.error = err or (issue.ref .. " closed as not planned.")
+				state.issuesAt = nil
+				refresh(state, cx)
+			end)
+		end
+	else
+		return false
+	end
+	return true
 end
 
 local function switchTab(state, cx, tab)
@@ -176,7 +253,7 @@ local DEF = {
 		local state = {
 			sections = EMPTY, selectedRef = args[1], thread = nil,
 			repoFilter = if type(saved) == "table" and type(saved.repoFilter) == "string" then saved.repoFilter else nil,
-			tab = "now", backlog = nil, expanded = {},
+			tab = "now", backlog = nil, expanded = {}, marked = {},
 			reply = Input.new(""), newTask = false, error = nil, alive = true,
 		}
 		refresh(state, cx)
@@ -195,7 +272,8 @@ local DEF = {
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
 			tab = state.tab, backlog = backlog, expanded = state.expanded, repos = state.repos,
-			repoChoices = model.repoChoices(state.backlog), repoFilter = state.repoFilter,
+			repoChoices = choices(state), repoFilter = state.repoFilter,
+			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
 			sections = sections, selectedRef = row and (row.item.task or row.item.ref),
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, error = state.error,
@@ -208,11 +286,11 @@ local DEF = {
 		local typing = state.reply.text ~= "" or state.newTask or state.newGoal ~= nil
 		-- The open repository menu takes the arrows, Enter and Esc.
 		if state.filterOpen then
-			local choices = model.repoChoices(state.backlog)
+			local names = choices(state)
 			if key.name == "up" or key.name == "down" then
-				state.filterHover = math.clamp(state.filterHover + (if key.name == "up" then -1 else 1), 1, #choices + 1)
+				state.filterHover = math.clamp(state.filterHover + (if key.name == "up" then -1 else 1), 1, #names + 1)
 			elseif key.name == "enter" then
-				state.repoFilter, state.filterOpen = if state.filterHover == 1 then nil else choices[state.filterHover - 1], false
+				state.repoFilter, state.filterOpen = if state.filterHover == 1 then nil else names[state.filterHover - 1], false
 			elseif key.name == "escape" or key.name == "esc" or key.name == "f" then
 				state.filterOpen = false
 			end
@@ -221,9 +299,11 @@ local DEF = {
 		if key.name == "up" or key.name == "down" then
 			local next = list[math.clamp(index + (if key.name == "up" then -1 else 1), 1, math.max(#list, 1))]
 			if next then state.selectedRef = next.item.task or next.item.ref end
+		elseif not typing and state.tab == "issues" and issueKey(state, cx, key.name, list[index]) then
+			-- handled
 		elseif key.name == "escape" or key.name == "esc" then
 			if state.reply.text ~= "" then state.reply = Input.new("")
-			elseif state.newTask or state.newGoal then state.newTask, state.newGoal = false, nil
+			elseif state.newTask or state.newGoal or state.linking then state.newTask, state.newGoal, state.linking = false, nil, nil
 			elseif state.thread then state.thread = nil
 			elseif state.repoFilter then state.repoFilter = nil
 			else return false end
@@ -283,6 +363,10 @@ local DEF = {
 			model.request({ kind = "start", goal = ev.item }); state.error = "Starting " .. ev.item .. " in a session of its own…"
 			return
 		end
+		if ev.ev == "action" and ev.act == "url" and type(ev.value) == "string" then
+			model.request({ kind = "url", url = ev.value })
+			return
+		end
 		if ev.ev ~= "action" or type(ev.act) ~= "string" then return end
 		-- Tern splits "verb=value" actions at the first "="; put them back together.
 		local act = if ev.value ~= nil then ev.act .. "=" .. tostring(ev.value) else ev.act
@@ -293,6 +377,7 @@ local DEF = {
 		elseif verb == "repo" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepo(state, cx, r.item) end end
+		elseif verb == "mark" then state.marked[a] = not state.marked[a] or nil
 		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })

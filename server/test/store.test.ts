@@ -150,6 +150,17 @@ describe("goals and conversation", () => {
     expect(store.repos({ ignored: true })).toMatchObject([{ name: "a", ignored: 1 }]);
   });
 
+  test("issues link to a goal once each, and unlink", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });
+    store.linkIssue(g.id, { repo: "o/a", number: 3, title: "Bug" });
+    store.linkIssue(g.id, { repo: "o/a", number: 3, title: "Bug, renamed" });
+    store.linkIssue(g.id, { repo: "o/b", number: 1 });
+    expect(store.goalIssues(g.id)).toMatchObject([{ repo: "o/a", number: 3, title: "Bug, renamed" }, { repo: "o/b", url: "https://github.com/o/b/issues/1" }]);
+    store.unlinkIssue(g.id, "o/a", 3);
+    expect(store.goalIssues(g.id).length).toBe(1);
+  });
+
   test("a goal can start with no tasks; its coordinator adds, edits and rewires them", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });

@@ -109,14 +109,15 @@ function M.filterBacklog(backlog, repo)
 	return { goals = goals, loose = loose, now = backlog.now }
 end
 
--- The repositories goals and tasks are in, by name, for the filter. Pure.
-function M.repoChoices(backlog)
+-- The repositories goals, tasks and open issues are in, by name, for the filter. Pure.
+function M.repoChoices(backlog, issues)
 	local seen, names = {}, {}
-	local function add(t) if t.repo and not seen[t.repo] then seen[t.repo] = true; table.insert(names, t.repo) end end
+	local function add(name) if name and not seen[name] then seen[name] = true; table.insert(names, name) end end
 	if backlog then
-		for _, entry in backlog.goals do for _, t in entry.tasks do add(t) end end
-		for _, t in backlog.loose do add(t) end
+		for _, entry in backlog.goals do for _, t in entry.tasks do add(t.repo) end end
+		for _, t in backlog.loose do add(t.repo) end
 	end
+	for _, i in (issues or {}) do add(i["local"]) end
 	table.sort(names)
 	return names
 end
@@ -163,6 +164,24 @@ function M.repoRows(data)
 		table.insert(rows, { kind = "repo", item = { ref = r.name, name = r.name, path = r.path, source = r.source, ignored = r.ignored == 1 } })
 	end
 	return rows
+end
+
+-- The Issues tab's rows from /api/issues, narrowed to the repository filter:
+-- { kind = "issue", item } with item.ref = "owner/repo#12". Pure.
+function M.issueRows(data, repo)
+	local rows = {}
+	for _, i in (data and data.issues or {}) do
+		if not repo or i["local"] == repo then
+			i.ref = i.repo .. "#" .. tostring(i.number)
+			table.insert(rows, { kind = "issue", item = i })
+		end
+	end
+	return rows
+end
+
+do
+	local rows = M.issueRows({ issues = { { repo = "o/a", ["local"] = "a", number = 1 }, { repo = "o/b", ["local"] = "b", number = 2 } } }, "b")
+	assert(#rows == 1 and rows[1].item.ref == "o/b#2", "ui.model.issueRows self-check")
 end
 
 do

@@ -573,6 +573,45 @@
 [data-role='mission.menuCheck'] { width: 12px; font-size: 12px; color: var(--accent); }
 [data-role='mission.menuLabel'] { font: 12px/1 var(--mono); color: var(--t1); }
 
+/* Issues tab and linked issues */
+[data-role='mission.issue'] {
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 7px 16px 7px 12px;
+  cursor: pointer;
+}
+[data-role='mission.issue'] + [data-role='mission.issue'] { border-top: 1px solid var(--l1); }
+[data-role='mission.issue']:hover { background: var(--l1); }
+[data-role='mission.issue'][data-mark='pick'] { background: rgb(from var(--accent) r g b / 9%); }
+[data-role='mission.mark'],
+[data-role='mission.markOn'] { font-size: 12px; width: 14px; color: var(--t4); cursor: pointer; }
+[data-role='mission.markOn'] { color: var(--accent); }
+[data-role='mission.issueRef'] {
+  font: 500 12px/1 var(--mono);
+  color: var(--t3);
+  flex: 0 0 15em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-role='mission.labels'] { gap: 4px; }
+[data-role='mission.label'] {
+  font: 11px/1 var(--sans);
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--l2);
+  color: var(--t2);
+  white-space: nowrap;
+}
+[data-role='mission.issueLinks'] { gap: 8px; flex-wrap: wrap; }
+[data-role='mission.issueLink'] {
+  font: 12px/1 var(--mono);
+  color: var(--accent);
+  cursor: pointer;
+}
+[data-role='mission.issueLink']:hover { text-decoration: underline; }
+
 /* Repos tab */
 [data-role='mission.repo'],
 [data-role='mission.repoIgnored'] {

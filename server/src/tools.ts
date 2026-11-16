@@ -1,6 +1,8 @@
 // The MCP tools agents see. Each resolves its caller (the omp session in the
 // calling pane) and turns a broken rule into a tool error the agent can read.
 // Descriptions carry the rules, so agents need no separate skill.
+import { goalFinished } from "./api";
+import { parseIssueRef } from "./github";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Store, type Caller, type Task } from "./store";
@@ -56,7 +58,12 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
   tool("task_done",
     "Finish your task, exactly once: `succeeded` with the outcome (what changed, how verified), or `failed` with what's left. List files changed.",
     { id, outcome: z.enum(["succeeded", "failed"]), summary: z.string(), files: z.array(z.string()).optional() },
-    (c, a) => line(store.doneTask(c.session, { ref: a.id, outcome: a.outcome, summary: a.summary, files: a.files })) + " — finished.");
+    (c, a) => {
+      const t = store.doneTask(c.session, { ref: a.id, outcome: a.outcome, summary: a.summary, files: a.files });
+      // The coordinator finishing its own task finishes the goal: tell its linked issues.
+      if (t.goal != null && store.goal(t.goal).status === "finished" && store.goal(t.goal).coordinator === c.session) goalFinished(store, t.goal, a.summary);
+      return line(t) + " — finished.";
+    });
 
   tool("task_add",
     "Add a task for later, in any repository: a follow-up worth doing. Optionally part of a goal (G-3) and depending on other tasks.",
@@ -77,8 +84,30 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
 
   tool("goal_propose",
     "Propose a goal: a clear outcome, often across repositories. The body should say what done looks like and which repositories are involved. Tasks are optional: the coordinator that runs the goal plans and manages them itself; list some only when you already know them. The user sees it in Mission control and starts it; a coordinator then runs it in its own session. Don't start the work yourself.",
-    { title: z.string(), body: z.string(), tasks: z.array(planTask).optional() },
-    (c, a) => `${Store.gid(store.proposeGoal(c, { ...a, tasks: a.tasks ?? [] }).id)} proposed; the user will start it.`);
+    { title: z.string(), body: z.string(), tasks: z.array(planTask).optional(),
+      issues: z.array(z.string()).optional().describe("GitHub issues this goal resolves: owner/repo#12") },
+    (c, a) => {
+      const g = store.proposeGoal(c, { title: a.title, body: a.body, tasks: a.tasks ?? [] });
+      for (const ref of a.issues ?? []) {
+        const p = parseIssueRef(ref);
+        if (!p) throw new Error(`not an issue reference: ${ref} (use owner/repo#12)`);
+        store.linkIssue(g.id, p);
+      }
+      return `${Store.gid(g.id)} proposed; the user will start it.`;
+    });
+
+  tool("issue_link",
+    "Link a GitHub issue (owner/repo#12) to a goal: the goal you coordinate or work on, or `goal` (G-3). Linked issues are listed in briefs and get comments when the goal starts and finishes.",
+    { issue: z.string(), goal: z.string().optional() },
+    (c, a) => {
+      const p = parseIssueRef(a.issue);
+      if (!p) throw new Error("use owner/repo#12");
+      const goal = a.goal ? Store.parseGoal(a.goal)
+        : (store.listTasks({ session: c.session }).find((t) => t.goal != null)?.goal ?? null);
+      if (goal == null) throw new Error("you aren't on a goal; pass goal");
+      store.linkIssue(goal, p);
+      return `${a.issue} linked to ${Store.gid(goal)}.`;
+    });
 
   tool("goal_join",
     "Coordinator only: your first call. Makes you the coordinator of the goal named in your brief.",
