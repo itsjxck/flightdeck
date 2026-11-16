@@ -258,7 +258,7 @@ describe("goals and conversation", () => {
     store.startTask({ ...me, session: "wa" }, { id: a.id });
     store.startTask({ ...me, session: "wb" }, { id: b.id });
     const sent = store.message("wa", { to: "@goal", body: "heads up" });
-    expect(sent.map((e) => e.to_target)).toEqual([store.tref(b.id)]);
+    expect(sent.map((e) => e.to_target)).toEqual([`T-${b.id}`]);
   });
 });
 
@@ -320,6 +320,28 @@ describe("workers, inbox, deliveries", () => {
     store.doneTask("w", { outcome: "succeeded", summary: "ok" });
     expect(store.inbox("coord").map((e) => e.kind)).toEqual(["done", "status"]);
     expect(store.inbox("coord")).toEqual([]);
+  });
+
+  test("a coordinator's inbox takes the user's answers to its own questions, so its pane isn't sent them too", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "coord" }, g.id);
+    const own = store.listTasks({ goal: g.id })[0];
+    store.ask("coord", { question: "Merge?" });
+    store.answer(own.id, "yes");
+    expect(store.inbox("coord").map((e) => e.body)).toEqual(["yes"]);
+    expect(store.pendingDeliveries()).toEqual([]);
+  });
+
+  test("@goal messages reach the other working agents' panes", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }] });
+    const [a, b] = store.listTasks({ goal: g.id });
+    store.startTask({ ...me, session: "wa" }, { id: a.id });
+    store.startTask({ ...me, session: "wb" }, { id: b.id });
+    store.message("wa", { to: "@goal", body: "heads up" });
+    expect(store.pendingDeliveries().map((d) => d.task.id)).toEqual([b.id]);
   });
 
   test("agent messages to one agent are spaced two minutes apart; answers aren't", () => {

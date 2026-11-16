@@ -528,7 +528,7 @@ export class Store {
       if (from.goal == null) throw new Error(`${a.to} needs your task to belong to a goal`);
       if (a.to === "@coordinator") targets.push("coordinator");
       else for (const t of this.listTasks({ goal: from.goal })) {
-        if (t.id !== from.id && t.session && t.status === "doing") targets.push(this.tref(t.id));
+        if (t.id !== from.id && t.session && t.status === "doing") targets.push(`T-${t.id}`);
       }
     } else {
       targets.push(`T-${this.task(this.taskId(a.to)).id}`);
@@ -601,11 +601,17 @@ export class Store {
 
   // ── Coordinator inbox and deliveries ───────────────────────────────────
 
+  // What the coordinator hasn't seen: workers' dones, messages to @coordinator,
+  // goal status, and answers or messages to its own task not yet handed to its
+  // pane (a coordinator looping on inbox is mid-turn, so Overseer holds pane
+  // deliveries; inbox takes them instead, and they count as delivered).
   inbox(session: string): Event[] {
     const g = this.coordinatorGoalFor(session);
-    const rows = this.db.query("select * from events where goal = ? and to_target = 'coordinator' and handled is null order by id").all(g.id) as Event[];
+    const own = this.db.query("select id from tasks where goal = ? and session = ?").get(g.id, session) as { id: number } | null;
+    const rows = this.db.query(`select * from events where (goal = ? and to_target = 'coordinator' and handled is null)
+      or (to_target = ? and delivered is null and kind in ('answer', 'message')) order by id`).all(g.id, own ? `T-${own.id}` : "") as Event[];
     const now = this.now();
-    for (const e of rows) this.db.query("update events set handled = ? where id = ?").run(now, e.id);
+    for (const e of rows) this.db.query("update events set handled = ?, delivered = coalesce(delivered, ?) where id = ?").run(now, now, e.id);
     return rows;
   }
 

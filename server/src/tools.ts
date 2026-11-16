@@ -157,7 +157,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
   server.registerTool("inbox", {
     // omp gives up on an MCP call after 30 s, and messages are returned once: a
     // longer wait would lose them. Coordinators call again to keep waiting.
-    description: "Coordinator only: wait up to 25 s (timeout_s) for workers' done messages, messages to @coordinator and goal status. Returns them once; nothing new means call it again to keep waiting.",
+    description: "Coordinator only: wait up to 25 s (timeout_s) for workers' done messages, messages to @coordinator, goal status, and the user's answers to your questions. Returns them once; nothing new means call it again to keep waiting.",
     inputSchema: { timeout_s: z.number().int().min(1).max(INBOX_MAX_S).optional() },
   }, async (args: { timeout_s?: number }) => {
     const caller = resolve();
