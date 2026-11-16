@@ -25,7 +25,7 @@ test("a tool call identifies its caller by X-Tern-Pane", async () => {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "task_start", arguments: { title: "Probe" } } }),
   });
   const body = await r.json() as { result: { content: { text: string }[] } };
-  expect(body.result.content[0].text).toContain("T-1");
+  expect(body.result.content[0].text).toContain("T1");
   const state = await (await fetch(`${base}/api/state`, { headers: auth })).json() as { tasks: { session: string }[] };
   expect(state.tasks[0].session).toBe("s42");
 });

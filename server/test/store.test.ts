@@ -7,9 +7,13 @@ describe("schema", () => {
   test("opens an empty store and formats ids", () => {
     const store = new Store(":memory:");
     expect(store.listTasks({})).toEqual([]);
-    expect(Store.tid(12)).toBe("T-12");
-    expect(Store.parseTask("T-12")).toBe(12);
-    expect(() => Store.parseTask("X-1")).toThrow("not a task id");
+    expect(store.taskId("T-12")).toBe(12);
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }] });
+    const loose = store.addTask(me, { title: "l", repo: "x" });
+    const inGoal = store.listTasks({ goal: g.id })[0];
+    expect([store.tref(inGoal.id), store.tref(loose.id)]).toEqual([`G${g.id}.1`, "T1"]);
+    expect([store.taskId(`G${g.id}.1`), store.taskId(`g-${g.id}.1`), store.taskId("T1")]).toEqual([inGoal.id, inGoal.id, loose.id]);
+    expect(() => store.taskId("X-1")).toThrow("not a task id");
   });
 });
 
@@ -33,7 +37,7 @@ describe("tasks", () => {
   test("myTask refuses another session's task", () => {
     const store = new Store(":memory:");
     const t = store.startTask({ ...me, session: "s-other" }, { title: "theirs" });
-    expect(() => store.myTask("s-me", Store.tid(t.id))).toThrow("not yours");
+    expect(() => store.myTask("s-me", store.tref(t.id))).toThrow("not yours");
   });
 
   test("done promotes dependents once every dependency is done", () => {
@@ -44,10 +48,10 @@ describe("tasks", () => {
     const c = store.addTask(me, { title: "c", repo: "y", goal: g.id, needs: [a.id, b.id] });
     expect(store.task(c.id).status).toBe("todo");
     store.startTask({ ...me, session: "w1" }, { id: a.id });
-    store.doneTask("w1", { ref: Store.tid(a.id), outcome: "succeeded", summary: "ok" });
+    store.doneTask("w1", { ref: store.tref(a.id), outcome: "succeeded", summary: "ok" });
     expect(store.task(c.id).status).toBe("todo");
     store.startTask({ ...me, session: "w2" }, { id: b.id });
-    store.doneTask("w2", { ref: Store.tid(b.id), outcome: "succeeded", summary: "ok" });
+    store.doneTask("w2", { ref: store.tref(b.id), outcome: "succeeded", summary: "ok" });
     expect(store.task(c.id).status).toBe("ready");
   });
 
@@ -57,7 +61,7 @@ describe("tasks", () => {
     const a = store.addTask(me, { title: "a", repo: "x", goal: g.id });
     const c = store.addTask(me, { title: "c", repo: "x", goal: g.id, needs: [a.id] });
     store.startTask({ ...me, session: "w1" }, { id: a.id });
-    store.doneTask("w1", { ref: Store.tid(a.id), outcome: "failed", summary: "no creds" });
+    store.doneTask("w1", { ref: store.tref(a.id), outcome: "failed", summary: "no creds" });
     expect(store.task(a.id).status).toBe("failed");
     expect(store.task(c.id).status).toBe("todo");
   });
@@ -236,7 +240,7 @@ describe("goals and conversation", () => {
     expect(store.waiting()).toEqual([]);
     const answer = store.events(t.id).at(-1)!;
     expect(answer.kind).toBe("answer");
-    expect(answer.to_target).toBe(Store.tid(t.id));
+    expect(answer.to_target).toBe(`T-${t.id}`);
   });
 
   test("a finished task's unanswered question stops waiting", () => {
@@ -254,7 +258,7 @@ describe("goals and conversation", () => {
     store.startTask({ ...me, session: "wa" }, { id: a.id });
     store.startTask({ ...me, session: "wb" }, { id: b.id });
     const sent = store.message("wa", { to: "@goal", body: "heads up" });
-    expect(sent.map((e) => e.to_target)).toEqual([Store.tid(b.id)]);
+    expect(sent.map((e) => e.to_target)).toEqual([store.tref(b.id)]);
   });
 });
 
@@ -325,12 +329,12 @@ describe("workers, inbox, deliveries", () => {
     const [a, b] = store.listTasks({ goal: g.id });
     store.startTask({ ...me, session: "wa" }, { id: a.id });
     store.startTask({ ...me, session: "wb" }, { id: b.id });
-    store.message("wa", { to: Store.tid(b.id), body: "one" });
+    store.message("wa", { to: store.tref(b.id), body: "one" });
     const firstBatch = store.pendingDeliveries();
     expect(firstBatch.length).toBe(1);
     store.markDelivered(firstBatch[0].event.id);
     clock = 10_000;
-    store.message("wa", { to: Store.tid(b.id), body: "two" });
+    store.message("wa", { to: store.tref(b.id), body: "two" });
     store.answer(b.id, "yes");
     expect(store.pendingDeliveries().map((d) => d.event.kind)).toEqual(["answer"]);
     clock = 130_000;

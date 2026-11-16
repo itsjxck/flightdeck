@@ -59,8 +59,8 @@ function workerBrief(store: Store, workerId: number) {
   const g = store.goal(w.goal);
   return [
     `You are a worker on goal ${Store.gid(g.id)}: ${g.title}.`,
-    `Your task is ${Store.tid(t.id)}: ${t.title}.`, t.body,
-    `First call task_start with id "${Store.tid(t.id)}". Use task_note at milestones, ask_user for decisions,`,
+    `Your task is ${store.tref(t.id)}: ${t.title}.`, t.body,
+    `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
     issueLines(store, g.id),
     SECURITY_KEY_NOTE,
@@ -90,9 +90,9 @@ function state(store: Store) {
   const goalIds = new Set(goals.map((g) => g.id));
   const tasks = store.listTasks({})
     .filter((t) => !FINISHED.includes(t.status) || (t.goal != null && goalIds.has(t.goal)))
-    .map((t) => ({ ...t, ref: Store.tid(t.id), repoPath: store.repoPath(t.repo),
+    .map((t) => ({ ...t, ref: store.tref(t.id), repoPath: store.repoPath(t.repo),
       lastNote: store.events(t.id).filter((e) => e.kind === "note").at(-1)?.body ?? null }));
-  const waiting = store.waiting().map((w) => ({ task: Store.tid(w.task.id), title: w.task.title, repo: w.task.repo,
+  const waiting = store.waiting().map((w) => ({ task: store.tref(w.task.id), title: w.task.title, repo: w.task.repo,
     goal: w.task.goal != null ? Store.gid(w.task.goal) : null, question: w.question.body,
     options: w.question.options ? JSON.parse(w.question.options) as string[] : null, recommended: w.question.recommended,
     asked: w.question.created }));
@@ -158,16 +158,16 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "GET backlog": {
         // Every goal and task, newest first, for Mission control's Backlog tab.
         const goals = store.listGoals().reverse().map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id) }));
-        const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: Store.tid(t.id) }));
+        const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: store.tref(t.id) }));
         // Local midnight: the Backlog's "Done today" starts here.
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         return json({ goals, tasks, now: Date.now(), todayStart: today.getTime() });
       }
       case "GET thread":
-        return json(store.events(Store.parseTask(parts[1] ?? "")));
+        return json(store.events(store.taskId(parts[1] ?? "")));
       case "POST answer":
-        return json(store.answer(Store.parseTask(field(body, "task")), field(body, "body")));
+        return json(store.answer(store.taskId(field(body, "task")), field(body, "body")));
       case "POST tasks": {
         const repo = field(body, "repo");
         return json(store.addTask({ session: "you", repo, branch: null, cwd: null },
@@ -200,8 +200,8 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         break;
       }
       case "GET deliveries":
-        return json(store.pendingDeliveries().map(({ event, task }) => ({ id: event.id, session: task.session, task: Store.tid(task.id),
-          text: event.kind === "answer" ? `The user answered on ${Store.tid(task.id)}:\n\n${event.body}`
+        return json(store.pendingDeliveries().map(({ event, task }) => ({ id: event.id, session: task.session, task: store.tref(task.id),
+          text: event.kind === "answer" ? `The user answered on ${store.tref(task.id)}:\n\n${event.body}`
             : `${event.body}\n\n(Reply with the message tool only if it needs one.)` })));
       case "POST deliveries":
         store.markDelivered(Number(parts[1])); return json({ ok: true });
@@ -211,7 +211,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
           starts: starts.map((w) => {
             const t = store.task(w.task);
             // existing: the task's branch was made by an earlier worker, so switch to it rather than create it.
-            return { id: w.id, task: Store.tid(t.id), title: t.title, repo: t.repo, repoPath: store.repoPath(t.repo), readonly: t.readonly === 1,
+            return { id: w.id, task: store.tref(t.id), title: t.title, repo: t.repo, repoPath: store.repoPath(t.repo), readonly: t.readonly === 1,
               existing: t.branch != null && t.worktree != null, branch: t.branch,
               goal: Store.gid(w.goal), ternSession: store.goal(w.goal).tern_session, brief: workerBrief(store, w.id) };
           }),

@@ -41,7 +41,7 @@ end
 -- Who the reply field writes to: the open thread, else the selected question.
 local function replyTarget(state)
 	if state.newTask then return "New task", "Title of a task for later, Enter adds it" end
-	if state.linking then return "Link", "Goal to link " .. state.linking .. " to (G-3), Enter" end
+	if state.linking then return "Link", "Goal to link " .. state.linking .. " to (G3), Enter" end
 	if state.newGoal and not state.newGoal.title then return "New goal", "What should be true when it's done? A short title, Enter" end
 	if state.newGoal then return "New goal", "Details for the coordinator (repos, constraints), or Enter to skip" end
 	if state.thread then return state.thread.task, nil end

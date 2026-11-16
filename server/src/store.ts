@@ -44,7 +44,7 @@ create table if not exists tasks (
   id integer primary key, goal integer references goals(id), title text not null,
   body text not null default '', repo text, branch text, worktree text, pr text,
   status text not null, readonly integer not null default 0, session text,
-  started_by text, created integer not null, updated integer not null);
+  started_by text, created integer not null, updated integer not null, seq integer not null default 0);
 create table if not exists deps (
   task integer not null references tasks(id), needs integer not null references tasks(id),
   primary key (task, needs));
@@ -58,6 +58,7 @@ create table if not exists workers (
 create table if not exists goal_issues (
   goal integer not null references goals(id), repo text not null, number integer not null,
   title text not null default '', url text not null default '', primary key (goal, repo, number));
+create table if not exists counters (name text primary key, value integer not null);
 create table if not exists repos (name text primary key, path text not null,
   source text not null default 'learned', ignored integer not null default 0,
   issues_ignored integer not null default 0);
@@ -80,23 +81,75 @@ export class Store {
       this.db.exec("alter table repos add column source text not null default 'learned'");
       this.db.exec("alter table repos add column ignored integer not null default 0");
     }
+    const taskCols = this.db.query("select name from pragma_table_info('tasks')").all() as { name: string }[];
+    if (!taskCols.some((c) => c.name === "seq")) {
+      // Number existing tasks: within each goal (its coordinator's task 0), then outside goals, by age.
+      this.db.exec("alter table tasks add column seq integer not null default 0");
+      this.db.exec(`update tasks set seq = (select count(*) from tasks o where o.goal = tasks.goal and o.id <= tasks.id
+          and o.session is not (select coordinator from goals where id = tasks.goal))
+        where goal is not null and session is not (select coordinator from goals where id = tasks.goal)`);
+      this.db.exec("update tasks set seq = (select count(*) from tasks o where o.goal is null and o.id <= tasks.id) where goal is null");
+      this.db.exec("insert or ignore into counters (name, value) select 'loose', coalesce(max(seq), 0) from tasks where goal is null");
+      this.db.exec("insert or ignore into counters (name, value) select 'goal', coalesce(max(id), 0) from goals");
+    }
     const goalCols = this.db.query("select name from pragma_table_info('goals')").all() as { name: string }[];
     if (!goalCols.some((c) => c.name === "closed")) this.db.exec("alter table goals add column closed integer");
     if (!repoCols.some((c) => c.name === "issues_ignored")) this.db.exec("alter table repos add column issues_ignored integer not null default 0");
   }
 
-  static tid(id: number) { return `T-${id}`; }
-  static gid(id: number) { return `G-${id}`; }
-  static wid(id: number) { return `W-${id}`; }
-  static parseTask(ref: string): number {
-    const m = /^T-(\d+)$/.exec(ref.trim());
-    if (!m) throw new Error(`'${ref}' is not a task id (T-12)`);
+  // References people and agents use. Goals: G3. A goal's tasks are numbered
+  // within it: G3.1, G3.2 (G3.0 is its coordinator's own task). Tasks outside
+  // goals: T7. Numbers only grow (counters survive the 30-day cleanup).
+  // The first release's forms (G-3, T-12 = internal id) are still accepted.
+  static gid(id: number) { return `G${id}`; }
+  static wid(id: number) { return `W${id}`; }
+  static parseGoal(ref: string): number {
+    const m = /^G-?(\d+)$/i.exec(ref.trim());
+    if (!m) throw new Error(`'${ref}' is not a goal id (G3)`);
     return Number(m[1]);
   }
-  static parseGoal(ref: string): number {
-    const m = /^G-(\d+)$/.exec(ref.trim());
-    if (!m) throw new Error(`'${ref}' is not a goal id (G-3)`);
-    return Number(m[1]);
+
+  tref(id: number): string {
+    const t = this.db.query("select goal, seq from tasks where id = ?").get(id) as { goal: number | null; seq: number } | null;
+    if (!t) throw new Error(`no task with internal id ${id}`);
+    return t.goal != null ? `G${t.goal}.${t.seq}` : `T${t.seq}`;
+  }
+
+  taskId(ref: string): number {
+    const r = ref.trim();
+    let m = /^G-?(\d+)\.(\d+)$/i.exec(r);
+    if (m) {
+      const row = this.db.query("select id from tasks where goal = ? and seq = ?").get(Number(m[1]), Number(m[2])) as { id: number } | null;
+      if (!row) throw new Error(`no task ${r}`);
+      return row.id;
+    }
+    m = /^T(\d+)$/i.exec(r);
+    if (m) {
+      const row = this.db.query("select id from tasks where goal is null and seq = ?").get(Number(m[1])) as { id: number } | null;
+      if (!row) throw new Error(`no task ${r}`);
+      return row.id;
+    }
+    m = /^T-(\d+)$/i.exec(r);
+    if (m) return Number(m[1]);
+    throw new Error(`'${ref}' is not a task id (G3.2, or T7 outside goals)`);
+  }
+
+  // The next number of a sequence that never goes back ("goal", "loose").
+  private next(name: string, floor: number): number {
+    const row = this.db.query("select value from counters where name = ?").get(name) as { value: number } | null;
+    const value = Math.max(row?.value ?? 0, floor) + 1;
+    this.db.query("insert into counters (name, value) values (?, ?) on conflict(name) do update set value = excluded.value").run(name, value);
+    return value;
+  }
+
+  // A new task's number: within its goal, or among tasks outside goals.
+  private nextSeq(goal: number | null): number {
+    if (goal == null) {
+      const max = this.db.query("select coalesce(max(seq), 0) as m from tasks where goal is null").get() as { m: number };
+      return this.next("loose", max.m);
+    }
+    const max = this.db.query("select coalesce(max(seq), 0) as m from tasks where goal = ?").get(goal) as { m: number };
+    return max.m + 1;
   }
 
   // ── Tasks ──────────────────────────────────────────────────────────────
@@ -113,7 +166,7 @@ export class Store {
 
   task(id: number): Task {
     const t = this.db.query("select * from tasks where id = ?").get(id) as Task | null;
-    if (!t) throw new Error(`${Store.tid(id)} doesn't exist`);
+    if (!t) throw new Error(`${this.tref(id)} doesn't exist`);
     return t;
   }
 
@@ -136,9 +189,9 @@ export class Store {
 
   addTask(_caller: Caller, a: { title: string; body?: string; repo: string; goal?: number; needs?: number[]; readonly?: boolean }): Task {
     const now = this.now();
-    const t = this.db.query(`insert into tasks (goal, title, body, repo, status, readonly, created, updated)
-      values (?, ?, ?, ?, 'todo', ?, ?, ?) returning *`)
-      .get(a.goal ?? null, a.title, a.body ?? "", a.repo, a.readonly ? 1 : 0, now, now) as Task;
+    const t = this.db.query(`insert into tasks (goal, title, body, repo, status, readonly, created, updated, seq)
+      values (?, ?, ?, ?, 'todo', ?, ?, ?, ?) returning *`)
+      .get(a.goal ?? null, a.title, a.body ?? "", a.repo, a.readonly ? 1 : 0, now, now, this.nextSeq(a.goal ?? null)) as Task;
     for (const need of a.needs ?? []) {
       this.task(need);
       this.db.query("insert into deps (task, needs) values (?, ?)").run(t.id, need);
@@ -160,14 +213,14 @@ export class Store {
     if (a.id == null) {
       if (!a.title) throw new Error("task_start needs a title, or the id of a task to pick up");
       const now = this.now();
-      return this.db.query(`insert into tasks (title, body, repo, branch, worktree, status, readonly, session, created, updated)
-        values (?, ?, ?, ?, ?, 'doing', ?, ?, ?, ?) returning *`)
-        .get(a.title, a.body ?? "", caller.repo, caller.branch, caller.cwd, a.readonly ? 1 : 0, caller.session, now, now) as Task;
+      return this.db.query(`insert into tasks (title, body, repo, branch, worktree, status, readonly, session, created, updated, seq)
+        values (?, ?, ?, ?, ?, 'doing', ?, ?, ?, ?, ?) returning *`)
+        .get(a.title, a.body ?? "", caller.repo, caller.branch, caller.cwd, a.readonly ? 1 : 0, caller.session, now, now, this.nextSeq(null)) as Task;
     }
     const t = this.task(a.id);
     const mine = t.session === caller.session;
     if (!mine && !["todo", "ready"].includes(t.status)) {
-      throw new Error(`${Store.tid(t.id)} is ${t.status}${t.session ? " and held by another agent" : ""}`);
+      throw new Error(`${this.tref(t.id)} is ${t.status}${t.session ? " and held by another agent" : ""}`);
     }
     this.touch(t.id, { status: "doing", session: caller.session, branch: caller.branch, worktree: caller.cwd });
     return this.task(t.id);
@@ -175,13 +228,13 @@ export class Store {
 
   myTask(session: string, ref?: string): Task {
     if (ref) {
-      const t = this.task(Store.parseTask(ref));
+      const t = this.task(this.taskId(ref));
       if (t.session !== session) throw new Error(`${ref} is not yours; call task_start with its id first`);
       return t;
     }
     const doing = this.listTasks({ session, status: "doing" });
     if (doing.length === 0) throw new Error("you have no task in progress; call task_start first");
-    if (doing.length > 1) throw new Error(`you have several tasks in progress (${doing.map((t) => Store.tid(t.id)).join(", ")}); pass id`);
+    if (doing.length > 1) throw new Error(`you have several tasks in progress (${doing.map((t) => this.tref(t.id)).join(", ")}); pass id`);
     return doing[0];
   }
 
@@ -219,16 +272,16 @@ export class Store {
   // needs only before the task starts (needs replaces the list).
   editTask(goal: number, task: number, a: { title?: string; body?: string; repo?: string; needs?: number[] }) {
     const t = this.task(task);
-    if (t.goal !== goal) throw new Error(`${Store.tid(task)} isn't part of ${Store.gid(goal)}`);
+    if (t.goal !== goal) throw new Error(`${this.tref(task)} isn't part of ${Store.gid(goal)}`);
     const started = !["todo", "ready"].includes(t.status);
-    if (started && (a.repo != null || a.needs != null)) throw new Error(`${Store.tid(task)} has started; only its title and body can change`);
+    if (started && (a.repo != null || a.needs != null)) throw new Error(`${this.tref(task)} has started; only its title and body can change`);
     const fields: Partial<Task> = {};
     if (a.title != null) fields.title = a.title;
     if (a.body != null) fields.body = a.body;
     if (a.repo != null) fields.repo = a.repo;
     if (Object.keys(fields).length) this.touch(task, fields);
     if (a.needs != null) {
-      for (const n of a.needs) if (this.task(n).goal !== goal) throw new Error(`${Store.tid(n)} isn't part of ${Store.gid(goal)}`);
+      for (const n of a.needs) if (this.task(n).goal !== goal) throw new Error(`${this.tref(n)} isn't part of ${Store.gid(goal)}`);
       this.db.query("delete from deps where task = ?").run(task);
       for (const n of a.needs) this.db.query("insert into deps (task, needs) values (?, ?)").run(task, n);
       // Re-derive readiness from the new needs.
@@ -240,8 +293,8 @@ export class Store {
 
   dropTask(goal: number, task: number) {
     const t = this.task(task);
-    if (t.goal !== goal) throw new Error(`${Store.tid(task)} isn't part of ${Store.gid(goal)}`);
-    if (t.status === "doing") throw new Error(`${Store.tid(task)} has a worker; worker_stop it first`);
+    if (t.goal !== goal) throw new Error(`${this.tref(task)} isn't part of ${Store.gid(goal)}`);
+    if (t.status === "doing") throw new Error(`${this.tref(task)} has a worker; worker_stop it first`);
     this.touch(task, { status: "dropped" });
     this.finishGoalIfDone(goal);
   }
@@ -347,8 +400,9 @@ export class Store {
 
   proposeGoal(caller: Caller, a: { title: string; body: string; tasks: PlanTask[] }): Goal {
     return this.db.transaction(() => {
-      const g = this.db.query("insert into goals (title, body, status, created) values (?, ?, 'proposed', ?) returning *")
-        .get(a.title, a.body, this.now()) as Goal;
+      const maxGoal = this.db.query("select coalesce(max(id), 0) as m from goals").get() as { m: number };
+      const g = this.db.query("insert into goals (id, title, body, status, created) values (?, ?, ?, 'proposed', ?) returning *")
+        .get(this.next("goal", maxGoal.m), a.title, a.body, this.now()) as Goal;
       const ids = new Map<string, number>();
       for (const t of a.tasks) {
         const needs = (t.needs ?? []).map((k) => {
@@ -464,7 +518,7 @@ export class Store {
   answer(task: number, body: string): Event {
     const t = this.task(task);
     return this.addEvent({ task: t.id, goal: t.goal, author: "you", kind: "answer", body,
-      options: null, recommended: null, to_target: Store.tid(t.id) });
+      options: null, recommended: null, to_target: `T-${t.id}` });
   }
 
   message(session: string, a: { ref?: string; to: string; body: string }): Event[] {
@@ -474,14 +528,14 @@ export class Store {
       if (from.goal == null) throw new Error(`${a.to} needs your task to belong to a goal`);
       if (a.to === "@coordinator") targets.push("coordinator");
       else for (const t of this.listTasks({ goal: from.goal })) {
-        if (t.id !== from.id && t.session && t.status === "doing") targets.push(Store.tid(t.id));
+        if (t.id !== from.id && t.session && t.status === "doing") targets.push(this.tref(t.id));
       }
     } else {
-      targets.push(Store.tid(this.task(Store.parseTask(a.to)).id));
+      targets.push(`T-${this.task(this.taskId(a.to)).id}`);
     }
     if (targets.length === 0) throw new Error("no other agent on this goal is working right now");
     return targets.map((to) => this.addEvent({ task: from.id, goal: from.goal, author: session, kind: "message",
-      body: `**From ${Store.tid(from.id)}:** ${a.body}`, options: null, recommended: null, to_target: to }));
+      body: `**From ${this.tref(from.id)}:** ${a.body}`, options: null, recommended: null, to_target: to }));
   }
 
   // ── Workers ────────────────────────────────────────────────────────────
@@ -496,12 +550,12 @@ export class Store {
   requestWorker(caller: Caller, task: number, context?: string): Worker {
     const g = this.coordinatorGoalFor(caller.session);
     const t = this.task(task);
-    if (t.goal !== g.id) throw new Error(`${Store.tid(t.id)} isn't part of ${Store.gid(g.id)}`);
+    if (t.goal !== g.id) throw new Error(`${this.tref(t.id)} isn't part of ${Store.gid(g.id)}`);
     const isWorker = this.db.query("select 1 from tasks where session = ? and started_by is not null").get(caller.session);
     if (isWorker) throw new Error("workers can't start workers");
-    if (!["ready", "done", "failed"].includes(t.status)) throw new Error(`${Store.tid(t.id)} is ${t.status}; only ready, done or failed tasks can be started`);
+    if (!["ready", "done", "failed"].includes(t.status)) throw new Error(`${this.tref(t.id)} is ${t.status}; only ready, done or failed tasks can be started`);
     const busy = this.db.query("select 1 from workers where task = ? and status in ('requested', 'started')").get(t.id);
-    if (busy) throw new Error(`${Store.tid(t.id)} already has a worker`);
+    if (busy) throw new Error(`${this.tref(t.id)} already has a worker`);
     const active = this.db.query("select count(*) as n from workers where goal = ? and status in ('requested', 'started', 'stopping')").get(g.id) as { n: number };
     if (active.n >= MAX_WORKERS) throw new Error(`${Store.gid(g.id)} already has ${MAX_WORKERS} workers open; close finished ones with worker_stop, or wait for one with inbox`);
     this.db.query("update tasks set started_by = ?, status = 'ready' where id = ?").run(caller.session, t.id);
@@ -518,14 +572,14 @@ export class Store {
     const w = this.worker(id);
     this.db.query("update workers set status = 'failed' where id = ?").run(id);
     this.addEvent({ task: w.task, goal: w.goal, author: "overseer", kind: "status",
-      body: `Couldn't start a worker on ${Store.tid(w.task)}: ${error}`, options: null, recommended: null, to_target: "coordinator" });
+      body: `Couldn't start a worker on ${this.tref(w.task)}: ${error}`, options: null, recommended: null, to_target: "coordinator" });
   }
 
   stopWorker(caller: Caller, task: number): Worker {
     const g = this.coordinatorGoalFor(caller.session);
     const w = this.db.query("select * from workers where task = ? and goal = ? and status in ('requested', 'started') order by id desc")
       .get(task, g.id) as Worker | null;
-    if (!w) throw new Error(`${Store.tid(task)} has no running worker`);
+    if (!w) throw new Error(`${this.tref(task)} has no running worker`);
     this.db.query("update workers set status = 'stopping' where id = ?").run(w.id);
     // A finished task stays finished: stopping just closes its worker.
     const t = this.task(task);
@@ -558,7 +612,7 @@ export class Store {
   // Answers and messages to hand to a task's agent now. An agent-to-agent
   // message waits while its recipient got another one under AGENT_MESSAGE_GAP ago.
   pendingDeliveries(): { event: Event; task: Task }[] {
-    const rows = this.db.query(`select e.*, t.id as tid from events e join tasks t on ('T-' || t.id) = e.to_target
+    const rows = this.db.query(`select e.*, t.id as tid from events e join tasks t on ('T-' || t.id) = e.to_target -- to_target names a task by internal id
       where e.delivered is null and t.session is not null and e.kind in ('answer', 'message') order by e.id`).all() as (Event & { tid: number })[];
     const out: { event: Event; task: Task }[] = [];
     const now = this.now();

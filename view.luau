@@ -363,7 +363,7 @@ end
 
 -- The goal whose sidebar row `node` (an action's node id) belongs to, e.g. "G-3".
 function View.goalRef(node)
-	return type(node) == "string" and node:match("%.g(G%-%d+)%.line") or nil
+	return type(node) == "string" and node:match("%.g(G%-?%d+)%.line") or nil
 end
 
 -- A confirmation, shown in a canvas of its own over the tab; the canvas's

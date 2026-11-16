@@ -1,5 +1,5 @@
 -- Starts goals. Each goal runs in a Tern session of its own, named
--- `G-3 · <title>`, apart from your sessions; its coordinator is the first tab.
+-- `G3 · <title>`, apart from your sessions; its coordinator is the first tab.
 local client = require("./client")
 local launch = require("./launch")
 local oplog = require("../oplog")

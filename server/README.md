@@ -35,7 +35,7 @@ Answers and agents' messages are queued as events; Overseer fetches `/api/delive
 
 ## Conventions
 
-- Ids are integers in SQLite, shown as `T-12`, `G-3`, `W-5` (`Store.tid/gid/wid`, `parseTask/parseGoal`).
+- Ids are integers in SQLite. People and agents see references: goals `G3` (`Store.gid`, `parseGoal`), a goal's tasks `G3.2` numbered within it by `tasks.seq` (the coordinator's own task is `G3.0`), tasks outside goals `T7` (`seq` from the `loose` counter), workers `W5`. `store.tref(id)` and `store.taskId(ref)` convert; goal ids and the `loose` counter only grow (`counters` table), so a number never comes back after the 30-day cleanup. The first release's `T-12` (internal id) and `G-3` are still accepted. Message targets (`events.to_target`) keep the internal `T-<id>` form.
 - Rule errors are thrown as `Error` with a message an agent can act on; `tools.ts` and `api.ts` return them, never crash.
 - Tests use an in-memory store and an injected clock (`new Store(":memory:", () => clock)`).
 

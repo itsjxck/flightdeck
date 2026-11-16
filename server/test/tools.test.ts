@@ -29,7 +29,7 @@ test("lists every tool from the spec", async () => {
 test("start, ask, done through the tools", async () => {
   const store = new Store(":memory:");
   const { call } = await connect(store, "s");
-  expect((await call("task_start", { title: "Fix tick" })).text).toContain("T-1");
+  expect((await call("task_start", { title: "Fix tick" })).text).toContain("T1");
   expect((await call("ask_user", { question: "Which?", options: ["a", "b"], recommended: 1 })).text).toContain("waiting");
   expect(store.waiting().length).toBe(1);
   expect((await call("task_done", { outcome: "succeeded", summary: "fixed" })).text).toContain("finished");
@@ -48,11 +48,11 @@ test("a coordinator's inbox returns a worker's done", async () => {
     { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }] });
   store.startGoal(g.id);
   const coord = await connect(store, "coord");
-  expect((await coord.call("goal_join", { goal: "G-1" })).text).toContain("You coordinate G-1");
-  expect((await coord.call("worker_start", { task: "T-1" })).text).toContain("W-1 requested");
+  expect((await coord.call("goal_join", { goal: "G-1" })).text).toContain("You coordinate G1");
+  expect((await coord.call("worker_start", { task: "T-1" })).text).toContain("W1 requested");
   const worker = await connect(store, "w");
   await worker.call("task_start", { id: "T-1" });
   await worker.call("task_done", { outcome: "succeeded", summary: "ok" });
   const inbox = await coord.call("inbox", { timeout_s: 1 });
-  expect(inbox.text).toContain("T-1 · done");
+  expect(inbox.text).toContain("G1.1 · done");
 });

@@ -13,11 +13,12 @@ const ok = (text: string) => ({ content: [{ type: "text" as const, text }] });
 const fail = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
 const NO_CALLER = "Couldn't tell which omp session is calling: run omp inside a Tern pane.";
 
-function line(t: Task) {
-  return `${Store.tid(t.id)} [${t.status}] ${t.title}${t.repo ? ` (${t.repo})` : ""}${t.goal ? ` · ${Store.gid(t.goal)}` : ""}`;
-}
 
 export function buildServer(store: Store, resolve: Resolve): McpServer {
+  function line(t: Task) {
+    return `${store.tref(t.id)} [${t.status}] ${t.title}${t.repo ? ` (${t.repo})` : ""}${t.goal ? ` · ${Store.gid(t.goal)}` : ""}`;
+  }
+
   const server = new McpServer({ name: "overseer", version: "1.0.0" });
 
   function tool<S extends z.ZodRawShape>(name: string, description: string, shape: S,
@@ -31,13 +32,13 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     });
   }
 
-  const id = z.string().optional().describe("Task id (T-12); defaults to your only task in progress");
+  const id = z.string().optional().describe("Task id: G3.2 (a goal's task) or T7 (outside goals); defaults to your only task in progress");
 
   tool("task_start",
     "Start tracking the work you're doing. Call once at the start of any task that changes something, with a short imperative title. A worker's brief names an existing task: pass its id instead.",
     { title: z.string().optional(), body: z.string().optional().describe("Two or three sentences on the goal, Markdown"),
       id: z.string().optional(), readonly: z.boolean().optional().describe("Research or review only, no changes") },
-    (c, a) => line(store.startTask(c, { id: a.id ? Store.parseTask(a.id) : undefined, title: a.title, body: a.body, readonly: a.readonly })) + " — started.");
+    (c, a) => line(store.startTask(c, { id: a.id ? store.taskId(a.id) : undefined, title: a.title, body: a.body, readonly: a.readonly })) + " — started.");
 
   tool("task_note",
     "Record a real milestone on your task: a decision, a plan change, a PR opened (pass pr). Not every step; a few lines of Markdown with a bold lead-in.",
@@ -51,7 +52,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     (c, a) => line(store.ask(c.session, { ref: a.id, question: a.question, options: a.options, recommended: a.recommended })) + " — waiting for the user.");
 
   tool("message",
-    "Message another agent: `to` is a task id (T-12), `@goal` (every working agent on your goal) or `@coordinator`. Only when your work affects or depends on theirs. Never for decisions the user must make.",
+    "Message another agent: `to` is a task id (G3.2, or T7), `@goal` (every working agent on your goal) or `@coordinator`. Only when your work affects or depends on theirs. Never for decisions the user must make.",
     { id, to: z.string(), body: z.string() },
     (c, a) => `Sent to ${store.message(c.session, { ref: a.id, to: a.to, body: a.body }).map((e) => e.to_target).join(", ")}. Messages from agents arrive at most every 2 minutes.`);
 
@@ -66,14 +67,14 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     });
 
   tool("task_add",
-    "Add a task for later, in any repository: a follow-up worth doing. Optionally part of a goal (G-3) and depending on other tasks.",
+    "Add a task for later, in any repository: a follow-up worth doing. Optionally part of a goal (G3) and depending on other tasks.",
     { title: z.string(), body: z.string().optional(), repo: z.string(), goal: z.string().optional(),
       needs: z.array(z.string()).optional(), readonly: z.boolean().optional() },
     (c, a) => line(store.addTask(c, { title: a.title, body: a.body, repo: a.repo,
       goal: a.goal ? Store.parseGoal(a.goal) : undefined, needs: (a.needs ?? []).map(Store.parseTask), readonly: a.readonly })) + " — added.");
 
   tool("task_list",
-    "List tasks: by goal (G-3), repository, status, or mine.",
+    "List tasks: by goal (G3), repository, status, or mine.",
     { goal: z.string().optional(), repo: z.string().optional(),
       status: z.enum(["todo", "ready", "doing", "done", "failed", "dropped"]).optional(), mine: z.boolean().optional() },
     (c, a) => store.listTasks({ goal: a.goal ? Store.parseGoal(a.goal) : undefined, repo: a.repo, status: a.status,
@@ -97,7 +98,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     });
 
   tool("issue_link",
-    "Link a GitHub issue (owner/repo#12) to a goal: the goal you coordinate or work on, or `goal` (G-3). Linked issues are listed in briefs and get comments when the goal starts and finishes.",
+    "Link a GitHub issue (owner/repo#12) to a goal: the goal you coordinate or work on, or `goal` (G3). Linked issues are listed in briefs and get comments when the goal starts and finishes.",
     { issue: z.string(), goal: z.string().optional() },
     (c, a) => {
       const p = parseIssueRef(a.issue);
@@ -127,27 +128,27 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
       const g = store.coordinatorGoalFor(c.session);
       const keys = new Map<string, number>();
       for (const t of a.add ?? []) {
-        const needs = (t.needs ?? []).map((n) => keys.get(n) ?? Store.parseTask(n));
+        const needs = (t.needs ?? []).map((n) => keys.get(n) ?? store.taskId(n));
         keys.set(t.key, store.addTask(c, { title: t.title, body: t.body, repo: t.repo, goal: g.id, needs, readonly: t.readonly }).id);
       }
       for (const e of a.edit ?? []) {
-        store.editTask(g.id, Store.parseTask(e.task), { title: e.title, body: e.body, repo: e.repo,
-          needs: e.needs?.map((n) => keys.get(n) ?? Store.parseTask(n)) });
+        store.editTask(g.id, store.taskId(e.task), { title: e.title, body: e.body, repo: e.repo,
+          needs: e.needs?.map((n) => keys.get(n) ?? store.taskId(n)) });
       }
-      for (const ref of a.drop ?? []) store.dropTask(g.id, Store.parseTask(ref));
+      for (const ref of a.drop ?? []) store.dropTask(g.id, store.taskId(ref));
       return store.listTasks({ goal: g.id }).map(line).join("\n");
     });
 
   tool("worker_start",
     "Coordinator only: start an omp worker on a task that's ready, or done/failed for follow-up work (it reopens; the worker continues in the task's worktree). Overseer opens it as a tab in the goal's session, in its own worktree (read-only tasks may use the checkout). `context` is added to its brief: what it should know from you or earlier workers. At most 4 open workers per goal.",
     { task: z.string(), context: z.string().optional() },
-    (c, a) => `${Store.wid(store.requestWorker(c, Store.parseTask(a.task), a.context).id)} requested for ${a.task}; its done arrives in your inbox.`);
+    (c, a) => `${Store.wid(store.requestWorker(c, store.taskId(a.task), a.context).id)} requested for ${a.task}; its done arrives in your inbox.`);
 
   tool("worker_stop",
     "Coordinator only: close a task's worker (its tab and omp session; the worktree stays). Use it once a finished worker's result is read. An unfinished task goes back to ready; a finished one stays finished.",
     { task: z.string() },
     (c, a) => {
-      const w = store.stopWorker(c, Store.parseTask(a.task));
+      const w = store.stopWorker(c, store.taskId(a.task));
       const t = store.task(w.task);
       return `${Store.wid(w.id)} closing; ${a.task} is ${t.status}.`;
     });
@@ -165,7 +166,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     try {
       for (;;) {
         const events = store.inbox(caller.session);
-        if (events.length) return ok(events.map((e) => `${e.task ? Store.tid(e.task) : "goal"} · ${e.kind}: ${e.body}`).join("\n\n"));
+        if (events.length) return ok(events.map((e) => `${e.task ? store.tref(e.task) : "goal"} · ${e.kind}: ${e.body}`).join("\n\n"));
         if (Date.now() >= until) return ok("Nothing yet.");
         await Bun.sleep(1000);
       }
