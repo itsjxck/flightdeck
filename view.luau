@@ -274,15 +274,15 @@ local AGENT_STATES = {
 }
 
 -- One line per agent: its dot (the state), its name, then its Mission control
--- task's ref, which opens the task there (the title is in the tooltip).
+-- task (ref and title, cut to fit), which opens the task there.
 local function agentNode(agent)
 	local state = AGENT_STATES[agent.state] or AGENT_STATES.idle
 	local children = {
 		ui.el("div", { key = "status", role = state.dot }),
-		text("name", agent.name, "overseer.spaceName", { grow = 1 }),
+		text("name", agent.name, "overseer.spaceName", { grow = if agent.task then nil else 1 }),
 	}
 	if agent.task then
-		table.insert(children, text("task", agent.task.ref, "overseer.taskLink", {
+		table.insert(children, text("task", "· " .. agent.task.ref .. " · " .. agent.task.title, "overseer.taskLink", {
 			title = agent.task.ref .. " · " .. agent.task.title .. "\nOpen it in Mission control",
 			actions = { click = "mission=" .. agent.task.ref },
 		}))
