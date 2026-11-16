@@ -126,7 +126,7 @@ local function questionNode(q, picked, now, reply)
 		table.insert(children, text("how", "Click to answer", "mission.hint"))
 	end
 	return col("q" .. q.task, if picked then "mission.questionPicked" else "mission.question", children,
-		{ actions = { click = "select=" .. q.task }, mark = if picked then "pick" else nil })
+		{ actions = { click = "select=q:" .. q.task }, mark = if picked then "pick" else nil })
 end
 
 -- Which items show their details (refs → true); set by M.view for the whole render.
@@ -532,7 +532,7 @@ function M.view(view)
 	if #s.needs > 0 then
 		local cards = {}
 		for _, q in s.needs do
-			local picked = q.task == view.selectedRef
+			local picked = "q:" .. q.task == view.selectedRef
 			local reply
 			if picked and view.replyInCard then
 				reply = Input.props(view.reply)

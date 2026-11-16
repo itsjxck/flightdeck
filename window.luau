@@ -1947,6 +1947,32 @@ unlockKey = function(cx)
 end
 tern.command({ id = "unlock-key", title = "Unlock SSH key (git fetch)", icon = "key", run = function(cx) unlockKey(cx) end })
 
+-- File links clicked in Mission control: agents write paths relative to their
+-- worktree, but the block has no folder of its own. Resolve them against the
+-- selected item's folder (kv `mission:linkBase`, from ui/block.luau), else the
+-- first task folder where the file exists.
+tern.route.link(function(link, cx)
+	local info = cx.session:pane(link.pane)
+	if not (info and info.block == "overseer.mission") then return nil end
+	local url = link.url
+	if string.match(url, "^%a[%w+.-]*:") or string.sub(url, 1, 1) == "/" then return nil end
+	if string.sub(url, 1, 2) == "~/" then return { path = expandHome(url) } end
+	local bases = {}
+	local base = tern.kv.get("mission:linkBase")
+	if type(base) == "string" then table.insert(bases, base) end
+	for _, t in mission.state.get().tasks do
+		if t.worktree then table.insert(bases, t.worktree) end
+		if t.repoPath then table.insert(bases, t.repoPath) end
+	end
+	local rel = string.gsub(url, "^%./", "")
+	for _, dir in bases do
+		local path = dir .. "/" .. rel
+		local ok, exists = pcall(tern.fs.exists, string.match(path, "^(.-):%d+") or path)
+		if ok and exists then return { path = path } end
+	end
+	return nil
+end)
+
 tern.command({ id = "mission", title = "Mission control", icon = "list", keys = { "cmd+alt+shift+m" },
 	run = function(cx) openMissionControl(cx) end })
 

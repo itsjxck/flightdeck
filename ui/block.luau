@@ -11,6 +11,7 @@ local POLL_MS = 2000
 
 local ISSUES_POLL_MS = 30000
 local issueKey
+local publishLinkBase
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
@@ -19,7 +20,13 @@ local function shown(state)
 	return model.filterSections(state.sections, state.repoFilter), model.filterBacklog(state.backlog, state.repoFilter)
 end
 
--- The selectable rows of the shown tab and the index of the selected one (by ref, so a refresh keeps it).
+-- A row's selection key: its ref, but "q:G1.1" for a question, since the
+-- question and its task share a ref and both show on Now.
+local function rowKey(r)
+	return if r.kind == "question" then "q:" .. r.item.task else (r.item.task or r.item.ref)
+end
+
+-- The selectable rows of the shown tab and the index of the selected one (by key, so a refresh keeps it).
 local function rows(state)
 	local sections, backlog = shown(state)
 	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded, state.showDone) else {})
@@ -28,8 +35,7 @@ local function rows(state)
 		else model.selectable(sections)
 	local index = 1
 	for i, r in list do
-		local ref = r.item.task or r.item.ref
-		if ref == state.selectedRef then index = i end
+		if rowKey(r) == state.selectedRef then index = i end
 	end
 	return list, index
 end
@@ -274,6 +280,24 @@ local function activate(state, cx)
 	end
 end
 
+-- Where relative file links in what's shown resolve: the selected item's
+-- task folder (its worktree, else its repository), for the window's link
+-- route (kv `mission:linkBase`; see missionLinks in window.luau).
+local publishedBase = nil
+publishLinkBase = function(state, row)
+	local ref = row and (row.item.task or row.item.ref)
+	local base
+	for _, group in state.sections.working do
+		for _, t in group.tasks do if t.ref == ref then base = t.worktree or t.repoPath end end
+		if group.coordinator and group.coordinator.ref == ref then base = group.coordinator.worktree or group.coordinator.repoPath end
+	end
+	if not base and row and row.item.worktree then base = row.item.worktree end
+	if base ~= publishedBase then
+		publishedBase = base
+		tern.kv.set("mission:linkBase", base)
+	end
+end
+
 local DEF = {
 	init = function(cx, args, saved)
 		local state = {
@@ -293,6 +317,7 @@ local DEF = {
 	view = function(state)
 		local list, index = rows(state)
 		local row = list[index]
+		publishLinkBase(state, row)
 		local to, hint, inCard = replyTarget(state)
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
@@ -301,7 +326,7 @@ local DEF = {
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
-			sections = sections, selectedRef = row and (row.item.task or row.item.ref),
+			sections = sections, selectedRef = row and rowKey(row),
 			thread = state.thread, reply = state.reply, replyTo = to, replyHint = hint, replyInCard = inCard, error = state.error,
 			agentOf = function(session) return if type(agents) == "table" and session then agents[session] else nil end,
 		})
@@ -331,7 +356,7 @@ local DEF = {
 		end
 		if key.name == "up" or key.name == "down" then
 			local next = list[math.clamp(index + (if key.name == "up" then -1 else 1), 1, math.max(#list, 1))]
-			if next then state.selectedRef = next.item.task or next.item.ref end
+			if next then state.selectedRef = rowKey(next) end
 		elseif not typing and state.tab == "issues" and issueKey(state, cx, key.name, list[index]) then
 			-- handled
 		elseif key.name == "escape" or key.name == "esc" then

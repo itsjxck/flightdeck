@@ -4,12 +4,15 @@
 -- moment; on failure it stays until you press Enter.
 local M = {}
 
--- The shell command the floating terminal runs.
-M.COMMAND = table.concat({
-	"printf 'Unlocking your SSH key: git fetch in %s\\n\\n' \"$PWD\"",
-	"if git fetch; then printf '\\n\\033[32mUnlocked.\\033[0m\\n'; sleep 1.5",
-	"else printf '\\n\\033[31mgit fetch failed.\\033[0m Press Enter to close.'; read -r _; fi",
+-- The shell command the floating terminal runs: in your login shell, so git
+-- uses the ssh (and agent) your terminals use. macOS's own /usr/bin/ssh can't
+-- use a security key, and Tern's PATH may not put Homebrew's first.
+local SCRIPT = table.concat({
+	'printf "Unlocking your SSH key: git fetch in %s\\n\\n" "$PWD"',
+	'if git fetch; then printf "\\n\\033[32mUnlocked.\\033[0m\\n"; sleep 1.5',
+	'else printf "\\n\\033[31mgit fetch failed.\\033[0m Press Enter to close."; read -r _; fi',
 }, "; ")
+M.COMMAND = "exec \"${SHELL:-/bin/zsh}\" -ilc '" .. SCRIPT .. "'"
 
 -- Whether `dir` is a Git checkout whose origin is reached over SSH. done(ok).
 local function sshRepo(dir, done)
