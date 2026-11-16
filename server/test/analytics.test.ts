@@ -26,7 +26,7 @@ test("usage is read once, incrementally, and credited to the task's goal", async
   expect(a.spend.today).toBeCloseTo(0.75);
   expect(a.byModel.map((m) => m.model)).toEqual(["m1", "m2"]);
   expect(a.byGoal[0].cost).toBeCloseTo(0.75);
-  expect(a.spendByDay.at(-1)).toEqual({ day: localDay(Date.now()), cost: 0.75 });
+  expect(a.spendByDay.at(-1)).toMatchObject({ day: localDay(Date.now()), cost: 0.75, projects: [{ project: "web-app" }] });
 });
 
 test("agent samples feed the last 24 hours, busiest per hour", () => {

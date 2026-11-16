@@ -504,10 +504,26 @@ function M.shortDay(day)
 	return if m then tostring(tonumber(d)) .. " " .. MONTHS[tonumber(m)] else day
 end
 
--- A bar chart with its first and last labels under it (the bars show the rest on hover).
+-- A bar chart whose bars have tooltips. `bars`: { label, value, tip }. Heights
+-- come in 20 steps (roles mission.bar-0 … mission.bar-20): view nodes take no
+-- inline styles. The first and last labels sit under it.
+local BAR_STEPS = 20
+function M.barStep(value, max)
+	if value <= 0 or max <= 0 then return 0 end
+	return math.max(1, math.floor(value / max * BAR_STEPS + 0.5))
+end
+
 local function chart(bars)
+	local max = 0
+	for _, b in bars do max = math.max(max, b[2]) end
+	local cols = {}
+	for n, b in bars do
+		table.insert(cols, ui.node("col", { key = "b" .. tostring(n), role = "mission.barCol", title = b[3] or (b[1] .. ": " .. tostring(b[2])) }, {
+			ui.el("div", { key = "bar", role = "mission.bar-" .. tostring(M.barStep(b[2], max)) }),
+		}))
+	end
 	local range = if #bars > 0 then bars[1][1] .. "  …  " .. bars[#bars][1] else ""
-	return col("chart", "mission.chart", { ui.bars(bars), text("range", range, "mission.chartRange") })
+	return col("chart", "mission.chart", { row("bars", "mission.bars", cols), text("range", range, "mission.chartRange") })
 end
 
 -- The Stats tab: spend from omp's session files, agents over the day, how goals and tasks ended.
@@ -529,16 +545,27 @@ local function statsNodes(view)
 	}))
 
 	local spendBars = {}
-	for _, d in a.spendByDay do table.insert(spendBars, { M.shortDay(d.day), math.floor(d.cost * 100 + 0.5) / 100 }) end
+	for _, d in a.spendByDay do
+		local lines = { M.shortDay(d.day) .. ": " .. M.money(d.cost) .. " · " .. M.count(d.tokens or 0) .. " tokens" }
+		for _, p in (d.projects or {}) do table.insert(lines, p.project .. "  " .. M.money(p.cost)) end
+		table.insert(spendBars, { M.shortDay(d.day), d.cost, table.concat(lines, "\n") })
+	end
 	table.insert(out, col("spend", "mission.section", { sectionHead("head", "Spend per day", "USD, last 14 days"), chart(spendBars) }))
 
 	local agentBars = {}
-	for _, h in a.agentsByHour do table.insert(agentBars, { h.hour, h.working }) end
+	for _, h in a.agentsByHour do
+		table.insert(agentBars, { h.hour, h.working, string.format("%s: %d working, %d waiting for you, %d running", h.hour, h.working, h.waiting or 0, h.total) })
+	end
 	table.insert(out, col("agents", "mission.section", { sectionHead("head", "Agents working", "busiest minute of each hour, last 24 hours"),
 		chart(agentBars) }))
 
 	local taskBars, failed = {}, 0
-	for _, d in a.tasksByDay do table.insert(taskBars, { M.shortDay(d.day), d.done }); failed += d.failed end
+	for _, d in a.tasksByDay do
+		local tip = M.shortDay(d.day) .. ": " .. tostring(d.done) .. " done" .. (if d.failed > 0 then ", " .. tostring(d.failed) .. " failed" else "")
+		if d.titles and #d.titles > 0 then tip ..= "\n" .. table.concat(d.titles, "\n") end
+		table.insert(taskBars, { M.shortDay(d.day), d.done, tip })
+		failed += d.failed
+	end
 	table.insert(out, col("tasks", "mission.section", { sectionHead("head", "Tasks done per day", tostring(failed) .. " failed in the same 14 days"),
 		chart(taskBars) }))
 
@@ -713,6 +740,7 @@ end
 do
 	assert(M.isoMs("1970-01-02T00:00:01Z") == 86401000 and M.isoMs("2026-11-16T10:00:00Z") - M.isoMs("2026-11-15T10:00:00Z") == 86400000,
 		"ui.render.isoMs self-check")
+	assert(M.barStep(0, 10) == 0 and M.barStep(0.1, 10) == 1 and M.barStep(10, 10) == 20 and M.barStep(5, 0) == 0, "ui.render.barStep self-check")
 	assert(M.money(1.234) == "$1.23" and M.count(1234567) == "1.2M" and M.count(8.07e9) == "8.1B" and M.count(34000) == "34k" and M.shortDay("2026-11-06") == "6 Nov",
 		"ui.render money/count/shortDay self-check")
 	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b", "ui.render.oneLine self-check")

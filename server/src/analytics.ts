@@ -115,7 +115,20 @@ export function analytics(store: Store, days = 14) {
   for (let i = days - 1; i >= 0; i--) dayList.push(localDay(now - i * DAY_MS));
 
   const spendRows = store.db.query("select day, sum(cost) as cost, sum(tokens) as tokens from usage where day >= ? group by day").all(since) as { day: string; cost: number; tokens: number }[];
-  const spendByDay = dayList.map((day) => ({ day, cost: spendRows.find((r) => r.day === day)?.cost ?? 0 }));
+  // Each day's projects, for the bar's tooltip.
+  const repoList = store.repos({ ignored: true });
+  const dayProjects = new Map<string, Map<string, number>>();
+  for (const r of store.db.query(`select u.day as day, f.cwd as cwd, sum(u.cost) as cost from usage u join usage_files f on f.path = u.path
+      where u.day >= ? group by u.day, f.cwd`).all(since) as { day: string; cwd: string | null; cost: number }[]) {
+    const m = dayProjects.get(r.day) ?? new Map<string, number>();
+    const p = projectOf(r.cwd, repoList);
+    m.set(p, (m.get(p) ?? 0) + r.cost);
+    dayProjects.set(r.day, m);
+  }
+  const spendByDay = dayList.map((day) => ({
+    day, cost: spendRows.find((r) => r.day === day)?.cost ?? 0, tokens: spendRows.find((r) => r.day === day)?.tokens ?? 0,
+    projects: [...(dayProjects.get(day) ?? [])].map(([project, cost]) => ({ project, cost })).sort((a, b) => b.cost - a.cost).slice(0, 4),
+  }));
   const total = (from: string) => {
     const row = store.db.query("select coalesce(sum(cost), 0) as c, coalesce(sum(tokens), 0) as t from usage where day >= ?").get(from) as { c: number; t: number };
     return row;
@@ -140,13 +153,18 @@ export function analytics(store: Store, days = 14) {
       left join usage u on u.path = f.path group by g.id order by g.id desc limit 12`).all() as
       { id: number; title: string; status: string; tasks: number; cost: number }[]).map((g) => ({ ...g, ref: `G${g.id}` }));
 
-  const finished = store.db.query(`select status, updated from tasks where status in ('done', 'failed', 'dropped') and updated >= ?`)
-    .all(now - days * DAY_MS) as { status: string; updated: number }[];
-  const tasksByDay = dayList.map((day) => ({
-    day,
-    done: finished.filter((t) => t.status === "done" && localDay(t.updated) === day).length,
-    failed: finished.filter((t) => t.status === "failed" && localDay(t.updated) === day).length,
-  }));
+  const finished = store.db.query(`select id, title, status, updated from tasks where status in ('done', 'failed', 'dropped') and updated >= ?`)
+    .all(now - days * DAY_MS) as { id: number; title: string; status: string; updated: number }[];
+  const tasksByDay = dayList.map((day) => {
+    const ofDay = finished.filter((t) => localDay(t.updated) === day && t.status !== "dropped");
+    return {
+      day,
+      done: ofDay.filter((t) => t.status === "done").length,
+      failed: ofDay.filter((t) => t.status === "failed").length,
+      // For the bar's tooltip.
+      titles: ofDay.slice(0, 6).map((t) => `${store.tref(t.id)} ${t.title}${t.status === "failed" ? " (failed)" : ""}`),
+    };
+  });
   const count = (sql: string) => {
     // bun:sqlite rows are untyped; every query here selects `count(*) as n`.
     const row = store.db.query(sql).get() as { n: number };
@@ -164,12 +182,13 @@ export function analytics(store: Store, days = 14) {
   // Agents over the last 24 hours, the busiest sample of each hour.
   const samples = store.db.query("select at, total, working, waiting from agent_samples where at >= ? order by at").all(now - DAY_MS) as
     { at: number; total: number; working: number; waiting: number }[];
-  const hours: { hour: string; working: number; total: number }[] = [];
+  const hours: { hour: string; working: number; total: number; waiting: number }[] = [];
   for (let i = 23; i >= 0; i--) {
     const start = now - (i + 1) * 3_600_000, end = now - i * 3_600_000;
     const inHour = samples.filter((s) => s.at >= start && s.at < end);
     hours.push({ hour: String(new Date(end).getHours()).padStart(2, "0") + ":00",
-      working: Math.max(0, ...inHour.map((s) => s.working)), total: Math.max(0, ...inHour.map((s) => s.total)) });
+      working: Math.max(0, ...inHour.map((s) => s.working)), total: Math.max(0, ...inHour.map((s) => s.total)),
+      waiting: Math.max(0, ...inHour.map((s) => s.waiting)) });
   }
   const latest = samples.at(-1) ?? null;
 
