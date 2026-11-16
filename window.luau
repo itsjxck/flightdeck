@@ -4,6 +4,8 @@ local view = require("./view")
 local visualize = require("./visualize")
 local oplog = require("./oplog")
 local mission = require("./mission")
+local unlock = require("./unlock")
+local unlockKey
 
 local cache = {}
 local inflight = {}
@@ -1914,6 +1916,23 @@ local function openMissionControl(cx, task)
 		if info and info.kind == "terminal" then cx.layout:close(shell) end
 	end
 end
+
+-- ⌘⇧S: a terminal in the corner runs `git fetch` so the SSH security key asks to be unlocked.
+-- Tried in the focused pane's folder, then the current space's repository, then every known one.
+-- The key is bound in your settings (keybinds["cmd+shift+s"]): Tern's own preset already uses it,
+-- and a plugin's `keys` can't take a preset's keys.
+unlockKey = function(cx)
+	local dirs = {}
+	local focused = cx.session:focused()
+	local info = focused and cx.session:pane(focused)
+	if info and info.cwd and info.cwd ~= "" then table.insert(dirs, expandHome(info.cwd)) end
+	local project, worktree = activeWorktree(cx)
+	if worktree then table.insert(dirs, worktree.path) end
+	if project then table.insert(dirs, project.path) end
+	for _, repo in repos do table.insert(dirs, repo.path) end
+	unlock.open(cx, dirs)
+end
+tern.command({ id = "unlock-key", title = "Unlock SSH key (git fetch)", icon = "key", run = function(cx) unlockKey(cx) end })
 
 tern.command({ id = "mission", title = "Mission control", icon = "list", keys = { "cmd+alt+shift+m" },
 	run = function(cx) openMissionControl(cx) end })
