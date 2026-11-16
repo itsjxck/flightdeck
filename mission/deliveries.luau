@@ -36,11 +36,27 @@ do
 		"deliveries.bundle self-check")
 end
 
+-- Panes already told about a stuck prompt (until the plugin reloads).
+local toasted = {}
+
 -- One delivery pass. done() runs when it's finished, whatever happened.
 function M.run(sessionPanes, done)
 	client.api("GET", "/api/deliveries", nil, function(list, err, cx)
 		if err or not cx or type(list) ~= "table" then done(); return end
+		if #list == 0 then done(); return end
+		-- Only hand a message over while its agent isn't mid-turn. Tern queues a
+		-- prompt sent to a working agent until its composer is sendable, and that
+		-- queue was seen to stay stuck after the turn ended (the agent sat idle with
+		-- answers undelivered); a stuck prompt also blocks every later one.
+		local agents = {}
+		local listed, all = pcall(function() return cx.agents:list() end)
+		if listed then for _, a in all do agents[tostring(a.pane)] = a end end
 		for _, bundle in M.bundle(list, sessionPanes) do
+			local agent = agents[bundle.pane]
+			if agent and agent.delivery_error then
+				client.warnOnce("delivery " .. bundle.pane .. agent.delivery_error, "pane " .. bundle.pane .. ": " .. agent.delivery_error)
+			end
+			if agent and agent.state == "working" then continue end
 			local ok, askErr = pcall(function() cx.agents:ask(tonumber(bundle.pane), bundle.text) end)
 			if ok then
 				for _, id in bundle.ids do client.post("/api/deliveries/" .. tostring(id) .. "/done", {}) end
@@ -48,6 +64,12 @@ function M.run(sessionPanes, done)
 					detail = "pane " .. bundle.pane .. " (" .. tostring(#bundle.ids) .. ")" })
 			else
 				client.warnOnce("ask " .. bundle.pane .. tostring(askErr), "couldn't deliver to pane " .. bundle.pane .. ": " .. tostring(askErr))
+				-- An earlier prompt stuck in Tern's queue blocks this one: tell the user once, it needs a nudge in the pane.
+				if string.find(tostring(askErr), "pending prompt") and not toasted[bundle.pane] then
+					toasted[bundle.pane] = true
+					pcall(function() cx:toast("warn", "An agent isn't taking your answers",
+						"Its pane has a message waiting to be sent. Open the agent (Go to agent) and press Enter, or type anything.") end)
+				end
 			end
 		end
 		done()
