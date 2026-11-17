@@ -869,7 +869,9 @@
 [data-role='mission.strip-failed'] { box-shadow: inset 3px 0 0 var(--bad); }
 [data-role='mission.strip-lost'] { box-shadow: inset 3px 0 0 var(--warn); }
 [data-role='mission.strip-done'] [data-role='mission.stripTitle'] { color: var(--t3); }
+[data-role='mission.stripHead'] { align-items: center; gap: 10px; min-width: 0; }
 [data-role='mission.holdsUp'] {
+  flex-shrink: 0;
   font: 11px/1 var(--mono);
   padding: 4px 8px;
   border-radius: 999px;
@@ -893,6 +895,8 @@
   text-overflow: ellipsis;
 }
 [data-role='mission.where'] {
+  flex: 0 1 auto;
+  min-width: 0;
   font: 12px/1 var(--mono);
   color: var(--t3);
   white-space: nowrap;
@@ -900,7 +904,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-[data-role='mission.state'] { align-items: center; gap: 7px; min-width: 9.5em; }
+[data-role='mission.state'] { align-items: center; gap: 7px; min-width: 9.5em; flex-shrink: 0; }
 [data-role='mission.stateLabel'] { font-size: 12px; color: var(--t2); white-space: nowrap; }
 [data-role^='mission.dot-'] { width: 7px; height: 7px; min-width: 7px; border-radius: 50%; background: var(--l4); }
 [data-role='mission.dot-working'] { background: var(--live); box-shadow: 0 0 0 3px rgb(from var(--live) r g b / 22%); }

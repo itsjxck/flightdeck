@@ -216,12 +216,15 @@ local function strip(t, picked, agentOf, waitingTasks)
 	local line = row("line", "mission.strip-" .. key, {
 		text("ref", t.ref, "mission.ref"),
 		col("main", "mission.stripMain", {
-			text("title", t.title, "mission.stripTitle"),
+			-- The title line carries what the task holds up, so the right-hand columns keep their room.
+			row("head", "mission.stripHead", {
+				text("title", t.title, "mission.stripTitle"),
+				if #holds > 0 then text("holds", "holding up " .. M.refList(holds), "mission.holdsUp",
+					{ title = table.concat(holds, ", ") .. " wait on " .. t.ref }) else nil,
+			}),
 			if note then text("note", note, "mission.stripNote") else nil,
 		}, { grow = 1 }),
-		if #holds > 0 then text("holds", "holding up " .. M.refList(holds), "mission.holdsUp",
-			{ title = table.concat(holds, ", ") .. " wait on " .. t.ref }) else nil,
-		text("where", where, "mission.where"),
+		text("where", where, "mission.where", { title = where }),
 		row("state", "mission.state", {
 			ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
 			text("label", label, "mission.stateLabel"),
