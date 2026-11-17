@@ -544,7 +544,7 @@ export class Store {
 
   // Makes the caller the goal's coordinator, with a task of its own
   // ("Coordinate …") so it can note progress and ask the user like any agent.
-  // Other active goals, for a coordinator to coordinate with: "- G3: title (web-app, dashboard)".
+  // Other active goals, for a coordinator to coordinate with: "- G3: title (web-app, api)".
   otherGoals(id: number): string {
     return this.listGoals("active").filter((g) => g.id !== id).map((g) => {
       const repos = [...new Set(this.listTasks({ goal: g.id }).filter((t) => t.session !== g.coordinator).map((t) => t.repo).filter(Boolean))];

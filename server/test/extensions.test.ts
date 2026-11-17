@@ -13,8 +13,8 @@ describe("extensions", () => {
   test("publish replaces the panel; bad panels and ids are refused with a readable reason", () => {
     const ext = new Extensions(new Database(":memory:"));
     ext.publish("owl", panel());
-    ext.publish("owl", { ...panel(), title: "web-app" });
-    expect(ext.list().map((e) => [e.id, e.title])).toEqual([["owl", "web-app"]]);
+    ext.publish("owl", { ...panel(), title: "Acme CI" });
+    expect(ext.list().map((e) => [e.id, e.title])).toEqual([["owl", "Acme CI"]]);
     expect(() => ext.publish("Owl!", panel())).toThrow("extension id");
     expect(() => ext.publish("owl", { title: "x", sections: [{ title: "s", items: [{ id: "", title: "t" }] }] })).toThrow("sections.0.items.0.id");
     expect(() => ext.publish("owl", panel("https://evil.example/cb"))).toThrow("on this Mac");

@@ -94,8 +94,8 @@ function workerBrief(store: Store, workerId: number) {
   ].filter(Boolean).join("\n");
 }
 
-// Both briefs: other MCP servers (web-app's, for one) also offer ways to delegate work and ask the user.
-const ONE_CHANNEL = "Flightdeck is your only channel to the user: ask with ask_user, report with task_note and task_done. Don't hand this work to other agent services (an web-app workstream, for example) and don't ask or notify the user through them (Slack, their web apps); other MCP tools are for looking things up. If something you run for testing creates its own questions for the user, close it yourself and report through Flightdeck.";
+// Both briefs: other MCP servers may also offer ways to delegate work and ask the user.
+const ONE_CHANNEL = "Flightdeck is your only channel to the user: ask with ask_user, report with task_note and task_done. Don't hand this work to other agent services (another agent platform's MCP tools, for example) and don't ask or notify the user through them (Slack, their web apps); other MCP tools are for looking things up. If something you run for testing creates its own questions for the user, close it yourself and report through Flightdeck.";
 
 export function coordinatorBrief(store: Store, goal: number) {
   const g = store.goal(goal);

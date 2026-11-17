@@ -64,8 +64,8 @@ Other tools on this Mac (a private Tern plugin, a script, a local service) can a
 
 ```json
 {
-  "title": "web-app",
-  "url": "https://web-app.example",
+  "title": "Acme CI",
+  "url": "https://ci.example",
   "callback": "http://127.0.0.1:8123/action",
   "sections": [{
     "title": "Active workstreams",
@@ -76,7 +76,7 @@ Other tools on this Mac (a private Tern plugin, a script, a local service) can a
       "subtitle": "Manager: checking routes.toml",
       "status": { "label": "Needs you", "tone": "waiting" },
       "repo": "web-app",
-      "url": "https://web-app.example/ws/12",
+      "url": "https://ci.example/runs/12",
       "body": "Markdown shown in its details.",
       "facts": [["Owner", "Jack"]],
       "actions": [
