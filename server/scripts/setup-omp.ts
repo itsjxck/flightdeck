@@ -41,6 +41,8 @@ const note = [
   "# Work tracking",
   "",
   "When running in Tern with the `flightdeck` MCP tools: call `task_start` at the start of any task that changes something, `task_note` at real milestones, `ask_user` for any decision you need from the user (also ask in your pane), and `task_done` exactly once at the end. The tool descriptions have the details.",
+  "",
+  "For Flightdeck tasks and goals, Flightdeck is the only channel to the user: don't hand the work to other agent services (an web-app workstream, for example) or ask the user through them (Slack, their web apps). Other MCP tools are for looking things up.",
   ...(hasSecurityKey ? ["", "# SSH security key", "",
     "Git over SSH (push, fetch, pull, clone) uses the user's hardware security key, which needs unlocking (touch or PIN) now and then. If an SSH operation fails with \"incorrect passphrase\", \"signing failed\", \"agent refused operation\" or \"Permission denied (publickey)\", don't work around it: no HTTPS remotes, no new keys, no changing remotes or SSH config. Ask the user to unlock their security key (with `ask_user` when the flightdeck tools are available), then retry."] : []),
   END,

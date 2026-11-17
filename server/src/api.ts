@@ -78,12 +78,16 @@ function workerBrief(store: Store, workerId: number) {
     })(),
     `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
+    ONE_CHANNEL,
     `When you open a PR, record it with task_note (pr: its URL).`,
     issueLines(store, g.id),
     SECURITY_KEY_NOTE,
     w.context ? `\nFrom your coordinator:\n${w.context}` : "",
   ].filter(Boolean).join("\n");
 }
+
+// Both briefs: other MCP servers (web-app's, for one) also offer ways to delegate work and ask the user.
+const ONE_CHANNEL = "Flightdeck is your only channel to the user: ask with ask_user, report with task_note and task_done. Don't hand this work to other agent services (an web-app workstream, for example) and don't ask or notify the user through them (Slack, their web apps); other MCP tools are for looking things up. If something you run for testing creates its own questions for the user, close it yourself and report through Flightdeck.";
 
 export function coordinatorBrief(store: Store, goal: number) {
   const g = store.goal(goal);
@@ -95,6 +99,7 @@ export function coordinatorBrief(store: Store, goal: number) {
     repos.length ? `Repositories Flightdeck knows (use these names as a task's repo):\n${repos.map((r) => `- ${r.name}: ${r.path}`).join("\n")}` : "",
     `Start workers on ready tasks with worker_start,`,
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
+    ONE_CHANNEL,
     `Other goals may run in the same repositories at the same time. goal_join lists them; message a goal's coordinator (to "G4") to agree on anything shared: which dev servers and ports each uses, databases and migration numbers, files you both change, merge order. You'll hear when a new goal starts.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
