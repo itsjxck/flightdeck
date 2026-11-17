@@ -16,6 +16,7 @@ bun src/main.ts <data dir>    # what Flightdeck runs; port 8095 (FLIGHTDECK_PORT
 | `src/tools.ts` | The MCP tools agents see. Each resolves its caller, calls `store`, and turns a broken rule into a tool error. Tool descriptions are the agents' instructions. |
 | `src/api.ts` | Flightdeck's JSON API (`/api/*`): state, the backlog (every goal and task), repositories (list, ignore), threads, answers, goal start/session/close, deliveries, worker starts and stops, pane → session lookup. Also the coordinator and worker briefs. |
 | `src/identity.ts` | Which omp session a request comes from: `X-Tern-Pane` → `tern process` → the session file the pane's process group holds open (or `--resume`/`--restore`), plus its folder, repository and branch. |
+| `src/extensions.ts` | Panels other tools publish (`POST /api/extensions/<id>`), validated with zod, kept in the `extensions` table, shown as sidebar sections and Mission control tabs; call-back buttons POST to the extension's loopback `callback`. See Extensions below. |
 | `src/repos.ts` | `repoInfo`: a repository's worktrees from `wt list --format=json` (Repos details, `GET /api/repos/<name>/info`). Finds Git repositories (breadth-first from `repos.json` roots, default `~`, depth 5, skipping system and build folders; worktrees and nested repositories don't count). `main.ts` scans at start, every 30 minutes and on `POST /api/repos/scan`; `store.syncScanned` records it. |
 | `src/github.ts` | GitHub through `gh`: open issues of known repositories (remote → owner/name), comments on linked issues, closing one you chose. Never closes issues on its own. |
 | `src/analytics.ts` | The Stats tab: reads new usage (cost, tokens) from omp's session files every 5 minutes by byte offset into `usage`; agent counts the window posts each minute (`agent_samples`, kept 30 days); `analytics()` builds spend, agent and goal/task series for `GET /api/analytics`. |
@@ -51,3 +52,41 @@ Answers and agents' messages are queued as events; Flightdeck fetches `/api/deli
 - **Order history**: no tasks; its coordinator reads the repos and plans them.
 
 Start one from Mission control. `bun scripts/demo.ts --reset` drops the demo goals and tasks and deletes the repos and their worktrees (`~/worktrees/demo-*`); close any started goal's session with **Close goal** first.
+
+## Extensions
+
+Other tools on this Mac (a private Tern plugin, a script, a local service) can add a section to the sidebar and a tab to Mission control, without Flightdeck knowing what they are (`src/extensions.ts`).
+
+1. Read the token from `~/Library/Application Support/Tern/plugin-data/flightdeck/token`.
+2. `POST /api/extensions/<id>` with `Authorization: Bearer <token>` and the whole panel, whenever it changes and at least every few minutes. Mission control says when a panel is more than 10 minutes old; one silent for a day is dropped.
+3. Buttons either open a link (`url`) or are POSTed to your `callback` (127.0.0.1 or localhost only) as `{ "item", "action", "text"? }`. Answer `{ "ok": true, "message": "Shown to the user" }`, then publish the panel again with what changed.
+4. `POST /api/extensions/<id>/remove` takes it away.
+
+```json
+{
+  "title": "web-app",
+  "url": "https://web-app.example",
+  "callback": "http://127.0.0.1:8123/action",
+  "sections": [{
+    "title": "Active workstreams",
+    "sidebar": true,
+    "items": [{
+      "id": "ws-12",
+      "title": "Routing trial",
+      "subtitle": "Manager: checking routes.toml",
+      "status": { "label": "Needs you", "tone": "waiting" },
+      "repo": "web-app",
+      "url": "https://web-app.example/ws/12",
+      "body": "Markdown shown in its details.",
+      "facts": [["Owner", "Jack"]],
+      "actions": [
+        { "id": "complete", "label": "Complete it", "primary": true, "confirm": "Deletes its workspace." },
+        { "id": "answer", "label": "Answer", "input": "Your answer" }
+      ]
+    }]
+  }]
+}
+```
+
+`tone` is one of `working`, `waiting`, `done`, `failed`, `idle`. `id`: lowercase letters, digits and dashes. Item ids: letters, digits and `. _ : -`. Items with a `repo` follow Mission control's repo filter. `confirm` asks first; `input` asks for text first.
+

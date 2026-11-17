@@ -362,6 +362,37 @@ local function goalNode(goal)
 	return ui.node("col", { key = "g" .. goal.ref, role = "flightdeck.space" }, children)
 end
 
+local extensionNode
+-- An extension's sidebar section: its title, then its items (dot, title,
+-- status); an item opens its details in Mission control's tab for the extension.
+local EXT_DOTS = { working = "flightdeck.dotAgent", waiting = "flightdeck.dotWaiting", done = "flightdeck.dotDone", failed = "flightdeck.dotWaiting", idle = "flightdeck.dotIdle" }
+extensionNode = function(e)
+	local children = {
+		ui.el("div", { key = "rule", role = "flightdeck.rule" }),
+		ui.node("row", { key = "header", role = "flightdeck.header" }, {
+			text("title", e.title, "flightdeck.heading", { grow = 1 }),
+			text("count", tostring(#e.items), "flightdeck.count"),
+			iconButton("collapse", if e.collapsed then "iconCollapsed" else "iconExpanded", "collapse=ext:" .. e.id,
+				(if e.collapsed then "Show " else "Hide ") .. e.title),
+		}),
+	}
+	if not e.collapsed then
+		local rows = {}
+		for _, it in e.items do
+			table.insert(rows, ui.node("row", {
+				key = "i" .. it.id, role = "flightdeck.worktreeRow", title = it.title .. (if it.label then "\n" .. it.label else ""),
+				actions = { click = "mission=ext:" .. e.id .. ":" .. it.id },
+			}, {
+				ui.el("div", { key = "status", role = EXT_DOTS[it.tone] or "flightdeck.dotIdle" }),
+				text("name", it.title, "flightdeck.worktreeName", { grow = 1 }),
+				if it.label then text("label", it.label, "flightdeck.taskState") else nil,
+			}))
+		end
+		table.insert(children, ui.node("col", { key = "items", role = "flightdeck.worktrees" }, rows))
+	end
+	return ui.node("col", { key = "x" .. e.id, role = "flightdeck.extension" }, children)
+end
+
 -- The goal whose sidebar row `node` (an action's node id) belongs to, e.g. "G-3".
 function View.goalRef(node)
 	return type(node) == "string" and node:match("%.g(G%-?%d+)%.line") or nil
@@ -440,6 +471,7 @@ function View.render(model)
 		}))
 		for _, goal in model.goals do table.insert(spaces, goalNode(goal)) end
 	end
+	for _, e in (model.extensions or {}) do table.insert(spaces, extensionNode(e)) end
 
 	local agents = {
 		ui.node("row", { key = "header", role = "flightdeck.header" }, {

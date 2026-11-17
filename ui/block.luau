@@ -17,6 +17,7 @@ local issueKey
 local publishLinkBase
 local askClose
 local fetchRepoInfo, toggleRepoDetails
+local extensionAction
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
@@ -37,6 +38,7 @@ local function rows(state)
 	local list = if state.tab == "backlog" then (if backlog then model.backlogRows(backlog, state.expanded, state.showDone) else {})
 		elseif state.tab == "issues" then model.issueRows(state.issues, state.repoFilter)
 		elseif state.tab == "repos" then (state.repos or {})
+		elseif string.sub(state.tab, 1, 4) == "ext:" then render.extensionRows(render.extensionOf(state.extensions, state.tab), state.repoFilter)
 		else model.selectable(sections)
 	local index = 1
 	for i, r in list do
@@ -92,13 +94,21 @@ end
 
 local function refresh(state, cx)
 	model.api("GET", "/api/state", nil, function(s, err)
-		state.error = err
-		if s then state.sections = model.sections(s); reportStatus(state, cx) end
+		-- Clears only its own error, so a button's result ("Sent.") outlives the refresh it triggers.
+		if err then state.error, state.fetchFailed = err, true
+		elseif state.fetchFailed then state.error, state.fetchFailed = nil, nil end
+		if s then state.sections = model.sections(s); state.extensions = s.extensions or {}; reportStatus(state, cx) end
 		-- The sidebar's Close goal asks here.
 		local closing = tern.kv.get("mission:closeGoal")
 		if type(closing) == "string" then tern.kv.set("mission:closeGoal", nil); askClose(state, cx, closing) end
 		local pending = tern.kv.get("mission:select")
-		if type(pending) == "string" then state.selectedRef = pending; tern.kv.set("mission:select", nil) end
+		if type(pending) == "string" then
+			tern.kv.set("mission:select", nil)
+			-- The sidebar's extension items: "ext:<id>:<item>" opens that tab with the item's details.
+			local extId, item = string.match(pending, "^ext:([^:]+):(.+)$")
+			if extId then state.tab, state.selectedRef, state.open["x:" .. item] = "ext:" .. extId, "x:" .. item, true
+			else state.selectedRef = pending end
+		end
 		if state.tab == "repos" then
 			model.api("GET", "/api/repos", nil, function(data)
 				if data then state.repos = model.repoRows(data) end
@@ -201,6 +211,11 @@ local function submitDialog(state, cx)
 		model.api("POST", "/api/goals/" .. d.goal .. "/close", { status = "done", removeMerged = true }, done(function(r)
 			model.request({ kind = "closed", goal = d.goal, session = d.session })
 			return d.goal .. " closed" .. (if r and r.removing and r.removing > 0 then "; removing " .. tostring(r.removing) .. " merged worktree(s)." else ".")
+		end))
+	elseif d.kind == "extension" then
+		local v2 = dialog.values(d)
+		model.api("POST", "/api/extensions/" .. d.ext .. "/action", { item = d.item, action = d.action, text = v2.text }, done(function(r)
+			return r and r.message or "Sent."
 		end))
 	elseif d.kind == "link" then
 		local goal = string.upper((string.gsub(v.goal, "%s", "")))
@@ -332,6 +347,33 @@ toggleRepoDetails = function(state, cx, name)
 	if state.open[name] then fetchRepoInfo(state, cx, name) end
 end
 
+-- An extension's call-back button: asks first when it wants text or a confirmation, else sends at once.
+extensionAction = function(state, cx, itemId, actionId)
+	local ext = render.extensionOf(state.extensions, state.tab)
+	if not ext then return end
+	for _, s in ext.sections do
+		for _, it in s.items do
+			if it.id == itemId then
+				for _, a in (it.actions or {}) do
+					if a.id == actionId then
+						state.selectedRef = "x:" .. itemId
+						if a.input or a.confirm then
+							state.dialog = dialog.new("extension", { ext = ext.id, item = itemId, action = a })
+						else
+							state.error = a.label .. "…"
+							model.api("POST", "/api/extensions/" .. ext.id .. "/action", { item = itemId, action = actionId }, function(r, err)
+								state.error = err or (r and r.message) or (a.label .. ": done.")
+								refresh(state, cx)
+							end)
+						end
+						return
+					end
+				end
+			end
+		end
+	end
+end
+
 local function switchTab(state, cx, tab)
 	state.tab, state.thread = tab, nil
 	refresh(state, cx)
@@ -340,8 +382,9 @@ end
 -- The tab after (step 1) or before (step -1) the shown one.
 local function stepTab(state, step)
 	local index = 1
-	for i, t in render.TABS do if t.id == state.tab then index = i end end
-	return render.TABS[(index - 1 + step) % #render.TABS + 1].id
+	local tabs = render.tabs(state.extensions)
+	for i, t in tabs do if t.id == state.tab then index = i end end
+	return tabs[(index - 1 + step) % #tabs + 1].id
 end
 
 -- Enter on a row with an empty reply: start a proposal, go to a task's agent, show a goal's tasks.
@@ -350,6 +393,8 @@ local function activate(state, cx)
 	if not row then return end
 	if row.kind == "repo" then
 		toggleRepoDetails(state, cx, row.item.name)
+	elseif row.kind == "ext" then
+		state.open[row.item.ref] = not state.open[row.item.ref] or nil
 	elseif row.kind == "goal" then
 		state.expanded[row.item.ref] = not state.expanded[row.item.ref] or nil
 	elseif row.kind == "proposal" then
@@ -403,7 +448,7 @@ local DEF = {
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, stats = state.stats, backlog = backlog, repoInfo = state.repoInfo, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
+			tab = state.tab, stats = state.stats, extensions = state.extensions, backlog = backlog, repoInfo = state.repoInfo, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
@@ -556,6 +601,7 @@ local DEF = {
 			state.selectedRef = a
 			state.open[a] = not state.open[a] or nil
 		elseif verb == "repoinfo" then fetchRepoInfo(state, cx, a)
+		elseif verb == "extact" then extensionAction(state, cx, a, b)
 		elseif verb == "openpath" then model.request({ kind = "openPath", path = a })
 		elseif verb == "go" then model.request({ kind = "go", task = a })
 		elseif verb == "thread" then

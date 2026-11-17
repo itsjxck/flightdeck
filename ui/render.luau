@@ -288,9 +288,16 @@ end
 M.TABS = { { id = "now", label = "Now" }, { id = "backlog", label = "Backlog" }, { id = "issues", label = "Issues" },
 	{ id = "stats", label = "Stats" }, { id = "repos", label = "Repos" } }
 
-local function tabStrip(current, needs)
+-- The tabs with one per extension after them ("ext:<id>", its title). Pure.
+function M.tabs(extensions)
+	local out = table.clone(M.TABS)
+	for _, e in (extensions or {}) do table.insert(out, { id = "ext:" .. e.id, label = e.title }) end
+	return out
+end
+
+local function tabStrip(current, needs, extensions)
 	local tabs = {}
-	for _, t in M.TABS do
+	for _, t in M.tabs(extensions) do
 		local label = t.label .. (if t.id == "now" and needs > 0 then " · " .. tostring(needs) else "")
 		-- A row, not a button element: Tern's button chrome can't be fully restyled.
 		table.insert(tabs, row(t.id, if t.id == current then "mission.tabOn" else "mission.tab",
@@ -577,6 +584,101 @@ local function repoNodes(view)
 	}) }
 end
 
+local extensionNodes
+
+-- The extension a tab ("ext:<id>") shows, or nil. Pure.
+function M.extensionOf(extensions, tab)
+	local id = type(tab) == "string" and string.match(tab, "^ext:(.+)$")
+	if not id then return nil end
+	for _, e in (extensions or {}) do if e.id == id then return e end end
+	return nil
+end
+
+-- Whether any of an extension's items names a repository (then the repo filter applies). Pure.
+function M.extensionHasRepos(ext)
+	for _, s in ext.sections do for _, it in s.items do if it.repo then return true end end end
+	return false
+end
+
+-- An extension's items as selectable rows ({ kind = "ext", item }), narrowed to the repo filter. `item.ref` is "x:<id>". Pure.
+function M.extensionRows(ext, repoFilter)
+	local out = {}
+	if not ext then return out end
+	for _, s in ext.sections do
+		for _, it in s.items do
+			if not repoFilter or it.repo == repoFilter then
+				table.insert(out, { kind = "ext", item = { ref = "x:" .. it.id, ext = it } })
+			end
+		end
+	end
+	return out
+end
+
+-- The dot role for an extension status tone.
+local EXT_DOT = { working = "mission.dot-working", waiting = "mission.dot-waiting", done = "mission.dot-done", failed = "mission.dot-failed", idle = "mission.dot-idle" }
+M.EXT_DOT = EXT_DOT
+
+-- An extension item's details: its text, facts and buttons (links open; others call the extension back).
+local function extensionDetail(it)
+	local children = {}
+	if it.body then
+		local md = ui.md(it.body)
+		md.p = md.p or {}
+		md.p.key = "body"
+		table.insert(children, md)
+	end
+	local facts = {}
+	for n, f in (it.facts or {}) do
+		table.insert(facts, row("f" .. tostring(n), "mission.fact", { text("k", f[1], "mission.factKey"), text("v", f[2], "mission.factValue") }))
+	end
+	if #facts > 0 then table.insert(children, col("facts", "mission.facts", facts)) end
+	local buttons = {}
+	for n, a in (it.actions or {}) do
+		table.insert(buttons, ui.button(a.label, { key = "a" .. tostring(n), variant = if a.primary then "primary" else "default",
+			actions = { click = if a.url then "url=" .. a.url else "extact=" .. it.id .. "=" .. a.id } }))
+	end
+	if it.url then table.insert(buttons, ui.button("Open", { key = "open", variant = "quiet", actions = { click = "url=" .. it.url } })) end
+	if #buttons > 0 then table.insert(children, row("buttons", "mission.detailButtons", buttons)) end
+	return col("detail", "mission.detail", children)
+end
+
+-- An extension's tab: its sections of items, each opening to its details.
+extensionNodes = function(view, ext)
+	local out = {}
+	local age = M.ago(view.sections.now, ext.updated)
+	local stale = view.sections.now and ext.updated and view.sections.now - ext.updated > 10 * 60000
+	if stale then
+		table.insert(out, text("stale", ext.title .. " last updated " .. (age or "a while ago") .. "; it may have stopped.", "mission.notice"))
+	end
+	for n, s in ext.sections do
+		local rows = {}
+		for _, it in s.items do
+			if not view.repoFilter or it.repo == view.repoFilter then
+				local ref = "x:" .. it.id
+				local open = openItems[ref] == true
+				local line = row("line", "mission.repo", {
+					text("chev", if open then "▾" else "▸", "mission.chev"),
+					col("main", "mission.stripMain", {
+						text("title", it.title, "mission.stripTitle"),
+						if it.subtitle then text("sub", it.subtitle, "mission.stripNote") else nil,
+					}, { grow = 1 }),
+					if it.repo then text("repo", it.repo, "mission.where") else nil,
+					if it.status then row("state", "mission.state", {
+						ui.el("div", { key = "dot", role = EXT_DOT[it.status.tone] or "mission.dot-idle" }),
+						text("label", it.status.label, "mission.stateLabel"),
+					}) else nil,
+				}, { actions = { click = "toggle=" .. ref }, mark = if ref == view.selectedRef then "pick" else nil })
+				table.insert(rows, col("r" .. it.id, "mission.item", { line, if open then extensionDetail(it) else nil }))
+			end
+		end
+		table.insert(out, col("s" .. tostring(n), "mission.section", {
+			sectionHead("head", s.title, plural(#rows, "item", "items") .. (if n == 1 and age and not stale then " · updated " .. age else "")),
+			if #rows > 0 then col("list", "mission.strips", rows) else text("none", "None.", "mission.empty"),
+		}))
+	end
+	return out
+end
+
 -- Gives a builder's node a key (ui builders take none).
 local function keyed(node, key)
 	node.p = node.p or {}
@@ -714,10 +816,11 @@ function M.view(view)
 		text("title", "Mission control", "mission.title"),
 		text("summary", summary(s, agentOf), "mission.summary"),
 	}))
-	table.insert(main, tabStrip(view.tab or "now", #s.needs))
+	table.insert(main, tabStrip(view.tab or "now", #s.needs, view.extensions))
 	-- The toolbar: the repository filter on the left, the tab's actions on the right.
 	local tools = {}
-	if view.tab ~= "repos" and view.tab ~= "stats" then
+	local ext = M.extensionOf(view.extensions, view.tab)
+	if view.tab ~= "repos" and view.tab ~= "stats" and not (ext and not M.extensionHasRepos(ext)) then
 		local bar = filterBar(view.repoChoices or {}, view.repoFilter, view.filterOpen, view.filterHover)
 		if bar then table.insert(tools, bar) end
 	end
@@ -735,6 +838,8 @@ function M.view(view)
 		button("refresh", "Refresh", "refreshstats", false, "refresh")
 	elseif view.tab == "repos" then
 		button("scan", "Scan for repositories", "scanrepos", false, "refresh")
+	elseif ext and ext.url then
+		button("site", "Open " .. ext.title, "url=" .. ext.url, false)
 	end
 	table.insert(main, row("toolbar", "mission.toolbar", tools))
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
@@ -746,6 +851,11 @@ function M.view(view)
 		for _, node in issueNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
 			dockNode(view, "[ ] tabs   f repo   ↑↓ move   e details   Enter goal from issue   space mark   l link to goal   o open   x close   r refresh")
+	end
+	if ext then
+		for _, node in extensionNodes(view, ext) do table.insert(main, node) end
+		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+			dockNode(view, "[ ] tabs   ↑↓ move   Enter / e details")
 	end
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
@@ -845,6 +955,10 @@ do
 	assert(M.isoMs("1970-01-02T00:00:01Z") == 86401000 and M.isoMs("2026-11-16T10:00:00Z") - M.isoMs("2026-11-15T10:00:00Z") == 86400000,
 		"ui.render.isoMs self-check")
 	assert(M.barStep(0, 10) == 0 and M.barStep(0.1, 10) == 1 and M.barStep(10, 10) == 20 and M.barStep(5, 0) == 0, "ui.render.barStep self-check")
+	local ext = { id = "owl", title = "Owl", updated = 0, sections = { { title = "W", items = { { id = "w1", title = "t", repo = "r", status = { label = "Needs you", tone = "waiting" },
+		actions = { { id = "a", label = "Answer" } } } } } } }
+	assert(M.extensionOf({ ext }, "ext:owl") == ext and M.extensionOf({ ext }, "now") == nil and #M.tabs({ ext }) == #M.TABS + 1
+		and #M.extensionRows(ext, "r") == 1 and #M.extensionRows(ext, "other") == 0, "ui.render extensions self-check")
 	assert(M.money(1.234) == "$1.23" and M.count(1234567) == "1.2M" and M.count(8.07e9) == "8.1B" and M.count(34000) == "34k" and M.shortDay("2026-11-06") == "6 Nov",
 		"ui.render money/count/shortDay self-check")
 	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b" and M.oneLine("accepts apple_pay") == "accepts apple_pay", "ui.render.oneLine self-check")

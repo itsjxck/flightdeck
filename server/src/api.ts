@@ -8,6 +8,14 @@ import { closeIssue, commentAll, listIssues, parseIssueRef, type Issue } from ".
 import { analytics, recordSample } from "./analytics";
 import { goalWorktrees, queueMerged } from "./cleanup";
 import { repoInfo } from "./repos";
+import { Extensions } from "./extensions";
+
+const extensionsOf = new WeakMap<Store, Extensions>();
+function extensions(store: Store): Extensions {
+  let e = extensionsOf.get(store);
+  if (!e) { e = new Extensions(store.db); extensionsOf.set(store, e); }
+  return e;
+}
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const FINISHED: TaskStatus[] = ["done", "dropped", "failed"];
@@ -129,6 +137,8 @@ function state(store: Store) {
     closedSessions: store.db.query(`select tern_session from goals where status in ('done', 'dropped') and tern_session is not null
       and coalesce(closed, created) > ?`).all(Date.now() - 86_400_000).map((r) => (r as { tern_session: string }).tern_session),
     tasks, waiting, workers,
+    // Panels other tools publish (src/extensions.ts), for the sidebar and Mission control's tabs.
+    extensions: extensions(store).list(),
     // The server's clock, so clients can show ages ("3 min ago") without one of their own.
     now: Date.now(),
   };
@@ -177,6 +187,18 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         // GET /api/goals/G3/worktrees: its workers' worktrees with their PRs.
         if (parts[2] === "worktrees") return json({ worktrees: await goalWorktrees(store, Store.parseGoal(parts[1] ?? "")) });
         break;
+      case "GET extensions":
+        return json({ extensions: extensions(store).list() });
+      case "POST extensions": {
+        // POST /api/extensions/<id> {panel}: publish; /<id>/remove; /<id>/action {item, action, text?}
+        const id = decodeURIComponent(parts[1] ?? "");
+        if (parts[2] === "remove") extensions(store).remove(id);
+        else if (parts[2] === "action") return json(await extensions(store).act(id, field(body, "item"), field(body, "action"),
+          typeof body.text === "string" ? body.text : undefined));
+        else if (parts[2] === undefined) extensions(store).publish(id, body);
+        else break;
+        return json({ ok: true });
+      }
       case "GET cleanups":
         return json({ cleanups: store.pendingCleanups() });
       case "POST cleanups":

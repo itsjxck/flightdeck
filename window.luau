@@ -475,6 +475,21 @@ local function model(cx)
 			table.insert(result.goals, goal)
 		end
 	end
+	-- Extensions' sidebar sections (server/src/extensions.ts): their items, each opening in Mission control.
+	result.extensions = {}
+	for _, e in (ms.extensions or {}) do
+		local items = {}
+		for _, s in e.sections do
+			if s.sidebar then
+				for _, it in s.items do
+					table.insert(items, { id = it.id, title = it.title, tone = it.status and it.status.tone, label = it.status and it.status.label })
+				end
+			end
+		end
+		if #items > 0 then
+			table.insert(result.extensions, { id = e.id, title = e.title, items = items, collapsed = collapsed["ext:" .. e.id] == true })
+		end
+	end
 	for _, agent in agents do
 		-- Agents in goal sessions show under their goal instead.
 		if not mission.state.isGoalSession(agent.tab.session) then
