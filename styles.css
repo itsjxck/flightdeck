@@ -869,6 +869,14 @@
 [data-role='mission.strip-failed'] { box-shadow: inset 3px 0 0 var(--bad); }
 [data-role='mission.strip-lost'] { box-shadow: inset 3px 0 0 var(--warn); }
 [data-role='mission.strip-done'] [data-role='mission.stripTitle'] { color: var(--t3); }
+[data-role='mission.holdsUp'] {
+  font: 11px/1 var(--mono);
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--warn);
+  background: rgb(from var(--warn) r g b / 12%);
+  white-space: nowrap;
+}
 [data-role='mission.stripMain'] { gap: 2px; min-width: 0; }
 [data-role='mission.stripTitle'] {
   font: 500 14px/1.3 var(--sans);

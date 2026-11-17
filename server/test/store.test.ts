@@ -184,6 +184,18 @@ describe("goals and conversation", () => {
     expect(store.goalIssues(g.id).length).toBe(1);
   });
 
+  test("dependencies read both ways, and in words for agents", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [
+      { key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }, { key: "c", title: "c", repo: "x", needs: ["a", "b"] }] });
+    const [a, , c] = store.listTasks({ goal: g.id });
+    const deps = store.dependencies();
+    expect(deps.get(c.id)!.needs.map((n) => n.ref)).toEqual([`G${g.id}.1`, `G${g.id}.2`]);
+    expect(deps.get(a.id)!.blocks.map((b) => b.ref)).toEqual([`G${g.id}.3`]);
+    expect(store.dependencyText(c.id)).toBe(`waits on G${g.id}.1 (ready), G${g.id}.2 (ready)`);
+    expect(store.dependencyText(a.id)).toBe(`holds up G${g.id}.3`);
+  });
+
   test("a goal can start with no tasks; its coordinator adds, edits and rewires them", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [] });

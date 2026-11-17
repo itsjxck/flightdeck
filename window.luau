@@ -463,7 +463,11 @@ local function model(cx)
 					-- Finished tasks drop out of the sidebar's list (the goal's count has them; Mission control lists them).
 					local finished = t.status == "done" or t.status == "dropped"
 					if not finished and (t.session == nil or t.session ~= g.coordinator) then
-						table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane })
+						-- What it waits on, while it does: "waits on G2.1".
+						local waits = {}
+						for _, n in (t.needs or {}) do if n.status ~= "done" and n.status ~= "dropped" then table.insert(waits, n.ref) end end
+						table.insert(goal.tasks, { ref = t.ref, title = t.title, status = t.status, state = state, pane = pane,
+							waitsOn = if #waits > 0 and t.status == "todo" then table.concat(waits, ", ") else nil })
 					end
 				end
 			end

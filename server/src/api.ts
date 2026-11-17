@@ -70,6 +70,12 @@ function workerBrief(store: Store, workerId: number) {
   return [
     `You are a worker on goal ${Store.gid(g.id)}: ${g.title}.`,
     `Your task is ${store.tref(t.id)}: ${t.title}.`, t.body,
+    (() => {
+      const d = store.dependencies().get(t.id);
+      if (!d) return "";
+      return [d.needs.length ? `It builds on ${d.needs.map((n) => `${n.ref} (${n.status})`).join(", ")}: read their results (task_list, gh pr view) before you start.` : "",
+        d.blocks.length ? `${d.blocks.map((b) => b.ref).join(", ")} wait on yours: finish cleanly, and message @coordinator early if yours will change what they assumed.` : ""].filter(Boolean).join("\n");
+    })(),
     `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
     `When you open a PR, record it with task_note (pr: its URL).`,
@@ -100,9 +106,10 @@ export function coordinatorBrief(store: Store, goal: number) {
 function state(store: Store) {
   const goals = [...store.listGoals("active"), ...store.listGoals("finished"), ...store.listGoals("proposed")];
   const goalIds = new Set(goals.map((g) => g.id));
+  const deps = store.dependencies();
   const tasks = store.listTasks({})
     .filter((t) => !FINISHED.includes(t.status) || (t.goal != null && goalIds.has(t.goal)))
-    .map((t) => ({ ...t, ref: store.tref(t.id), repoPath: store.repoPath(t.repo),
+    .map((t) => ({ ...t, ref: store.tref(t.id), repoPath: store.repoPath(t.repo), needs: deps.get(t.id)?.needs ?? [], blocks: deps.get(t.id)?.blocks ?? [],
       lastNote: store.events(t.id).filter((e) => e.kind === "note").at(-1)?.body ?? null }));
   const waiting = store.waiting().map((w) => ({ task: store.tref(w.task.id), title: w.task.title, repo: w.task.repo,
     goal: w.task.goal != null ? Store.gid(w.task.goal) : null, question: w.question.body,
@@ -194,7 +201,8 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "GET backlog": {
         // Every goal and task, newest first, for Mission control's Backlog tab.
         const goals = store.listGoals().reverse().map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id) }));
-        const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: store.tref(t.id) }));
+        const deps = store.dependencies();
+        const tasks = store.listTasks({}).reverse().map((t) => ({ ...t, ref: store.tref(t.id), needs: deps.get(t.id)?.needs ?? [], blocks: deps.get(t.id)?.blocks ?? [] }));
         // Local midnight: the Backlog's "Done today" starts here.
         const today = new Date();
         today.setHours(0, 0, 0, 0);

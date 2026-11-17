@@ -55,6 +55,21 @@ function M.ago(now, at)
 	return tostring(math.floor(s / 86400)) .. " d ago"
 end
 
+-- Refs of the dependencies not yet done ({ ref, status } list → { "G2.1", … }). Pure.
+function M.openRefs(list)
+	local out = {}
+	for _, d in (list or {}) do
+		if d.status ~= "done" and d.status ~= "dropped" then table.insert(out, d.ref) end
+	end
+	return out
+end
+
+-- "G2.1", "G2.1, G2.3", "G2.1, G2.3 +2". Pure.
+function M.refList(refs)
+	if #refs <= 2 then return table.concat(refs, ", ") end
+	return refs[1] .. ", " .. refs[2] .. " +" .. tostring(#refs - 2)
+end
+
 -- A task's state: a key (its colour in styles.css) and a label.
 -- `agent`: "working" | "waiting" | "idle" | nil (no live agent). Pure.
 function M.taskState(t, agent, waiting)
@@ -70,6 +85,8 @@ function M.taskState(t, agent, waiting)
 	end
 	if t.status == "ready" then return "pending", "Ready to start" end
 	if t.goal == nil then return "pending", "For later" end
+	local on = M.openRefs(t.needs)
+	if #on > 0 then return "pending", "Waiting on " .. M.refList(on) end
 	return "pending", "Waiting on others"
 end
 
@@ -160,12 +177,23 @@ end
 
 local TASK_STATUS = { todo = "Waiting on other tasks", ready = "Ready to start", doing = "In progress", done = "Done", failed = "Failed", dropped = "Dropped" }
 
+-- "G2.1 (in progress), G2.3 (done)". Pure.
+local function depText(list)
+	if not list or #list == 0 then return nil end
+	local parts = {}
+	for _, d in list do table.insert(parts, d.ref .. " (" .. (TASK_STATUS[d.status] or d.status) .. ")") end
+	return table.concat(parts, ", ")
+end
+
+
 local function taskDetail(t)
 	-- The latest note in full, under the task's description.
 	local md = t.body or ""
 	if t.lastNote then md = md .. (if md ~= "" then "\n\n" else "") .. "**Latest note:** " .. t.lastNote end
 	return detail("detail", md, {
 		{ "Status", TASK_STATUS[t.status] or t.status },
+		{ "Waits on", depText(t.needs) },
+		{ "Holds up", depText(t.blocks) },
 		{ "Repository", t.repo },
 		{ "Branch", t.branch },
 		{ "Worktree", t.worktree and (string.gsub(t.worktree, "^/Users/[^/]+", "~")) },
@@ -183,12 +211,16 @@ local function strip(t, picked, agentOf, waitingTasks)
 	local where = t.repo or ""
 	if t.branch then where = where .. (if where ~= "" then " · " else "") .. t.branch end
 	local note = oneLine(t.lastNote)
+	-- What it holds up, while it isn't finished: the tasks waiting on it.
+	local holds = if t.status ~= "done" and t.status ~= "dropped" then M.openRefs(t.blocks) else {}
 	local line = row("line", "mission.strip-" .. key, {
 		text("ref", t.ref, "mission.ref"),
 		col("main", "mission.stripMain", {
 			text("title", t.title, "mission.stripTitle"),
 			if note then text("note", note, "mission.stripNote") else nil,
 		}, { grow = 1 }),
+		if #holds > 0 then text("holds", "holding up " .. M.refList(holds), "mission.holdsUp",
+			{ title = table.concat(holds, ", ") .. " wait on " .. t.ref }) else nil,
 		text("where", where, "mission.where"),
 		row("state", "mission.state", {
 			ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
@@ -814,6 +846,8 @@ do
 		"ui.render money/count/shortDay self-check")
 	assert(M.oneLine("**Done**: `a`\n b") == "Done: a b" and M.oneLine("accepts apple_pay") == "accepts apple_pay", "ui.render.oneLine self-check")
 	assert(M.ago(120000, 0) == "2 min ago" and M.ago(1000, 0) == "just now" and M.ago(nil, 0) == nil, "ui.render.ago self-check")
+	assert(select(2, M.taskState({ status = "todo", goal = 1, needs = { { ref = "G2.1", status = "doing" }, { ref = "G2.2", status = "done" } } })) == "Waiting on G2.1"
+		and M.refList({ "a", "b", "c", "d" }) == "a, b +2", "ui.render dependencies self-check")
 	assert(M.taskState({ status = "doing" }, nil) == "lost" and M.taskState({ status = "doing" }, "working") == "working"
 		and M.taskState({ status = "todo" }, nil, true) == "waiting", "ui.render.taskState self-check")
 	local sections = { now = 0, needs = { { task = "T-1", title = "t", question = "Q?", options = { "a", "b" }, recommended = 1 } },

@@ -204,6 +204,32 @@ export class Store {
     return this.task(t.id);
   }
 
+  // Each task's dependencies both ways, for people and agents: what it waits
+  // on (with their status) and what waits on it, by reference.
+  dependencies(): Map<number, { needs: { ref: string; status: TaskStatus }[]; blocks: { ref: string; status: TaskStatus }[] }> {
+    const rows = this.db.query(`select d.task as task, d.needs as needs, a.status as taskStatus, b.status as needsStatus
+      from deps d join tasks a on a.id = d.task join tasks b on b.id = d.needs`).all() as
+      { task: number; needs: number; taskStatus: TaskStatus; needsStatus: TaskStatus }[];
+    const out = new Map<number, { needs: { ref: string; status: TaskStatus }[]; blocks: { ref: string; status: TaskStatus }[] }>();
+    const of = (id: number) => { let e = out.get(id); if (!e) { e = { needs: [], blocks: [] }; out.set(id, e); } return e; };
+    for (const r of rows) {
+      of(r.task).needs.push({ ref: this.tref(r.needs), status: r.needsStatus });
+      of(r.needs).blocks.push({ ref: this.tref(r.task), status: r.taskStatus });
+    }
+    return out;
+  }
+
+  // "waits on G2.1 (doing)" / "holds up G2.2, G2.3": a task's open dependencies in words, for agents' tool output.
+  dependencyText(task: number, deps = this.dependencies()): string {
+    const d = deps.get(task);
+    if (!d) return "";
+    const done = ["done", "dropped"];
+    const waits = d.needs.filter((n) => !done.includes(n.status)).map((n) => `${n.ref} (${n.status})`);
+    const t = this.task(task);
+    const holds = done.includes(t.status) ? [] : d.blocks.filter((b) => !done.includes(b.status)).map((b) => b.ref);
+    return [waits.length ? `waits on ${waits.join(", ")}` : "", holds.length ? `holds up ${holds.join(", ")}` : ""].filter(Boolean).join("; ");
+  }
+
   // A goal's todo task is ready once nothing it needs is unfinished.
   private promote(id: number) {
     const t = this.task(id);

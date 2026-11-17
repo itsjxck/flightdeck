@@ -16,7 +16,8 @@ const NO_CALLER = "Couldn't tell which omp session is calling: run omp inside a 
 
 export function buildServer(store: Store, resolve: Resolve): McpServer {
   function line(t: Task) {
-    return `${store.tref(t.id)} [${t.status}] ${t.title}${t.repo ? ` (${t.repo})` : ""}${t.goal ? ` · ${Store.gid(t.goal)}` : ""}`;
+    const deps = store.dependencyText(t.id);
+    return `${store.tref(t.id)} [${t.status}] ${t.title}${t.repo ? ` (${t.repo})` : ""}${t.goal ? ` · ${Store.gid(t.goal)}` : ""}${deps ? ` · ${deps}` : ""}`;
   }
 
   const server = new McpServer({ name: "flightdeck", version: "1.0.0" });

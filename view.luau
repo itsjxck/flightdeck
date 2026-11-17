@@ -354,7 +354,7 @@ local function goalNode(goal)
 			}, {
 				ui.el("div", { key = "status", role = if state then state.dot else "flightdeck.dotIdle" }),
 				text("name", t.ref .. " · " .. t.title, "flightdeck.worktreeName", { grow = 1 }),
-				text("label", if state then state.label else TASK_STATUS[t.status] or t.status, "flightdeck.taskState"),
+				text("label", if state then state.label elseif t.waitsOn then "waits on " .. t.waitsOn else TASK_STATUS[t.status] or t.status, "flightdeck.taskState"),
 			}))
 		end
 		table.insert(children, ui.node("col", { key = "tasks", role = "flightdeck.worktrees" }, rows))
