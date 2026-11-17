@@ -53,6 +53,10 @@ Answers and agents' messages are queued as events; Flightdeck fetches `/api/deli
 
 Start one from Mission control. `bun scripts/demo.ts --reset` drops the demo goals and tasks and deletes the repos and their worktrees (`~/worktrees/demo-*`); close any started goal's session with **Close goal** first.
 
+## Idle coordinators
+
+A coordinator that ended its turn stops calling `inbox`, so workers' results would sit unread. After `COORDINATOR_WAKE_MS` (2 minutes) unread, inbox items go to its pane like any delivery (only while it isn't mid-turn) and count as read.
+
 ## Extensions
 
 Other tools on this Mac (a private Tern plugin, a script, a local service) can add a section to the sidebar and a tab to Mission control, without Flightdeck knowing what they are (`src/extensions.ts`).

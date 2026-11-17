@@ -278,7 +278,8 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       }
       case "GET deliveries":
         return json(store.pendingDeliveries().map(({ event, task }) => ({ id: event.id, session: task.session, task: store.tref(task.id),
-          text: event.kind === "answer" ? `The user answered on ${store.tref(task.id)}:\n\n${event.body}`
+          text: event.to_target === "coordinator" ? `Your inbox, unread for a while (Flightdeck):\n\n${event.body}\n\n(Carry on with the goal: inbox, goal_plan, worker_start, worker_stop, worktree_remove, goal_complete.)`
+            : event.kind === "answer" ? `The user answered on ${store.tref(task.id)}:\n\n${event.body}`
             : `${event.body}\n\n(Reply with the message tool only if it needs one.)` })));
       case "POST deliveries":
         store.markDelivered(Number(parts[1])); return json({ ok: true });

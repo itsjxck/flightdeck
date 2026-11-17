@@ -37,6 +37,9 @@ export interface Caller { session: string; repo: string | null; branch: string |
 
 export const MAX_WORKERS = 4;
 export const AGENT_MESSAGE_GAP = 120_000;
+// A coordinator looping on inbox reads it every 25 s at most; one that left
+// its inbox unread this long has ended its turn, so the items go to its pane.
+export const COORDINATOR_WAKE_MS = 120_000;
 
 const SCHEMA = `
 create table if not exists goals (
@@ -770,10 +773,22 @@ export class Store {
       const { tid, ...event } = row;
       out.push({ event, task: this.task(tid) });
     }
+    // Inbox items an idle coordinator hasn't read: to its own task's pane.
+    const unread = this.db.query(`select e.*, t.id as tid from events e join goals g on g.id = e.goal and g.status = 'active' and g.coordinator is not null
+      join tasks t on t.goal = g.id and t.session = g.coordinator and t.status = 'doing'
+      where e.to_target = 'coordinator' and e.handled is null and e.delivered is null and e.created < ? order by e.id`)
+      .all(now - COORDINATOR_WAKE_MS) as (Event & { tid: number })[];
+    for (const row of unread) {
+      const { tid, ...event } = row;
+      out.push({ event, task: this.task(tid) });
+    }
     return out;
   }
 
+  // Delivered to a pane; a coordinator's inbox item then counts as read, so inbox doesn't repeat it.
   markDelivered(event: number) {
-    this.db.query("update events set delivered = ? where id = ?").run(this.now(), event);
+    const now = this.now();
+    this.db.query("update events set delivered = ?, handled = case when to_target = 'coordinator' then coalesce(handled, ?) else handled end where id = ?")
+      .run(now, now, event);
   }
 }

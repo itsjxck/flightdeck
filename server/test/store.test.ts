@@ -184,6 +184,25 @@ describe("goals and conversation", () => {
     expect(store.goalIssues(g.id).length).toBe(1);
   });
 
+  test("an idle coordinator's unread inbox goes to its pane after a while, once", () => {
+    let now = 1_000_000;
+    const store = new Store(":memory:", () => now);
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "c1" }, g.id);
+    const [a] = store.listTasks({ goal: g.id }).filter((t) => t.session !== "c1");
+    store.startTask({ ...me, session: "w1" }, { id: a.id });
+    store.doneTask("w1", { ref: store.tref(a.id), outcome: "succeeded", summary: "PR #1 merged" });
+    const forC1 = () => store.pendingDeliveries().filter((d) => d.task.session === "c1");
+    expect(forC1()).toEqual([]);
+    now += 121_000;
+    const due = forC1();
+    expect(due.map((d) => d.event.body).join()).toContain("PR #1 merged");
+    for (const d of due) store.markDelivered(d.event.id);
+    expect(forC1()).toEqual([]);
+    expect(store.inbox("c1").map((e) => e.body).join()).not.toContain("PR #1 merged");
+  });
+
   test("coordinators reach each other by goal id, and hear when a goal starts", () => {
     const store = new Store(":memory:");
     const one = store.proposeGoal(me, { title: "one", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }] });
