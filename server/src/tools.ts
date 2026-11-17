@@ -53,7 +53,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     (c, a) => line(store.ask(c.session, { ref: a.id, question: a.question, options: a.options, recommended: a.recommended })) + " — waiting for the user.");
 
   tool("message",
-    "Message another agent: `to` is a task id (G3.2, or T7), `@goal` (every working agent on your goal) or `@coordinator`. Only when your work affects or depends on theirs. Never for decisions the user must make.",
+    "Message another agent: `to` is a task id (G3.2, or T7), `@goal` (every working agent on your goal), `@coordinator`, or another goal (G4: its coordinator). Only when your work affects or depends on theirs. Never for decisions the user must make.",
     { id, to: z.string(), body: z.string() },
     (c, a) => `Sent to ${store.message(c.session, { ref: a.id, to: a.to, body: a.body }).map((e) => e.to_target).join(", ")}. Messages from agents arrive at most every 2 minutes.`);
 
@@ -129,7 +129,9 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     { goal: z.string() },
     (c, a) => {
       const g = store.joinGoal(c, Store.parseGoal(a.goal));
-      return `You coordinate ${Store.gid(g.id)}: ${g.title}.\n` + store.listTasks({ goal: g.id }).map(line).join("\n");
+      const others = store.otherGoals(g.id);
+      return `You coordinate ${Store.gid(g.id)}: ${g.title}.\n` + store.listTasks({ goal: g.id }).map(line).join("\n")
+        + (others ? `\n\nOther goals running now (message one by its id, e.g. to "G4", to reach its coordinator):\n${others}` : "");
     });
 
   const editTask = z.object({ task: z.string(), title: z.string().optional(), body: z.string().optional(), repo: z.string().optional(),

@@ -184,6 +184,19 @@ describe("goals and conversation", () => {
     expect(store.goalIssues(g.id).length).toBe(1);
   });
 
+  test("coordinators reach each other by goal id, and hear when a goal starts", () => {
+    const store = new Store(":memory:");
+    const one = store.proposeGoal(me, { title: "one", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }] });
+    const two = store.proposeGoal(me, { title: "two", body: "", tasks: [] });
+    store.startGoal(one.id); store.startGoal(two.id);
+    store.joinGoal({ ...me, session: "c1" }, one.id);
+    store.joinGoal({ ...me, session: "c2" }, two.id);
+    expect(store.inbox("c1").map((e) => e.body).join()).toContain(`Goal G${two.id} started`);
+    store.message("c2", { to: `G${one.id}`, body: "I use port 3001" });
+    expect(store.inbox("c1").map((e) => e.body).join()).toContain("I use port 3001");
+    expect(store.otherGoals(two.id)).toBe(`- G${one.id}: one (web-app)`);
+  });
+
   test("dependencies read both ways, and in words for agents", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [

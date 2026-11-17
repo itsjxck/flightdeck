@@ -544,9 +544,24 @@ export class Store {
 
   // Makes the caller the goal's coordinator, with a task of its own
   // ("Coordinate …") so it can note progress and ask the user like any agent.
+  // Other active goals, for a coordinator to coordinate with: "- G3: title (web-app, dashboard)".
+  otherGoals(id: number): string {
+    return this.listGoals("active").filter((g) => g.id !== id).map((g) => {
+      const repos = [...new Set(this.listTasks({ goal: g.id }).filter((t) => t.session !== g.coordinator).map((t) => t.repo).filter(Boolean))];
+      return `- ${Store.gid(g.id)}: ${g.title}${repos.length ? ` (${repos.join(", ")})` : ""}`;
+    }).join("\n");
+  }
+
   joinGoal(caller: Caller, id: number): Goal {
     const g = this.goal(id);
     if (g.status !== "active") throw new Error(`${Store.gid(id)} is ${g.status}, not active`);
+    // Tell the other running goals a new one started, once (not on a rejoin).
+    if (g.coordinator == null) for (const o of this.listGoals("active")) {
+      if (o.id === id || o.coordinator == null) continue;
+      this.addEvent({ task: null, goal: o.id, author: "flightdeck", kind: "status",
+        body: `Goal ${Store.gid(id)} started: ${g.title}. If it works in the same repositories, agree with its coordinator (message to "${Store.gid(id)}") on shared things: dev servers and ports, databases and migrations, files you both change.`,
+        options: null, recommended: null, to_target: "coordinator" });
+    }
     this.db.query("update goals set coordinator = ? where id = ?").run(caller.session, id);
     const own = this.db.query("select id from tasks where goal = ? and session = ? and status = 'doing'").get(id, caller.session);
     if (!own) {
@@ -638,6 +653,16 @@ export class Store {
   message(session: string, a: { ref?: string; to: string; body: string }): Event[] {
     const from = this.myTask(session, a.ref);
     const targets: string[] = [];
+    // A goal id ("G3"): that goal's coordinator, so goals sharing a repository can agree on servers, ports, migrations.
+    const other = /^@?G-?\d+$/i.test(a.to.trim()) ? Store.parseGoal(a.to.trim().replace(/^@/, "")) : null;
+    if (other != null) {
+      const g = this.goal(other);
+      if (g.status !== "active") throw new Error(`${Store.gid(other)} is ${g.status}, not active`);
+      if (other === from.goal) throw new Error("that's your own goal: use @coordinator or @goal");
+      return [this.addEvent({ task: from.id, goal: other, author: session, kind: "message",
+        body: `**From ${this.tref(from.id)}${from.goal != null ? ` (goal ${Store.gid(from.goal)})` : ""}:** ${a.body}`,
+        options: null, recommended: null, to_target: "coordinator" })];
+    }
     if (a.to === "@goal" || a.to === "@coordinator") {
       if (from.goal == null) throw new Error(`${a.to} needs your task to belong to a goal`);
       if (a.to === "@coordinator") targets.push("coordinator");
