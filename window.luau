@@ -345,14 +345,20 @@ local function model(cx)
 	for _, space in spaces do
 		if space.repo and not anchors[space.repo] then anchors[space.repo] = space end
 	end
+	-- Goals' own branches (goal_branch) belong to their goal too.
+	local goalBranches = {}
+	for _, g in mission.state.get().goals do
+		for _, b in (g.branches or {}) do goalBranches[b.branch] = true end
+	end
 	local nested = {}
 	for repoId, anchor in anchors do
 		local entry = cache[repoId]
 		local repo = repoById(repoId)
 		local rows = {}
 		for _, worktree in (entry and entry.worktrees or {}) do
-			-- Goal workers' worktrees belong to their goal (Goals, Mission control), not Spaces.
-			if not (anchor.tree and anchor.tree.path == worktree.path) and not mission.workers.isWorkerBranch(worktree.branch) then
+			-- Goal workers' worktrees and goal branches belong to their goal (Goals, Mission control), not Spaces.
+			if not (anchor.tree and anchor.tree.path == worktree.path) and not mission.workers.isWorkerBranch(worktree.branch)
+				and not goalBranches[worktree.branch] then
 				local session = boundSession(worktree.path, sessions, bindings)
 				local space = session and byId[session.id]
 				if not space then

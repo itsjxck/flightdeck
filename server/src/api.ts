@@ -137,7 +137,7 @@ function state(store: Store) {
     asked: w.question.created }));
   const workers = store.db.query("select * from workers where status in ('requested', 'started', 'stopping')").all();
   return {
-    goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id) })),
+    goals: goals.map((g) => ({ ...g, ref: Store.gid(g.id), progress: store.progress(g.id), issues: store.goalIssues(g.id), branches: store.goalBranches(g.id) })),
     goalSessions: goals.map((g) => g.tern_session).filter((s): s is string => !!s),
     // Sessions of goals closed in the last day, for the window to close once their agents are idle.
     closedSessions: store.db.query(`select tern_session from goals where status in ('done', 'dropped') and tern_session is not null
