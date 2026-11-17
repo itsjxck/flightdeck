@@ -451,22 +451,89 @@ end
 
 -- The Repos tab: every repository Flightdeck knows (found by scanning, or
 -- learned from agents), and whether agents may use it.
+-- A repository's details: where it is, its remote, and each worktree with its
+-- branch, changes, ahead/behind and last commit; buttons to open them and to
+-- change what agents and the Issues tab see. `info`: /api/repos/<name>/info.
+local function repoDetail(it, info)
+	local children = {}
+	if not info then
+		table.insert(children, text("loading", "Reading its worktrees…", "mission.empty"))
+	elseif info.error then
+		table.insert(children, text("error", info.error, "mission.notice"))
+	else
+		local facts = {}
+		for n, f in {
+			{ "Folder", (string.gsub(it.path, "^/Users/[^/]+", "~")) },
+			{ "Remote", info.url, info.url and ("url=" .. info.url) },
+			{ "Default branch", info.defaultBranch },
+		} do
+			if f[2] then
+				table.insert(facts, row("f" .. tostring(n), "mission.fact", {
+					text("k", f[1], "mission.factKey"),
+					text("v", f[2], if f[3] then "mission.factLink" else "mission.factValue", if f[3] then { actions = { click = f[3] } } else nil),
+				}))
+			end
+		end
+		table.insert(children, col("facts", "mission.facts", facts))
+		local trees = {}
+		for n, w in info.worktrees do
+			local where = {}
+			if w.main then table.insert(where, "primary checkout") end
+			if not w.main and (w.ahead > 0 or w.behind > 0) then
+				table.insert(where, tostring(w.ahead) .. " ahead, " .. tostring(w.behind) .. " behind " .. (info.defaultBranch or "main"))
+			end
+			if w.upstream and (w.upstream.ahead > 0 or w.upstream.behind > 0) then
+				table.insert(where, tostring(w.upstream.ahead) .. "↑ " .. tostring(w.upstream.behind) .. "↓ remote")
+			end
+			if w.dirty then table.insert(where, "uncommitted +" .. tostring(w.added) .. " −" .. tostring(w.deleted)) end
+			if w.conflicts then table.insert(where, "conflicts with " .. (info.defaultBranch or "main")) end
+			local last = w.head and (w.head.sha .. " " .. w.head.subject .. (if M.ago(info.now, M.isoMs(w.head.at)) then " · " .. M.ago(info.now, M.isoMs(w.head.at)) else ""))
+			table.insert(trees, row("w" .. tostring(n), "mission.worktree", {
+				ui.el("div", { key = "dot", role = if w.conflicts then "mission.dot-failed" elseif w.dirty then "mission.dot-lost" else "mission.dot-idle" }),
+				col("main", "mission.stripMain", {
+					text("branch", w.branch or "(detached)", "mission.worktreeBranch"),
+					text("state", table.concat(where, " · "), "mission.stripNote"),
+					if last then text("last", last, "mission.stripNote") else nil,
+				}, { grow = 1 }),
+				ui.button("Open", { key = "open", size = "sm", title = (string.gsub(w.path, "^/Users/[^/]+", "~")), actions = { click = "openpath=" .. w.path } }),
+			}))
+		end
+		table.insert(children, col("trees", "mission.worktrees", trees))
+	end
+	local buttons = {
+		ui.button("Open space", { key = "space", variant = "primary", actions = { click = "openpath=" .. it.path } }),
+		ui.button(if it.ignored then "Use for agents" else "Hide from agents", { key = "agents", actions = { click = "repo=" .. it.name } }),
+		ui.button(if it.issuesIgnored then "Show issues" else "Hide issues", { key = "issues", actions = { click = "repoissues=" .. it.name } }),
+		ui.button("Refresh", { key = "refresh", variant = "quiet", actions = { click = "repoinfo=" .. it.name } }),
+	}
+	if info and info.url then
+		table.insert(buttons, 4, ui.button("Open on GitHub", { key = "gh", actions = { click = "url=" .. info.url } }))
+	end
+	table.insert(children, row("buttons", "mission.detailButtons", buttons))
+	return col("detail", "mission.detail", children)
+end
+
+-- The Repos tab: every repository Flightdeck knows (found by scanning, or
+-- learned from agents), and whether agents and the Issues tab use it. Click one
+-- for its worktrees and actions.
 local function repoNodes(view)
 	if not view.repos then return { text("loading", "Loading…", "mission.empty") } end
 	local rows, ignored, issuesHidden = {}, 0, 0
 	for _, r in view.repos do
 		local it = r.item
 		if it.ignored then ignored += 1 elseif it.issuesIgnored then issuesHidden += 1 end
-		table.insert(rows, row("r" .. it.name, if it.ignored then "mission.repoIgnored" else "mission.repo", {
+		local open = openItems[it.name] == true
+		local line = row("line", if it.ignored then "mission.repoIgnored" else "mission.repo", {
+			text("chev", if open then "▾" else "▸", "mission.chev"),
 			text("name", it.name, "mission.repoName"),
 			text("path", (string.gsub(it.path, "^/Users/[^/]+", "~")), "mission.repoPath", { grow = 1 }),
 			text("source", if it.source == "learned" then "from an agent" else "found", "mission.goalProgress"),
 			text("issues", if it.ignored or it.issuesIgnored then "Issues hidden" else "Issues shown",
-				if it.ignored or it.issuesIgnored then "mission.statusChip-dropped" else "mission.statusChip-proposed",
-				{ actions = { click = "repoissues=" .. it.name }, title = "Whether the Issues tab lists its GitHub issues (i)" }),
-			text("state", if it.ignored then "Ignored" else "Used", if it.ignored then "mission.statusChip-dropped" else "mission.statusChip-finished",
-				{ actions = { click = "repo=" .. it.name }, title = if it.ignored then "Agents don't see it. Enter to use it again" else "Agents can use it. Enter to hide it from them" }),
-		}, { actions = { click = "select=" .. it.name }, mark = if it.name == view.selectedRef then "pick" else nil }))
+				if it.ignored or it.issuesIgnored then "mission.statusChip-dropped" else "mission.statusChip-proposed"),
+			text("state", if it.ignored then "Ignored" else "Used", if it.ignored then "mission.statusChip-dropped" else "mission.statusChip-finished"),
+		}, { actions = { click = "toggle=" .. it.name }, mark = if it.name == view.selectedRef then "pick" else nil,
+			title = "Click for its worktrees, branches and actions" })
+		table.insert(rows, col("r" .. it.name, "mission.item", { line, if open then repoDetail(it, (view.repoInfo or {})[it.name]) else nil }))
 	end
 	return { col("repos", "mission.section", {
 		sectionHead("head", "Repositories", plural(#view.repos, "known", "known") .. " · " .. tostring(ignored) .. " ignored · "
@@ -596,7 +663,7 @@ local function statsNodes(view)
 	return out
 end
 
--- The whole block. `view`: { tab, open (refs showing details), showDone, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
+-- The whole block. `view`: { tab, open (refs showing details), repoInfo, showDone, sections, backlog, expanded, repos, repoChoices, repoFilter, selectedRef, thread,
 -- reply, replyTo, replyHint, error, agentOf }. Sections and backlog arrive already filtered.
 -- Returns the block's main and dock nodes.
 function M.view(view)
@@ -648,7 +715,7 @@ function M.view(view)
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
 		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
-			dockNode(view, "[ ] tabs   ↑↓ move   Enter ignore / use (agents)   i hide / show issues   s scan now")
+			dockNode(view, "[ ] tabs   ↑↓ move   Enter / e details   a hide / use for agents   i hide / show issues   s scan now")
 	end
 	if view.tab == "backlog" then
 		view.agentOf = agentOf

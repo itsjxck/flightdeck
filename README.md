@@ -38,7 +38,7 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 | **Backlog** | Every goal and task: proposed goals to start, what finished today, and (on request) older work. **New goal** and **New task** open a short form. |
 | **Issues** | Open GitHub issues across your repositories. Make one (or several) into a goal, link one to a goal, open it, or close it as not planned. |
 | **Stats** | Spend per day, project, model and goal (read from omp's own usage records), agents working per hour, tasks finished per day. Hover a bar for details. |
-| **Repos** | Every Git repository Flightdeck found on your Mac. Hide one from agents, or hide just its issues. |
+| **Repos** | Every Git repository Flightdeck found on your Mac. Click one for its worktrees (branch, ahead/behind, uncommitted changes, conflicts, last commit), each with **Open**; open the repository as a space, hide it from agents, hide just its issues, or open it on GitHub. |
 
 <table><tr><td>
 
@@ -115,6 +115,7 @@ Optional: `repos.json` in the plugin data folder (`~/Library/Application Support
 | <kbd>s</kbd> | Start a proposed goal (Backlog), scan for repositories (Repos) |
 | <kbd>d</kbd> | Show older finished work (Backlog) |
 | <kbd>space</kbd>, <kbd>l</kbd>, <kbd>x</kbd> <kbd>x</kbd> | Mark issues, link one to a goal, close one (Issues) |
+| <kbd>a</kbd>, <kbd>i</kbd> | Hide a repository from agents, hide its issues (Repos) |
 
 ### Visualize a PR
 

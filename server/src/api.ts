@@ -7,6 +7,7 @@ import { Store, type Caller, type TaskStatus } from "./store";
 import { closeIssue, commentAll, listIssues, parseIssueRef, type Issue } from "./github";
 import { analytics, recordSample } from "./analytics";
 import { goalWorktrees, queueMerged } from "./cleanup";
+import { repoInfo } from "./repos";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const FINISHED: TaskStatus[] = ["done", "dropped", "failed"];
@@ -140,8 +141,15 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
         }
         return json(map);
       }
-      case "GET repos":
+      case "GET repos": {
+        // GET /api/repos/<name>/info: its worktrees and branches (wt list).
+        if (parts[2] === "info") {
+          const path = store.repoPath(decodeURIComponent(parts[1] ?? ""));
+          if (!path) throw new Error("unknown repository");
+          return json({ path, now: Date.now(), ...(await repoInfo(path)) });
+        }
         return json({ repos: store.repos({ ignored: true }) });
+      }
       case "POST repos": {
         // POST /api/repos/<name>/ignore {ignored} (agents don't see it), /ignore-issues {ignored} (Issues tab skips it)
         const name = decodeURIComponent(parts[1] ?? "");

@@ -2014,6 +2014,21 @@ local function goalClosed(cx, ref, session)
 	oplog.write("info", { op = "mission", event = "goal closed", detail = ref })
 end
 
+-- Shows a folder from Mission control (a repository or a worktree): a worktree
+-- the sidebar knows opens its session as its row would; else the space open in
+-- that folder; else a new space there.
+local function openPath(cx, path)
+	if not tern.fs.exists(path) then report(cx, "That folder is gone: " .. path); return end
+	if findWorktree(path) then openWorktree(cx, path); return end
+	local panesById = {}
+	for _, pane in cx.session:panes() do panesById[pane.pane] = pane end
+	for _, info in cx.session:sessions() do
+		if spaceDir(cx, info, panesById) == path then cx.sessions:switch(info.id); follow(cx); return end
+	end
+	createSpace(cx, path)
+	follow(cx)
+end
+
 -- Requests from the Mission control block (host half), which can't open
 -- sessions or focus panes itself: kv `mission:requests`, a list of
 -- { kind = "start", goal = "G-3" }, { kind = "go", task = "T-12" }, { kind = "review", task = "T-12" }, { kind = "session", goal = "G-3" } or { kind = "closed", goal = "G-3", session }.
@@ -2097,6 +2112,7 @@ local function missionRequests(cx)
 				end
 			end
 		elseif r.kind == "closed" then goalClosed(cx, r.goal, r.session)
+		elseif r.kind == "openPath" and type(r.path) == "string" then openPath(cx, r.path)
 		elseif r.kind == "url" and type(r.url) == "string" and string.match(r.url, "^https://") then
 			tern.process.run({ "/usr/bin/open", r.url }, { timeout_ms = 10000 }, function() end)
 		elseif r.kind == "session" then

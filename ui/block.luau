@@ -16,6 +16,7 @@ local STATS_POLL_MS = 60000
 local issueKey
 local publishLinkBase
 local askClose
+local fetchRepoInfo, toggleRepoDetails
 
 local EMPTY = { needs = {}, proposed = {}, working = {}, todo = {} }
 
@@ -316,6 +317,21 @@ local function scanRepos(state, cx)
 	end)
 end
 
+-- A repository's worktrees and branches (Repos details), fetched when its details open.
+fetchRepoInfo = function(state, cx, name)
+	state.repoInfo[name] = nil
+	model.api("GET", "/api/repos/" .. name .. "/info", nil, function(info, err)
+		state.repoInfo[name] = info or { error = err or "couldn't read its worktrees" }
+		pcall(function() cx:render() end)
+	end)
+end
+
+toggleRepoDetails = function(state, cx, name)
+	state.selectedRef = name
+	state.open[name] = not state.open[name] or nil
+	if state.open[name] then fetchRepoInfo(state, cx, name) end
+end
+
 local function switchTab(state, cx, tab)
 	state.tab, state.thread = tab, nil
 	refresh(state, cx)
@@ -333,7 +349,7 @@ local function activate(state, cx)
 	local row = selectedRow(state)
 	if not row then return end
 	if row.kind == "repo" then
-		toggleRepo(state, cx, row.item)
+		toggleRepoDetails(state, cx, row.item.name)
 	elseif row.kind == "goal" then
 		state.expanded[row.item.ref] = not state.expanded[row.item.ref] or nil
 	elseif row.kind == "proposal" then
@@ -367,7 +383,7 @@ local DEF = {
 		local state = {
 			sections = EMPTY, selectedRef = args[1], thread = nil,
 			repoFilter = if type(saved) == "table" and type(saved.repoFilter) == "string" then saved.repoFilter else nil,
-			tab = "now", backlog = nil, expanded = {}, marked = {}, open = {},
+			tab = "now", backlog = nil, expanded = {}, marked = {}, open = {}, repoInfo = {},
 			reply = Input.new(""), dialog = nil, error = nil, alive = true,
 		}
 		refresh(state, cx)
@@ -387,7 +403,7 @@ local DEF = {
 		local agents = tern.kv.get("mission:agents")
 		local sections, backlog = shown(state)
 		local main, dock = render.view({
-			tab = state.tab, stats = state.stats, backlog = backlog, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
+			tab = state.tab, stats = state.stats, backlog = backlog, repoInfo = state.repoInfo, expanded = state.expanded, repos = state.repos, open = state.open, showDone = state.showDone,
 			repoChoices = choices(state), repoFilter = state.repoFilter,
 			issues = state.issues, issueRows = model.issueRows(state.issues, state.repoFilter), marked = state.marked,
 			filterOpen = state.filterOpen, filterHover = state.filterHover,
@@ -456,7 +472,8 @@ local DEF = {
 			local row = list[index]
 			if not row then return false end
 			local ref = row.item.ref or row.item.task
-			if row.kind == "goal" then state.expanded[ref] = not state.expanded[ref] or nil
+			if row.kind == "repo" then toggleRepoDetails(state, cx, row.item.name)
+			elseif row.kind == "goal" then state.expanded[ref] = not state.expanded[ref] or nil
 			else state.open[ref] = not state.open[ref] or nil end
 		elseif not typing and key.name == "s" and state.tab == "backlog" then
 			local row = list[index]
@@ -465,6 +482,10 @@ local DEF = {
 			state.error = "Starting " .. row.item.ref .. " in a session of its own…"
 		elseif not typing and key.name == "n" then
 			openDialog(state, "task")
+		elseif not typing and key.name == "a" and state.tab == "repos" then
+			local row = list[index]
+			if not row then return false end
+			toggleRepo(state, cx, row.item)
 		elseif not typing and key.name == "i" and state.tab == "repos" then
 			local row = list[index]
 			if not row then return false end
@@ -530,9 +551,12 @@ local DEF = {
 		elseif verb == "repoissues" then
 			state.selectedRef = a
 			for _, r in (state.repos or {}) do if r.item.name == a then toggleRepoIssues(state, cx, r.item) end end
+		elseif verb == "toggle" and state.tab == "repos" then toggleRepoDetails(state, cx, a)
 		elseif verb == "toggle" then
 			state.selectedRef = a
 			state.open[a] = not state.open[a] or nil
+		elseif verb == "repoinfo" then fetchRepoInfo(state, cx, a)
+		elseif verb == "openpath" then model.request({ kind = "openPath", path = a })
 		elseif verb == "go" then model.request({ kind = "go", task = a })
 		elseif verb == "thread" then
 			-- Toggles: the same task's Thread button closes it.
