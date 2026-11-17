@@ -586,7 +586,7 @@ export class Store {
     if (goal == null) return;
     // The coordinator's own task doesn't count: it ends after this summary.
     const open = this.db.query(`select count(*) as n from tasks t join goals g on g.id = t.goal
-      where t.goal = ? and t.status not in ('done', 'dropped', 'failed') and t.session is not g.coordinator`)
+      where t.goal = ? and t.status not in ('done', 'dropped', 'failed') and (g.coordinator is null or t.session is not g.coordinator)`)
       .get(goal) as { n: number };
     if (open.n > 0) return;
     this.addEvent({ task: null, goal, author: "flightdeck", kind: "status",
@@ -597,7 +597,7 @@ export class Store {
   // Finished worker tasks of a goal, out of all but dropped ones; the coordinator's own task isn't counted.
   progress(goal: number): { done: number; total: number } {
     const r = this.db.query(`select count(*) as total, sum(t.status = 'done') as done from tasks t join goals g on g.id = t.goal
-      where t.goal = ? and t.session is not g.coordinator and t.status != 'dropped'`).get(goal) as { total: number; done: number | null };
+      where t.goal = ? and (g.coordinator is null or t.session is not g.coordinator) and t.status != 'dropped'`).get(goal) as { total: number; done: number | null };
     return { done: r.done ?? 0, total: r.total };
   }
 

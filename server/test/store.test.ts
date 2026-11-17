@@ -271,6 +271,13 @@ describe("goals and conversation", () => {
     expect(store.waiting()).toEqual([]);
   });
 
+  test("goal progress counts its tasks before a coordinator has joined", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }] });
+    store.startGoal(g.id);
+    expect(store.progress(g.id)).toEqual({ done: 0, total: 2 });
+  });
+
   test("goal progress counts finished worker tasks, not the coordinator's", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "x" }, { key: "b", title: "b", repo: "x" }] });
