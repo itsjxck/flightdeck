@@ -22,7 +22,7 @@ async function connect(store: Store, session: string) {
 test("lists every tool from the spec", async () => {
   const { client } = await connect(new Store(":memory:"), "s");
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  expect(names).toEqual(["ask_user", "goal_complete", "goal_join", "goal_plan", "goal_propose", "inbox", "issue_link", "message",
+  expect(names).toEqual(["ask_user", "goal_branch", "goal_complete", "goal_join", "goal_plan", "goal_propose", "inbox", "issue_link", "message",
     "task_add", "task_done", "task_list", "task_note", "task_start", "worker_start", "worker_stop", "worktree_remove"]);
 });
 

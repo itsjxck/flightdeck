@@ -78,7 +78,7 @@ local function startOne(start, hooks)
 	if not repoPath then fail(start.id, "Flightdeck doesn't know where " .. tostring(start.repo) .. " is: open it in a space once"); return end
 	if not start.readonly and not wtPath then fail(start.id, "Worktrunk (wt) isn't installed"); return end
 	launching[start.id] = true
-	launch.open(M.tabArgs(start, repoPath, wtPath, hooks.baseFor(start.repo)), start.brief, function(err, pane)
+	launch.open(M.tabArgs(start, repoPath, wtPath, start.base or hooks.baseFor(start.repo)), start.brief, function(err, pane)
 		launching[start.id] = nil
 		if err then fail(start.id, err); return end
 		client.post("/api/workers/" .. tostring(start.id) .. "/started", { pane = pane })

@@ -65,6 +65,8 @@ create table if not exists goal_issues (
   title text not null default '', url text not null default '', primary key (goal, repo, number));
 create table if not exists cleanups (task integer primary key references tasks(id), queued integer not null, done integer);
 create table if not exists counters (name text primary key, value integer not null);
+create table if not exists goal_branches (goal integer not null references goals(id), repo text not null, branch text not null,
+  primary key (goal, repo));
 create table if not exists repos (name text primary key, path text not null,
   source text not null default 'learned', ignored integer not null default 0,
   issues_ignored integer not null default 0);
@@ -617,6 +619,27 @@ export class Store {
     const r = this.db.query(`select count(*) as total, sum(t.status = 'done') as done from tasks t join goals g on g.id = t.goal
       where t.goal = ? and (g.coordinator is null or t.session is not g.coordinator) and t.status != 'dropped'`).get(goal) as { total: number; done: number | null };
     return { done: r.done ?? 0, total: r.total };
+  }
+
+  // A goal's branch in a repository: workers there branch from it and the
+  // coordinator merges their work into it, for one PR per repository.
+  goalBranch(goal: number, repo: string | null): string | null {
+    if (!repo) return null;
+    const r = this.db.query("select branch from goal_branches where goal = ? and repo = ?").get(goal, repo) as { branch: string } | null;
+    return r?.branch ?? null;
+  }
+
+  goalBranches(goal: number): { repo: string; branch: string }[] {
+    return this.db.query("select repo, branch from goal_branches where goal = ? order by repo").all(goal) as { repo: string; branch: string }[];
+  }
+
+  // Coordinator only; branch null goes back to a PR per task.
+  setGoalBranch(session: string, repo: string, branch: string | null): Goal {
+    const g = this.coordinatorGoalFor(session);
+    if (branch == null) this.db.query("delete from goal_branches where goal = ? and repo = ?").run(g.id, repo);
+    else this.db.query("insert into goal_branches (goal, repo, branch) values (?, ?, ?) on conflict(goal, repo) do update set branch = excluded.branch")
+      .run(g.id, repo, branch);
+    return g;
   }
 
   coordinatorGoalFor(session: string): Goal {

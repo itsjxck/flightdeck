@@ -184,6 +184,19 @@ describe("goals and conversation", () => {
     expect(store.goalIssues(g.id).length).toBe(1);
   });
 
+  test("a goal branch is per goal and repository, and can be dropped again", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }] });
+    store.startGoal(g.id);
+    store.joinGoal({ ...me, session: "c1" }, g.id);
+    store.setGoalBranch("c1", "web-app", `g${g.id}-thing`);
+    expect(store.goalBranch(g.id, "web-app")).toBe(`g${g.id}-thing`);
+    expect(store.goalBranch(g.id, "api")).toBeNull();
+    expect(() => store.setGoalBranch("w1", "web-app", "x")).toThrow();
+    store.setGoalBranch("c1", "web-app", null);
+    expect(store.goalBranches(g.id)).toEqual([]);
+  });
+
   test("an idle coordinator's unread inbox goes to its pane after a while, once", () => {
     let now = 1_000_000;
     const store = new Store(":memory:", () => now);

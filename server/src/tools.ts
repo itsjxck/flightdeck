@@ -124,13 +124,30 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
       return `${a.issue} linked to ${Store.gid(goal)}.`;
     });
 
+  tool("goal_branch",
+    "Coordinator only: collect this goal's work in `repo` on one branch you own, for one PR at the end instead of one per task. Create the branch first; workers started afterwards in that repo branch from it, commit without pushing, and you merge each finished one into it. branch omitted: back to a PR per task.",
+    { repo: z.string(), branch: z.string().optional() },
+    (c, a) => {
+      if (a.branch) {
+        const path = store.repoPath(a.repo);
+        if (!path) throw new Error(`Flightdeck doesn't know repository ${a.repo}`);
+        const found = Bun.spawnSync(["git", "-C", path, "rev-parse", "--verify", "--quiet", `refs/heads/${a.branch}`]);
+        if (found.exitCode !== 0) throw new Error(`${a.repo} has no branch ${a.branch}: create it first (wt -C ${path} switch --create ${a.branch} --base <default branch>)`);
+      }
+      const g = store.setGoalBranch(c.session, a.repo, a.branch ?? null);
+      return a.branch ? `${Store.gid(g.id)}'s work in ${a.repo} collects on ${a.branch}; workers you start there from now branch from it.`
+        : `${Store.gid(g.id)}'s workers in ${a.repo} open their own PRs again.`;
+    });
+
   tool("goal_join",
     "Coordinator only: your first call. Makes you the coordinator of the goal named in your brief.",
     { goal: z.string() },
     (c, a) => {
       const g = store.joinGoal(c, Store.parseGoal(a.goal));
       const others = store.otherGoals(g.id);
+      const branches = store.goalBranches(g.id);
       return `You coordinate ${Store.gid(g.id)}: ${g.title}.\n` + store.listTasks({ goal: g.id }).map(line).join("\n")
+        + (branches.length ? `\n\nGoal branches: ${branches.map((b) => `${b.repo}: ${b.branch}`).join(", ")}` : "")
         + (others ? `\n\nOther goals running now (message one by its id, e.g. to "G4", to reach its coordinator):\n${others}` : "");
     });
 

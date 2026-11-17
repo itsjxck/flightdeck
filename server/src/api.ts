@@ -87,7 +87,12 @@ function workerBrief(store: Store, workerId: number) {
     `First call task_start with id "${store.tref(t.id)}". Use task_note at milestones, ask_user for decisions,`,
     `message @coordinator if you're blocked by other work, and task_done exactly once when finished.`,
     ONE_CHANNEL,
-    `When you open a PR, record it with task_note (pr: its URL).`,
+    (() => {
+      const branch = store.goalBranch(g.id, t.repo);
+      return branch
+        ? `Your branch starts from the goal branch ${branch}. Commit your work on your branch with clear messages; don't push it or open a PR: the coordinator merges it into ${branch} and opens one PR for the goal. Run the repository's checks before task_done, and name your branch and its last commit in the summary.`
+        : `When you open a PR, record it with task_note (pr: its URL).`;
+    })(),
     issueLines(store, g.id),
     SECURITY_KEY_NOTE,
     w.context ? `\nFrom your coordinator:\n${w.context}` : "",
@@ -109,6 +114,7 @@ export function coordinatorBrief(store: Store, goal: number) {
     `wait for results with inbox (it returns after 25 s at most; call it again while workers run), adjust the plan with goal_plan, and send the user a summary with ask_user when every task is finished.`,
     ONE_CHANNEL,
     `Other goals may run in the same repositories at the same time. goal_join lists them; message a goal's coordinator (to "G4") to agree on anything shared: which dev servers and ports each uses, databases and migration numbers, files you both change, merge order. You'll hear when a new goal starts.`,
+    `Decide how the work reaches main, per repository. Usually: one goal branch per repository and one PR when the goal is nearly done, so CI runs once instead of once per task. Create the branch (wt -C <repo path> switch --create ${Store.gid(g.id).toLowerCase()}-<short name> --base <default branch>), then goal_branch with it before starting workers there: they branch from it and commit without pushing. As each finishes, merge its branch into the goal branch (git -C <goal branch worktree> merge --no-ff <worker branch>; give a worker the conflicts if they're hard) before starting tasks that need it, then remove its worktree (worktree_remove). At the end run the checks once on the goal branch, push it, open the PR and record it with task_note (pr). Use a PR per task only when tasks must ship separately (an urgent fix, a release in between) or are too big to review together.`,
     `You own the workers' lifecycle: when a worker's task is done and you've read its result, close it with worker_stop (its worktree stays).`,
     `For follow-up work, start a fresh worker with worker_start, on a new task (goal_plan) or the same finished task, and pass what it needs to know as context.`,
     `You see the goal through to the end, including cleanup: as each task finishes, read its result, close its worker (worker_stop), and once its work is merged (check gh pr view) or no longer wanted, remove its worktree and branch (worktree_remove).`,
@@ -290,7 +296,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
             const t = store.task(w.task);
             // existing: the task's branch was made by an earlier worker, so switch to it rather than create it.
             return { id: w.id, task: store.tref(t.id), title: t.title, repo: t.repo, repoPath: store.repoPath(t.repo), readonly: t.readonly === 1,
-              existing: t.branch != null && t.worktree != null, branch: t.branch,
+              existing: t.branch != null && t.worktree != null, branch: t.branch, base: store.goalBranch(w.goal, t.repo),
               goal: Store.gid(w.goal), ternSession: store.goal(w.goal).tern_session, brief: workerBrief(store, w.id) };
           }),
           stops: stops.map((w) => ({ id: w.id, pane: w.pane })),
