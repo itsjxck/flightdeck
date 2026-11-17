@@ -87,7 +87,7 @@ local function startOne(start, hooks)
 		-- Its agent never started, so the worktree this launch created (if it got that far) is empty: remove it, so a retry can create it again.
 		local function report() fail(start.id, "Tern opened its pane outside any tab, so it never started; Flightdeck closed it. Start it again with worker_start.") end
 		if start.readonly or start.existing or not wtPath then report(); return end
-		tern.process.run({ wtPath, "-C", repoPath, "remove", "--yes", "-D", M.branchFor(start.task, start.title) }, { timeout_ms = 60000 }, report)
+		tern.process.run({ wtPath, "-C", repoPath, "remove", "--yes", "--foreground", "-D", M.branchFor(start.task, start.title) }, { timeout_ms = 60000 }, report)
 	end)
 end
 
@@ -112,8 +112,12 @@ local function removeQueued(list)
 			end
 			if not tern.fs.exists(c.worktree) then done(true, "already gone")
 			else
-				tern.process.run({ wtPath, "-C", c.repoPath, "remove", "--yes", "-D", c.branch }, { timeout_ms = 120000 }, function(r)
-					done(r.status == 0, if r.status ~= 0 then (r.stderr or ""):sub(1, 200) else nil)
+				-- --foreground: wt's default background removal exits 0 before it's done, and once
+				-- deleted the branch but left the worktree (G3.4, 2026-11-17). Check the folder too.
+				tern.process.run({ wtPath, "-C", c.repoPath, "remove", "--yes", "--foreground", "-D", c.branch }, { timeout_ms = 120000 }, function(r)
+					local gone = not tern.fs.exists(c.worktree)
+					done(r.status == 0 and gone, if r.status ~= 0 then (r.stderr or ""):sub(1, 200)
+						elseif not gone then "wt finished but " .. c.worktree .. " is still there" else nil)
 				end)
 			end
 		end
