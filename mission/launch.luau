@@ -16,6 +16,9 @@ local client = require("./client")
 local M = {}
 
 local BRIEF_DELAY_MS = 8000
+local LOST_MS = 10000
+-- Pane → what to do if it's lost (not persisted: after a reload a lost pane only times out).
+local lostHandlers = {}
 local GIVE_UP_MS = 15 * 60 * 1000
 
 -- Briefs waiting for their pane: { pane, brief, at, agentSince }.
@@ -46,14 +49,16 @@ do
 end
 
 -- Runs `tern <args…>` (a `new session` or `new tab` command) and queues
--- `brief` for the pane it opens. done(err, pane, cx).
-function M.open(args, brief, done)
+-- `brief` for the pane it opens. done(err, pane, cx). `onLost(pane)` runs if
+-- the pane turns out to be in no tab (see flush).
+function M.open(args, brief, done, onLost)
 	local argv = { client.TERN }
 	for _, a in args do table.insert(argv, a) end
 	local ok, err = pcall(tern.process.run, argv, { timeout_ms = 15000 }, function(result, cx)
 		local pane = if result.status == 0 then string.match(result.stdout or "", "%d+") else nil
 		if not pane then done("tern " .. tostring(args[1]) .. " " .. tostring(args[2]) .. " failed: " .. (result.stderr or ""), nil, cx); return end
 		table.insert(pending, { pane = pane, brief = brief, at = tern.now() })
+		if onLost then lostHandlers[pane] = onLost end
 		save()
 		done(nil, pane, cx)
 	end)
@@ -61,10 +66,22 @@ function M.open(args, brief, done)
 end
 
 -- Sends briefs whose pane has run an agent for BRIEF_DELAY_MS; call it every tick.
+-- A pane still in no tab after LOST_MS is lost: Tern left it out of every tab, so
+-- it never becomes an agent. It's closed and its brief dropped (onLost).
 function M.flush(cx)
 	if #pending == 0 then return end
 	local keep, changed = {}, false
 	for _, item in pending do
+		local inTab = pcall(function() assert(cx.session:tab_of(tonumber(item.pane))) end)
+		if not inTab and tern.now() - item.at > LOST_MS and cx.session:pane(tonumber(item.pane)) then
+			changed = true
+			pcall(function() cx.layout:close(tonumber(item.pane)) end)
+			local handler = lostHandlers[item.pane]
+			lostHandlers[item.pane] = nil
+			if handler then handler(item.pane) end
+			client.warnOnce("lost " .. item.pane, "pane " .. item.pane .. " opened in no tab; closed it")
+			continue
+		end
 		local hasAgent = pcall(function() cx.agents:get(tonumber(item.pane)) end)
 		if not hasAgent then
 			item.agentSince = nil

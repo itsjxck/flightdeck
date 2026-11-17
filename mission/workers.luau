@@ -83,6 +83,11 @@ local function startOne(start, hooks)
 		if err then fail(start.id, err); return end
 		client.post("/api/workers/" .. tostring(start.id) .. "/started", { pane = pane })
 		oplog.write("info", { op = "mission", event = "worker started", detail = start.task .. " in pane " .. pane })
+	end, function()
+		-- Its agent never started, so the worktree this launch created (if it got that far) is empty: remove it, so a retry can create it again.
+		local function report() fail(start.id, "Tern opened its pane outside any tab, so it never started; Flightdeck closed it. Start it again with worker_start.") end
+		if start.readonly or start.existing or not wtPath then report(); return end
+		tern.process.run({ wtPath, "-C", repoPath, "remove", "--yes", "-D", M.branchFor(start.task, start.title) }, { timeout_ms = 60000 }, report)
 	end)
 end
 
@@ -118,8 +123,11 @@ end
 function M.run(hooks, done)
 	client.api("GET", "/api/workers", nil, function(list, err)
 		if err or type(list) ~= "table" then done(); return end
-		for _, start in (list.starts or {}) do
-			if not launching[start.id] then startOne(start, hooks) end
+		-- One new tab at a time: two `tern new tab` into one session at the same
+		-- moment once left a worker's pane outside any tab (2026-11-17), where it
+		-- never became an agent. The next poll starts the next one.
+		if next(launching) == nil then
+			for _, start in (list.starts or {}) do startOne(start, hooks); break end
 		end
 		for _, stop in (list.stops or {}) do
 			local function stopped() client.post("/api/workers/" .. tostring(stop.id) .. "/stopped", {}) end
