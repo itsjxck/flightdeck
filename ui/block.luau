@@ -604,6 +604,9 @@ local DEF = {
 		elseif verb == "extact" then extensionAction(state, cx, a, b)
 		elseif verb == "openpath" then model.request({ kind = "openPath", path = a })
 		elseif verb == "go" then model.request({ kind = "go", task = a })
+		elseif verb == "taskstart" then
+			model.request({ kind = "startTask", task = a })
+			state.selectedRef, state.error = a, "Starting an agent on " .. a .. " in a session of its own…"
 		elseif verb == "thread" then
 			-- Toggles: the same task's Thread button closes it.
 			if state.thread and state.thread.task == a then state.thread = nil else openThread(state, cx, a) end

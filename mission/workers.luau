@@ -128,6 +128,25 @@ local function removeQueued(list)
 	end
 end
 
+-- Starts an agent on a task outside goals (Mission control's Start): a
+-- session of its own, `T10 · <title>`, in a fresh worktree (a read-only task:
+-- the checkout). `task` is from /api/state. done(err).
+function M.startLoose(task, repoPath, done)
+	client.api("POST", "/api/tasks/" .. task.ref .. "/start", {}, function(res, err)
+		if err or type(res) ~= "table" then done(err or "the server returned no brief"); return end
+		local wtPath = wt.find_executable("wt")
+		local args = { "new", "session", task.ref .. " · " .. task.title, "--cwd", repoPath, "--" }
+		if task.readonly == 1 or not wtPath then table.insert(args, "omp")
+		else
+			for _, a in { wtPath, "-C", repoPath, "switch", "--create", M.branchFor(task.ref, task.title), "-x", "omp" } do table.insert(args, a) end
+		end
+		launch.open(args, res.brief, function(openErr, pane)
+			if not openErr then oplog.write("info", { op = "mission", event = "task started", detail = task.ref .. " in pane " .. tostring(pane) }) end
+			done(openErr)
+		end)
+	end)
+end
+
 function M.run(hooks, done)
 	client.api("GET", "/api/workers", nil, function(list, err)
 		if err or type(list) ~= "table" then done(); return end

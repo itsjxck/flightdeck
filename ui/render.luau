@@ -200,6 +200,7 @@ local function taskDetail(t)
 		{ "PR", t.pr, t.pr and ("url=" .. t.pr) },
 	}, {
 		if t.session and t.status == "doing" then { "Go to agent", "go=" .. t.ref, true } else false,
+		if t.goal == nil and (t.status == "todo" or t.status == "ready") then { "Start", "taskstart=" .. t.ref, true } else false,
 		{ if openThreadRef == t.ref then "Hide thread" else "Thread", "thread=" .. t.ref },
 		if t.worktree then { "Review changes", "review=" .. t.ref } else false,
 	})
@@ -225,6 +226,9 @@ local function strip(t, picked, agentOf, waitingTasks)
 			if note then text("note", note, "mission.stripNote") else nil,
 		}, { grow = 1 }),
 		text("where", where, "mission.where", { title = where }),
+		-- A task outside goals has no coordinator to start it: you do.
+		if t.goal == nil and (t.status == "todo" or t.status == "ready") then ui.button("Start", { key = "start", size = "sm",
+			title = "Start an agent on " .. t.ref .. " in a session of its own", actions = { click = "taskstart=" .. t.ref } }) else nil,
 		row("state", "mission.state", {
 			ui.el("div", { key = "dot", role = "mission.dot-" .. key }),
 			text("label", label, "mission.stateLabel"),

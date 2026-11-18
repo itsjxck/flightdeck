@@ -71,6 +71,19 @@ export function goalFinished(store: Store, goal: number, summary: string) {
   commentAll(store.goalIssues(goal), `Flightdeck: goal ${Store.gid(g.id)} "${g.title}" finished.\n\n${summary}`);
 }
 
+// For an agent you start from Mission control on a task outside goals.
+function taskBrief(store: Store, id: number) {
+  const t = store.task(id);
+  if (t.goal != null) throw new Error(`${store.tref(id)} belongs to a goal: its coordinator starts it`);
+  if (t.status !== "todo" && t.status !== "ready") throw new Error(`${store.tref(id)} is ${t.status}`);
+  return [
+    `The user started you on task ${store.tref(id)}: ${t.title}.`, t.body,
+    `First call task_start with id "${store.tref(id)}". Use task_note at milestones (a PR opened: pass pr), ask_user for decisions, and task_done exactly once when finished.`,
+    ONE_CHANNEL,
+    SECURITY_KEY_NOTE,
+  ].filter(Boolean).join("\n");
+}
+
 function workerBrief(store: Store, workerId: number) {
   const w = store.worker(workerId);
   const t = store.task(w.task);
@@ -247,6 +260,8 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
       case "POST answer":
         return json(store.answer(store.taskId(field(body, "task")), field(body, "body")));
       case "POST tasks": {
+        // POST /api/tasks/T10/start: the brief for an agent you start on a task outside goals.
+        if (parts[2] === "start") return json({ brief: taskBrief(store, store.taskId(decodeURIComponent(parts[1] ?? ""))) });
         const repo = field(body, "repo");
         return json(store.addTask({ session: "you", repo, branch: null, cwd: null },
           { title: field(body, "title"), body: typeof body.body === "string" ? body.body : "", repo }));

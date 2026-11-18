@@ -35,7 +35,7 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 | Tab | What it's for |
 |---|---|
 | **Now** | What's happening: questions waiting for you (answer with a click, a number key, or your own words), running goals with a progress rail per task, and work in progress outside goals. Click any item for its details, its agent, its thread or its changes. |
-| **Backlog** | Every goal and task: proposed goals to start, what finished today, and (on request) older work. **New goal** and **New task** open a short form. |
+| **Backlog** | Every goal and task: proposed goals to start, what finished today, and (on request) older work. **New goal** and **New task** open a short form. A task outside goals has a **Start** button: it opens an agent on it in a session of its own, in a fresh worktree. |
 | **Issues** | Open GitHub issues across your repositories. Make one (or several) into a goal, link one to a goal, open it, or close it as not planned. |
 | **Stats** | Spend per day, project, model and goal (read from omp's own usage records), agents working per hour, tasks finished per day. Hover a bar for details. |
 | **Repos** | Every Git repository Flightdeck found on your Mac. Click one for its worktrees (branch, ahead/behind, uncommitted changes, conflicts, last commit), each with **Open**; open the repository as a space, hide it from agents, hide just its issues, or open it on GitHub. |

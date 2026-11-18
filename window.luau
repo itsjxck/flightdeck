@@ -2136,6 +2136,18 @@ local function missionRequests(cx)
 					end)
 				end
 			end
+		elseif r.kind == "startTask" then
+			for _, t in ms.tasks do
+				if t.ref == r.task and t.goal == nil then
+					local dir = t.repoPath or missionHooks.repoPath(t.repo)
+					if not dir then report(cx, "Flightdeck doesn't know where " .. tostring(t.repo) .. " is. Open it in a space once.")
+					else
+						mission.workers.startLoose(t, dir, function(err)
+							if err then tern.log.warn("Flightdeck: couldn't start " .. t.ref .. ": " .. err) end
+						end)
+					end
+				end
+			end
 		elseif r.kind == "closed" then goalClosed(cx, r.goal, r.session)
 		elseif r.kind == "openPath" and type(r.path) == "string" then openPath(cx, r.path)
 		elseif r.kind == "url" and type(r.url) == "string" and string.match(r.url, "^https://") then
