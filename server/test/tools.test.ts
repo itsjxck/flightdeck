@@ -65,3 +65,15 @@ test("task_add takes the tasks it needs by reference", async () => {
   expect(r.error).toBe(false);
   expect(r.text).toContain("waits on T1");
 });
+
+test("any agent reshapes a proposed goal, not a running one", async () => {
+  const store = new Store(":memory:");
+  const { call } = await connect(store, "s");
+  await call("goal_propose", { title: "old", body: "b" });
+  const r = await call("goal_plan", { goal: "G1", title: "new", add: [{ key: "a", title: "first", repo: "web-app" }] });
+  expect(r.error).toBe(false);
+  expect(r.text).toContain("G1 [proposed] new");
+  expect(r.text).toContain("first");
+  store.startGoal(1);
+  expect((await call("goal_plan", { goal: "G1", title: "again" })).error).toBe(true);
+});

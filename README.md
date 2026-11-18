@@ -58,7 +58,7 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
 
 **How a goal runs**
 
-1. You (or an agent, with `goal_propose`) write what should be true when it's done. Tasks are optional.
+1. You (or an agent, with `goal_propose`) write what should be true when it's done. Tasks are optional. Until it starts, any agent can reshape it (`goal_plan` with `goal`: title, description, tasks).
 2. **Start goal** opens a background session with a *coordinator* agent. It reads the repositories, plans tasks (`goal_plan`), and starts *workers* (`worker_start`), each in a fresh worktree on its own branch.
 3. Workers report progress, ask you questions (they appear under **Now**; answer from there or in the agent's pane), and finish their task. The coordinator reads each result, closes the worker (`worker_stop`), and once the work is merged or no longer wanted removes its worktree and branch (`worktree_remove`; the result comes back to it). It starts follow-ups and asks you when it needs a decision.
    Usually a coordinator collects its workers' work on one *goal branch* per repository (`goal_branch`): workers branch from it and commit without pushing, the coordinator merges each into it, and one PR per repository goes up near the end, so CI runs once instead of once per task. Tasks that must ship on their own still get their own PRs.

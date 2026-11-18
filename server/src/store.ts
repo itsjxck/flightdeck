@@ -517,6 +517,20 @@ export class Store {
     return this.db.query("select * from events where goal = ? order by id").all(goal) as Event[];
   }
 
+  // The goal goal_plan shapes: the caller's own (it coordinates it), or with `ref`
+  // a goal not started yet, which any agent may reshape before the user starts it.
+  planTarget(session: string, ref?: string): Goal {
+    if (!ref) return this.coordinatorGoalFor(session);
+    const g = this.goal(Store.parseGoal(ref));
+    if (g.status === "proposed" || g.coordinator === session) return g;
+    throw new Error(`${Store.gid(g.id)} is ${g.status}: only its coordinator changes it now (message "${Store.gid(g.id)}" to suggest a change)`);
+  }
+
+  editGoal(id: number, a: { title?: string; body?: string }) {
+    if (a.title != null) this.db.query("update goals set title = ? where id = ?").run(a.title, id);
+    if (a.body != null) this.db.query("update goals set body = ? where id = ?").run(a.body, id);
+  }
+
   proposeGoal(caller: Caller, a: { title: string; body: string; tasks: PlanTask[] }): Goal {
     return this.db.transaction(() => {
       const maxGoal = this.db.query("select coalesce(max(id), 0) as m from goals").get() as { m: number };

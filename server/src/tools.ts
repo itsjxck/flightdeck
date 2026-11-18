@@ -155,10 +155,13 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     needs: z.array(z.string()).optional().describe("Replaces what it waits for: task ids, or keys added in this call") });
 
   tool("goal_plan",
-    "Coordinator only: shape your goal's plan. add tasks (needs may name existing task ids or keys added in this call), edit tasks (title and body any time; repo and needs before they start), drop tasks. Returns the plan.",
-    { add: z.array(planTask).optional(), edit: z.array(editTask).optional(), drop: z.array(z.string()).optional() },
+    "Shape a goal's plan: your own as its coordinator, or (with `goal`) any goal not started yet, such as one you proposed. title/body rewrite the goal; add tasks (needs may name existing task ids or keys added in this call), edit tasks (title and body any time; repo and needs before they start), drop tasks. Returns the plan.",
+    { goal: z.string().optional().describe("G3: a proposed goal to change; omit for the goal you coordinate"),
+      title: z.string().optional(), body: z.string().optional(),
+      add: z.array(planTask).optional(), edit: z.array(editTask).optional(), drop: z.array(z.string()).optional() },
     (c, a) => {
-      const g = store.coordinatorGoalFor(c.session);
+      const g = store.planTarget(c.session, a.goal);
+      store.editGoal(g.id, { title: a.title, body: a.body });
       const keys = new Map<string, number>();
       for (const t of a.add ?? []) {
         const needs = (t.needs ?? []).map((n) => keys.get(n) ?? store.taskId(n));
@@ -169,7 +172,8 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
           needs: e.needs?.map((n) => keys.get(n) ?? store.taskId(n)) });
       }
       for (const ref of a.drop ?? []) store.dropTask(g.id, store.taskId(ref));
-      return store.listTasks({ goal: g.id }).map(line).join("\n");
+      const goal = store.goal(g.id);
+      return `${Store.gid(goal.id)} [${goal.status}] ${goal.title}\n` + (store.listTasks({ goal: g.id }).map(line).join("\n") || "No tasks yet.");
     });
 
   tool("worker_start",
