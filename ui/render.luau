@@ -234,7 +234,7 @@ local function strip(t, picked, agentOf, waitingTasks)
 			text("label", label, "mission.stateLabel"),
 		}),
 	}, { actions = { click = "toggle=" .. t.ref }, title = t.title, mark = if picked then "pick" else nil })
-	return col("t" .. t.ref, "mission.item", { line, if openItems[t.ref] then taskDetail(t) else nil })
+	return col("t" .. t.ref, "mission.item", { line, if openItems[t.ref] then taskDetail(t) else nil }, { motionKey = "t" .. t.ref })
 end
 
 -- The rail: one segment per task, in order, coloured by state.
@@ -248,7 +248,7 @@ local function rail(tasks, agentOf, waitingTasks)
 end
 
 local function panel(key, head, body, role)
-	return col(key, role or "mission.panel", { head, col("body", "mission.panelBody", body) })
+	return col(key, role or "mission.panel", { head, col("body", "mission.panelBody", body) }, { motionKey = key })
 end
 
 local function sectionHead(key, title, note)
@@ -445,7 +445,7 @@ local function backlogGoal(view, entry, now)
 		}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
 		if open then goalDetail(g, entry.coordinator) else nil,
 		if open then col("tasks", "mission.backlogTasks", strips) else nil,
-	})
+	}, { motionKey = "g" .. g.ref })
 end
 
 -- Finished goals and tasks of one period, goals first, as a section; nil when empty.
@@ -849,28 +849,28 @@ function M.view(view)
 	if view.error then table.insert(main, text("error", view.error, "mission.notice")) end
 	if view.tab == "stats" then
 		for _, node in statsNodes(view) do table.insert(main, node) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main), dockNode(view, "[ ] tabs   r refresh")
+		return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main), dockNode(view, "[ ] tabs   r refresh")
 	end
 	if view.tab == "issues" then
 		for _, node in issueNodes(view) do table.insert(main, node) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+		return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main),
 			dockNode(view, "[ ] tabs   f repo   ↑↓ move   e details   Enter goal from issue   space mark   l link to goal   o open   x close   r refresh")
 	end
 	if ext then
 		for _, node in extensionNodes(view, ext) do table.insert(main, node) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+		return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main),
 			dockNode(view, "[ ] tabs   ↑↓ move   Enter / e details")
 	end
 	if view.tab == "repos" then
 		for _, node in repoNodes(view) do table.insert(main, node) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+		return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main),
 			dockNode(view, "[ ] tabs   ↑↓ move   Enter / e details   a hide / use for agents   i hide / show issues   s scan now")
 	end
 	if view.tab == "backlog" then
 		view.agentOf = agentOf
 		for _, node in backlogNodes(view) do table.insert(main, node) end
 		if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
-		return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+		return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main),
 			dockNode(view, "[ ] tabs   f repo   ↑↓ move   Enter / e details   d done   s start goal   o thread   n new task   g new goal")
 	end
 
@@ -951,7 +951,7 @@ function M.view(view)
 
 	if view.thread then table.insert(main, threadSection(view.thread, s.now)) end
 
-	return ui.node("scroll", { key = "main", role = "mission.main" }, main),
+	return ui.node("scroll", { key = "main", role = "mission.main", transition = "layout" }, main),
 		dockNode(view, "[ ] tabs   f repo   ↑↓ move   e details   1–9 answer   Enter go to agent   o thread   r review   n new task   g new goal")
 end
 

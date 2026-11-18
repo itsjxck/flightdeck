@@ -607,8 +607,11 @@ local function redraw(_cx)
 		if not ok and problem ~= tostring(err) then report(cx, err) end
 	end)
 end
--- A new Mission control state redraws the sidebar (Goals, Needs you, agents' tasks).
-missionHooks.changed = redraw
+-- A new Mission control state redraws the sidebar (Goals, Needs you, agents' tasks) and the widget.
+missionHooks.changed = function(cx)
+	redraw(cx)
+	pcall(tern.chrome.refresh)
+end
 
 local PR_REFRESH_MS = 120000
 
@@ -2239,6 +2242,44 @@ tern.override("new_tab", function(cx)
 	local _, worktree = activeWorktree(cx)
 	if not worktree then return false end
 	cx.layout:new_tab({ cwd = worktree.path })
+	return true
+end)
+
+-- The widget bar's `flightdeck/mission` (mission/widget.luau): questions and goals, with buttons on hover.
+local missionWidget = require("./mission/widget")
+tern.chrome.widget(missionWidget.ID, {
+	name = "Mission control",
+	description = "Questions waiting for you and running goals; hover to answer or open them",
+	render = function() return missionWidget.view(mission.state.get()) end,
+})
+
+tern.on("widget_action", function(ev, cx)
+	if ev.widget ~= missionWidget.ID then return false end
+	local ms = mission.state.get()
+	-- Rows: "q:G2.1:2" (option 2 of G2.1's question), "q:G2.1" (its Go to agent), "g:G3", "mission".
+	local kind, ref = string.match(ev.row, "^(%a+):([^:]+)")
+	local optionNo = tonumber(string.match(ev.row, "^q:[^:]+:(%d+)$"))
+	if ev.act == "open" then openMissionControl(cx)
+	elseif kind == "q" then
+		local option = if ev.act == "answer" then optionNo else nil
+		for _, q in ms.waiting do
+			if q.task == ref and option and q.options and q.options[option] then
+				mission.api("POST", "/api/answer", { task = ref, body = q.options[option] }, function(_, err, nextCx)
+					if nextCx then nextCx:toast(if err then "error" else "info", if err then "Couldn't answer " .. ref else "Answered " .. ref, err or q.options[option]) end
+				end)
+			end
+		end
+		if ev.act == "go" then
+			for _, t in ms.tasks do
+				local pane = t.ref == ref and t.session and mission.sessionPanes[t.session]
+				if pane then showPane(cx, tonumber(pane)) end
+			end
+		end
+	elseif kind == "g" and ev.act == "session" then
+		for _, g in ms.goals do
+			if g.ref == ref and g.tern_session then cx.sessions:switch(tonumber(g.tern_session)) end
+		end
+	end
 	return true
 end)
 

@@ -348,7 +348,7 @@ local function goalNode(goal)
 		for _, t in goal.tasks do
 			local state = t.state and AGENT_STATES[t.state]
 			table.insert(rows, ui.node("row", {
-				key = "t" .. t.ref, role = "flightdeck.worktreeRow",
+				key = "t" .. t.ref, role = "flightdeck.worktreeRow", motionKey = "t" .. t.ref,
 				title = t.ref .. " · " .. t.title .. "\n" .. (if state then "Agent " .. state.label else TASK_STATUS[t.status] or t.status),
 				actions = { click = if t.pane then "pane=" .. t.pane else "mission=" .. t.ref },
 			}, {
@@ -359,7 +359,7 @@ local function goalNode(goal)
 		end
 		table.insert(children, ui.node("col", { key = "tasks", role = "flightdeck.worktrees" }, rows))
 	end
-	return ui.node("col", { key = "g" .. goal.ref, role = "flightdeck.space" }, children)
+	return ui.node("col", { key = "g" .. goal.ref, role = "flightdeck.space", motionKey = "g" .. goal.ref }, children)
 end
 
 local extensionNode
@@ -380,7 +380,7 @@ extensionNode = function(e)
 		local rows = {}
 		for _, it in e.items do
 			table.insert(rows, ui.node("row", {
-				key = "i" .. it.id, role = "flightdeck.worktreeRow", title = it.title .. (if it.label then "\n" .. it.label else ""),
+				key = "i" .. it.id, role = "flightdeck.worktreeRow", motionKey = "x" .. it.id, title = it.title .. (if it.label then "\n" .. it.label else ""),
 				actions = { click = "mission=ext:" .. e.id .. ":" .. it.id },
 			}, {
 				ui.el("div", { key = "status", role = EXT_DOTS[it.tone] or "flightdeck.dotIdle" }),
@@ -484,7 +484,7 @@ function View.render(model)
 		table.insert(agents, text("empty", "No agents running", "flightdeck.hint"))
 	end
 	-- Agents go in the canvas's dock, so they stay at the bottom while spaces scroll.
-	return ui.node("col", { key = "flightdeck", role = "flightdeck.navigator" }, spaces),
+	return ui.node("col", { key = "flightdeck", role = "flightdeck.navigator", transition = "layout" }, spaces),
 		ui.node("col", { key = "agents", role = "flightdeck.agents" }, agents)
 end
 
