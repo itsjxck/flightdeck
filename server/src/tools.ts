@@ -70,7 +70,7 @@ export function buildServer(store: Store, resolve: Resolve): McpServer {
     { title: z.string(), body: z.string().optional(), repo: z.string(), goal: z.string().optional(),
       needs: z.array(z.string()).optional(), readonly: z.boolean().optional() },
     (c, a) => line(store.addTask(c, { title: a.title, body: a.body, repo: a.repo,
-      goal: a.goal ? Store.parseGoal(a.goal) : undefined, needs: (a.needs ?? []).map(Store.parseTask), readonly: a.readonly })) + " — added.");
+      goal: a.goal ? Store.parseGoal(a.goal) : undefined, needs: (a.needs ?? []).map((r) => store.taskId(r)), readonly: a.readonly })) + " — added.");
 
   tool("task_list",
     "List tasks: by goal (G3), repository, status, or mine.",

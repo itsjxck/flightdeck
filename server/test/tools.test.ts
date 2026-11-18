@@ -56,3 +56,12 @@ test("a coordinator's inbox returns a worker's done", async () => {
   const inbox = await coord.call("inbox", { timeout_s: 1 });
   expect(inbox.text).toContain("G1.1 · done");
 });
+
+test("task_add takes the tasks it needs by reference", async () => {
+  const store = new Store(":memory:");
+  const { call } = await connect(store, "s");
+  await call("task_add", { title: "first", repo: "web-app" });
+  const r = await call("task_add", { title: "second", repo: "web-app", needs: ["T1"] });
+  expect(r.error).toBe(false);
+  expect(r.text).toContain("waits on T1");
+});
