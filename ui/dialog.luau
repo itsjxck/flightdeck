@@ -48,6 +48,9 @@ function M.new(kind, opts)
 		local a = opts.action
 		return { kind = kind, title = a.label, submit = a.label, focus = 1, ext = opts.ext, item = opts.item, action = a.id,
 			note = a.confirm, fields = if a.input then { field("text", a.label, a.input, true) } else {} }
+	elseif kind == "deletegoal" then
+		return { kind = kind, title = "Delete " .. opts.goal, submit = "Delete goal", focus = 1, goal = opts.goal,
+			note = "“" .. opts.title .. "” and its tasks are deleted. It never started, so there's no work to lose.", fields = {} }
 	elseif kind == "link" then
 		return { kind = kind, title = "Link " .. opts.issue, submit = "Link", focus = 1, issue = opts.issue,
 			note = "Its coordinator and workers see the issue; Flightdeck comments on it when the goal starts and finishes.",

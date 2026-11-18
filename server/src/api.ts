@@ -288,6 +288,7 @@ export async function handleApi(store: Store, req: Request, url: URL, resolve: (
           store.unlinkIssue(goal, p.repo, p.number);
           return json({ issues: store.goalIssues(goal) });
         }
+        if (parts[2] === "delete") { store.deleteGoal(goal); return json({ ok: true }); }
         if (parts[2] === "session") { store.setGoalSession(goal, field(body, "ternSession")); return json({ ok: true }); }
         if (parts[2] === "close") {
           // removeMerged: queue the merged PRs' worktrees for removal as the goal closes.

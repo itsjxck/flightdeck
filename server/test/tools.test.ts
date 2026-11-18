@@ -74,6 +74,8 @@ test("any agent reshapes a proposed goal, not a running one", async () => {
   expect(r.error).toBe(false);
   expect(r.text).toContain("G1 [proposed] new");
   expect(r.text).toContain("first");
+  await call("goal_propose", { title: "dup", body: "b" });
+  expect((await call("goal_plan", { goal: "G2", delete: true })).text).toBe("G2 deleted.");
   store.startGoal(1);
   expect((await call("goal_plan", { goal: "G1", title: "again" })).error).toBe(true);
 });

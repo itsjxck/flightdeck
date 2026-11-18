@@ -184,6 +184,17 @@ describe("goals and conversation", () => {
     expect(store.goalIssues(g.id).length).toBe(1);
   });
 
+  test("a proposed goal can be deleted with its tasks; a started one can't", () => {
+    const store = new Store(":memory:");
+    const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }, { key: "b", title: "b", repo: "web-app", needs: ["a"] }] });
+    store.deleteGoal(g.id);
+    expect(store.listGoals("proposed")).toEqual([]);
+    expect(store.listTasks({})).toEqual([]);
+    const h = store.proposeGoal(me, { title: "h", body: "", tasks: [] });
+    store.startGoal(h.id);
+    expect(() => store.deleteGoal(h.id)).toThrow("close it instead");
+  });
+
   test("a goal branch is per goal and repository, and can be dropped again", () => {
     const store = new Store(":memory:");
     const g = store.proposeGoal(me, { title: "g", body: "", tasks: [{ key: "a", title: "a", repo: "web-app" }] });

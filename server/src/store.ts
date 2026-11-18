@@ -605,15 +605,32 @@ export class Store {
         .all(before) as { id: number }[]).map((g) => g.id);
       const tasks = (this.db.query(`select id from tasks where (goal in (select value from json_each(?)))
         or (goal is null and status in ('done', 'dropped', 'failed') and updated < ?)`).all(JSON.stringify(goals), before) as { id: number }[]).map((t) => t.id);
-      const t = JSON.stringify(tasks), g = JSON.stringify(goals);
-      this.db.query("delete from deps where task in (select value from json_each(?)) or needs in (select value from json_each(?))").run(t, t);
-      this.db.query("delete from events where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
-      this.db.query("delete from workers where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
-      this.db.query("delete from tasks where id in (select value from json_each(?))").run(t);
-      this.db.query("delete from goal_issues where goal in (select value from json_each(?))").run(g);
-      this.db.query("delete from goals where id in (select value from json_each(?))").run(g);
+      this.purge(goals, tasks);
       return { goals: goals.length, tasks: tasks.length };
     })();
+  }
+
+  // Deletes a goal that hasn't started, with its tasks: a proposal nobody wants.
+  deleteGoal(id: number) {
+    const g = this.goal(id);
+    if (g.status !== "proposed") throw new Error(`${Store.gid(id)} is ${g.status}: close it instead (Close goal)`);
+    this.db.transaction(() => {
+      const tasks = (this.db.query("select id from tasks where goal = ?").all(id) as { id: number }[]).map((t) => t.id);
+      this.purge([id], tasks);
+    })();
+  }
+
+  // Removes goals and tasks with everything that refers to them. Call inside a transaction.
+  private purge(goals: number[], tasks: number[]) {
+    const t = JSON.stringify(tasks), g = JSON.stringify(goals);
+    this.db.query("delete from deps where task in (select value from json_each(?)) or needs in (select value from json_each(?))").run(t, t);
+    this.db.query("delete from events where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
+    this.db.query("delete from workers where task in (select value from json_each(?)) or goal in (select value from json_each(?))").run(t, g);
+    this.db.query("delete from cleanups where task in (select value from json_each(?))").run(t);
+    this.db.query("delete from tasks where id in (select value from json_each(?))").run(t);
+    this.db.query("delete from goal_issues where goal in (select value from json_each(?))").run(g);
+    this.db.query("delete from goal_branches where goal in (select value from json_each(?))").run(g);
+    this.db.query("delete from goals where id in (select value from json_each(?))").run(g);
   }
 
   private finishGoalIfDone(goal: number | null) {

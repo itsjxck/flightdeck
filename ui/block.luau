@@ -212,6 +212,8 @@ local function submitDialog(state, cx)
 			model.request({ kind = "closed", goal = d.goal, session = d.session })
 			return d.goal .. " closed" .. (if r and r.removing and r.removing > 0 then "; removing " .. tostring(r.removing) .. " merged worktree(s)." else ".")
 		end))
+	elseif d.kind == "deletegoal" then
+		model.api("POST", "/api/goals/" .. d.goal .. "/delete", {}, done(function() return d.goal .. " deleted." end))
 	elseif d.kind == "extension" then
 		local v2 = dialog.values(d)
 		model.api("POST", "/api/extensions/" .. d.ext .. "/action", { item = d.item, action = d.action, text = v2.text }, done(function(r)
@@ -624,6 +626,10 @@ local DEF = {
 		elseif verb == "filter" then state.repoFilter, state.filterOpen = if a == "*" then nil else a, false
 		elseif verb == "expand" then state.selectedRef = a; state.expanded[a] = not state.expanded[a] or nil
 		elseif verb == "session" then model.request({ kind = "session", goal = a })
+		elseif verb == "deletegoal" then
+			for _, entry in ((state.backlog and state.backlog.goals) or {}) do
+				if entry.goal.ref == a then state.dialog = dialog.new("deletegoal", { goal = a, title = entry.goal.title }) end
+			end
 		elseif verb == "close" then askClose(state, cx, a)
 		elseif verb == "start" then model.request({ kind = "start", goal = a }); state.error = "Starting " .. a .. " in a session of its own…"
 		end

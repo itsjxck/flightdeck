@@ -440,6 +440,8 @@ local function backlogGoal(view, entry, now)
 			text("age", M.ago(now, g.closed or g.created) or "", "mission.goalProgress"),
 			issueLinks(g.issues),
 			text("status", GOAL_STATUS[g.status] or g.status, "mission.statusChip-" .. g.status),
+			if g.status == "proposed" then ui.button("Delete", { key = "delete", variant = "quiet",
+				title = "Delete this proposal and its tasks", actions = { click = "deletegoal=" .. g.ref } }) else nil,
 			if g.status == "proposed" then ui.button("Start goal", { key = "start", variant = "primary",
 				title = "Opens it in a session of its own; its coordinator plans the tasks", actions = { click = "start=" .. g.ref } }) else nil,
 		}, { actions = { click = "expand=" .. g.ref }, mark = if g.ref == view.selectedRef then "pick" else nil }),
