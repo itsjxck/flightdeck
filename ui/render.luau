@@ -119,6 +119,16 @@ end
 
 -- A question waiting on you.
 -- `reply`: the answer field's props when this card is the selected one.
+-- Each task's folder (ref → worktree, else repository), set by M.view: Run in
+-- an agent's code block runs there, as the agent meant it.
+local folderOf = {}
+
+-- Markdown whose shell code blocks Run in `dir`; without a folder (or for text
+-- from outside, such as GitHub issues) Run is off rather than running in ~.
+local function md(text, dir)
+	return ui.md(text, if dir then { cwd = dir, head = "always" } else { run = false })
+end
+
 local function questionNode(q, picked, now, reply)
 	local options = {}
 	for i, option in (q.options or {}) do
@@ -136,7 +146,7 @@ local function questionNode(q, picked, now, reply)
 	local children = {
 		text("eyebrow", table.concat(shown, " · "), "mission.eyebrow"),
 		text("task", q.title, "mission.questionTask"),
-		col("question", "mission.questionText", { ui.md(q.question) }),
+		col("question", "mission.questionText", { md(q.question, folderOf[q.task]) }),
 	}
 	if #options > 0 then table.insert(children, row("options", "mission.options", options)) end
 	if reply then
@@ -154,9 +164,9 @@ local openThreadRef = nil
 local goalDetail
 
 -- Details under an item: Markdown, then label/value lines, then buttons ({ label, action, primary }).
-local function detail(key, markdown, facts, buttons)
+local function detail(key, markdown, facts, buttons, dir)
 	local children = {}
-	if markdown and string.find(markdown, "%S") then table.insert(children, col("md", "mission.detailMd", { ui.md(markdown) })) end
+	if markdown and string.find(markdown, "%S") then table.insert(children, col("md", "mission.detailMd", { md(markdown, dir) })) end
 	local lines = {}
 	for n, f in facts do
 		if f[2] and f[2] ~= "" then
@@ -203,7 +213,7 @@ local function taskDetail(t)
 		if t.goal == nil and (t.status == "todo" or t.status == "ready") then { "Start", "taskstart=" .. t.ref, true } else false,
 		{ if openThreadRef == t.ref then "Hide thread" else "Thread", "thread=" .. t.ref },
 		if t.worktree then { "Review changes", "review=" .. t.ref } else false,
-	})
+	}, t.worktree or t.repoPath)
 end
 
 -- A task as a strip: state edge, ref, title and latest note, where, state. Click shows its details.
@@ -265,7 +275,7 @@ local function threadSection(thread, now)
 		local who = if e.author == "you" then "You" elseif e.author == "flightdeck" then "Flightdeck" else "Agent"
 		table.insert(events, col("e" .. tostring(e.id), "mission.event-" .. (if e.author == "you" then "you" else "agent"), {
 			text("who", who .. " · " .. e.kind .. (if M.ago(now, e.created) then " · " .. M.ago(now, e.created) else ""), "mission.eyebrow"),
-			ui.md(e.body),
+			md(e.body, folderOf[thread.task]),
 		}))
 	end
 	if #events == 0 then table.insert(events, text("none", "No notes yet.", "mission.empty")) end
@@ -415,7 +425,7 @@ goalDetail = function(g, coordinator)
 		if coordinator and coordinator.status == "doing" then { "Go to coordinator", "go=" .. coordinator.ref, g.status ~= "proposed" } else false,
 		if g.tern_session and (g.status == "active" or g.status == "finished") then { "Open session", "session=" .. g.ref } else false,
 		if g.status == "finished" then { "Close goal", "close=" .. g.ref } else false,
-	})
+	}, coordinator and (coordinator.worktree or coordinator.repoPath))
 end
 
 local GOAL_STATUS = { proposed = "Proposed", active = "Running", finished = "Finished", done = "Done", dropped = "Dropped" }
@@ -628,10 +638,10 @@ M.EXT_DOT = EXT_DOT
 local function extensionDetail(it)
 	local children = {}
 	if it.body then
-		local md = ui.md(it.body)
-		md.p = md.p or {}
-		md.p.key = "body"
-		table.insert(children, md)
+		local body = md(it.body, nil)
+		body.p = body.p or {}
+		body.p.key = "body"
+		table.insert(children, body)
 	end
 	local facts = {}
 	for n, f in (it.facts or {}) do
@@ -811,6 +821,11 @@ end
 -- Returns the block's main and dock nodes.
 function M.view(view)
 	openItems = view.open or {}
+	folderOf = {}
+	for _, group in view.sections.working do
+		for _, t in group.tasks do folderOf[t.ref] = t.worktree or t.repoPath end
+		if group.coordinator then folderOf[group.coordinator.ref] = group.coordinator.worktree or group.coordinator.repoPath end
+	end
 	openThreadRef = view.thread and view.thread.task
 	local s = view.sections
 	local agentOf = view.agentOf or function() return nil end

@@ -64,6 +64,8 @@ Everything runs on your Mac: a small local server (Bun, SQLite) behind a random 
    Usually a coordinator collects its workers' work on one *goal branch* per repository (`goal_branch`): workers branch from it and commit without pushing, the coordinator merges each into it, and one PR per repository goes up near the end, so CI runs once instead of once per task. Tasks that must ship on their own still get their own PRs.
 4. When the coordinator is satisfied nothing is left (every task finished, workers closed, worktrees removed or kept for a stated reason, no question waiting for you), it finishes the goal itself with `goal_complete` and a summary: what was done, each PR and its state, anything left for you. Flightdeck refuses `goal_complete` until those checks pass, and needing your direction doesn't count as done. The goal's session closes once its agents are idle. You can still close a goal yourself (**Close goal**), which lists its remaining worktrees and their PRs and removes the merged ones.
 
+**Commands in agents' messages:** a shell code block in a question, note or task details has **Run**, which runs it in that task's worktree (else its repository), so "please run this" is one click. Text from outside (GitHub issues, extensions) gets no Run. Needs Tern 0.9.29.
+
 **Widget:** add **Mission control** to Tern's widget bar (palette › Edit widgets…, or `tern ctl widgets set … flightdeck/mission …`). It shows questions waiting and goals running; hover it to pick an answer, go to the agent, or open a goal's session.
 
 **Extensions:** other tools can add their own sidebar section and Mission control tab, with buttons, by posting to Flightdeck's local server. Flightdeck stays generic; see [server/README.md](server/README.md#extensions).
