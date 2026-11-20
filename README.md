@@ -86,7 +86,7 @@ You need macOS and:
 
 | | Needed for | |
 |---|---|---|
-| [Tern](https://docs.stencil.so/tern/) desktop 0.9.24 or later | everything | uses 0.9.24's spawn, streamed fetch and block status |
+| [Tern](https://docs.stencil.so/tern/) desktop 0.9.29 or later | everything | uses 0.9.24's spawn, streamed fetch and block status, 0.9.27's widget cards and layout transitions, 0.9.29's code block `cwd` |
 | [Worktrunk](https://worktrunk.dev) (`wt`), Git | worktrees, goal workers | tested with wt 0.80 |
 | [omp](https://omp.sh) | agents, Mission control, Visualize PR | tested with 18.21 |
 | [Bun](https://bun.sh) | Mission control's server | |
